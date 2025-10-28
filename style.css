@@ -2,12 +2,16 @@ body {
     margin: 0;
     overflow: hidden;
     background-color: #000;
+    touch-action: none; /* Prevent scroll on mobile */
+    -webkit-user-select: none; /* Prevent text selection on mobile */
+    user-select: none;
 }
 
 canvas {
     display: block;
     width: 100vw;
     height: 100vh;
+    touch-action: none; /* Critical for touch events */
 }
 
 .controls {

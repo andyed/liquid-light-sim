@@ -8,12 +8,27 @@ export default class Controller {
         this.isRightMouseDown = false;
         this.isSpacePressed = false;
         this.currentColor = { r: 0.3, g: 0.7, b: 0.9 };  // Default color
+        
+        // Track mouse position for velocity calculation
+        this.lastMouseX = 0;
+        this.lastMouseY = 0;
+        this.mouseVelocityX = 0;
+        this.mouseVelocityY = 0;
 
         const canvas = this.gl.canvas;
+        
+        // Mouse events
         canvas.addEventListener('mousedown', (e) => this.onMouseDown(e));
-        canvas.addEventListener('mouseup', (e) => this.onMouseUp(e));
         canvas.addEventListener('mousemove', (e) => this.onMouseMove(e));
         canvas.addEventListener('contextmenu', (e) => e.preventDefault());  // Disable context menu
+        
+        // Mouse up on window (in case mouse leaves canvas)
+        window.addEventListener('mouseup', (e) => this.onMouseUp(e));
+
+        // Touch events (mobile/tablet support)
+        canvas.addEventListener('touchstart', (e) => this.onTouchStart(e), { passive: false });
+        canvas.addEventListener('touchmove', (e) => this.onTouchMove(e), { passive: false });
+        canvas.addEventListener('touchend', (e) => this.onTouchEnd(e), { passive: false });
 
         window.addEventListener('keydown', (e) => this.onKeyDown(e));
         window.addEventListener('keyup', (e) => this.onKeyUp(e));
@@ -46,6 +61,14 @@ export default class Controller {
         const rect = this.gl.canvas.getBoundingClientRect();
         const x = (e.clientX - rect.left) / rect.width;
         const y = 1.0 - (e.clientY - rect.top) / rect.height;
+        
+        // Calculate mouse velocity (for jet direction)
+        const dx = x - this.lastMouseX;
+        const dy = y - this.lastMouseY;
+        this.mouseVelocityX = dx;
+        this.mouseVelocityY = dy;
+        this.lastMouseX = x;
+        this.lastMouseY = y;
 
         if (this.isMouseDown || (this.isSpacePressed && this.isRightMouseDown)) {
             // Normal splat - color injection with user's selected color
@@ -53,13 +76,27 @@ export default class Controller {
         } 
         
         if (this.isRightMouseDown) {
-            // Jet impulse - PURE VELOCITY ONLY (no color at all)
-            // Creates turbulent forces that stir existing colors
-            const vx = (Math.random() - 0.5) * 2.0;  
-            const vy = (Math.random() - 0.5) * 2.0;  
+            // Jet impulse - VERY strong forces to survive viscosity/pressure damping
+            const speed = Math.sqrt(dx * dx + dy * dy);
             
-            // Inject velocity only - no visual trace
-            this.simulation.splatVelocity(x, y, vx, vy, 0.06);
+            if (speed > 0.001) {
+                // Moving: directional jet (scaled for resolution)
+                const forceMultiplier = 5000.0; // 10x stronger to overcome damping
+                const vx = dx * forceMultiplier;
+                const vy = dy * forceMultiplier;
+                this.simulation.splatVelocity(x, y, vx, vy, 0.2);
+            } else {
+                // Stationary: explosive radial burst
+                const burstStrength = 500.0; // 10x stronger
+                const burstRadius = 0.2;
+                
+                for (let i = 0; i < 8; i++) {
+                    const angle = i * (Math.PI / 4);
+                    const vx = Math.cos(angle) * burstStrength;
+                    const vy = Math.sin(angle) * burstStrength;
+                    this.simulation.splatVelocity(x, y, vx, vy, burstRadius);
+                }
+            }
         }
     }
 
@@ -85,18 +122,25 @@ export default class Controller {
         
         // Viscosity controls
         else if (e.key === 'v') {
-            // Cycle viscosity: 0.5 -> 1.0 -> 2.0 -> 5.0 -> 0.5
-            const viscosities = [0.5, 1.0, 2.0, 5.0];
-            const currentIndex = viscosities.findIndex(v => Math.abs(v - this.simulation.viscosity) < 0.1);
+            // Cycle viscosity: 0.1 -> 0.5 -> 1.0 -> 2.0 -> 0.1
+            const viscosities = [0.1, 0.5, 1.0, 2.0];
+            const currentIndex = viscosities.findIndex(v => Math.abs(v - this.simulation.viscosity) < 0.05);
             const nextIndex = (currentIndex + 1) % viscosities.length;
             this.simulation.viscosity = viscosities[nextIndex];
-            console.log(`Viscosity: ${this.simulation.viscosity}`);
+            console.log(`Viscosity: ${this.simulation.viscosity} (lower = more responsive jets)`);
         }
         
         // Pause/Resume (F004 requirement: freeze state for debugging)
         else if (e.key === 'p') {
             this.simulation.paused = !this.simulation.paused;
             console.log(this.simulation.paused ? '⏸️  Paused' : '▶️  Resumed');
+        }
+        
+        // Debug visualization
+        else if (e.key === 'm') {
+            // M key: Toggle velocity visualization mode
+            this.renderer.toggleDebugMode();
+            console.log('🔍 Debug mode toggled');
         }
         
         // Testing shortcuts
@@ -122,6 +166,79 @@ export default class Controller {
             this.simulation.setRotation(0.0);
         } else if (e.key === ' ') {
             this.isSpacePressed = false;
+        }
+    }
+
+    onTouchStart(e) {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const rect = this.gl.canvas.getBoundingClientRect();
+        const x = (touch.clientX - rect.left) / rect.width;
+        const y = 1.0 - (touch.clientY - rect.top) / rect.height;
+        
+        // Single touch = left-click (paint)
+        // Two fingers = jet (handled in touchmove)
+        if (e.touches.length === 1) {
+            this.isMouseDown = true;
+            this.lastMouseX = x;
+            this.lastMouseY = y;
+            console.log('👆 Touch start: paint mode');
+        } else if (e.touches.length === 2) {
+            this.isRightMouseDown = true;
+            console.log('👆👆 Two-finger touch: jet mode');
+        }
+    }
+
+    onTouchMove(e) {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const rect = this.gl.canvas.getBoundingClientRect();
+        const x = (touch.clientX - rect.left) / rect.width;
+        const y = 1.0 - (touch.clientY - rect.top) / rect.height;
+        
+        // Calculate touch velocity
+        const dx = x - this.lastMouseX;
+        const dy = y - this.lastMouseY;
+        this.mouseVelocityX = dx;
+        this.mouseVelocityY = dy;
+        this.lastMouseX = x;
+        this.lastMouseY = y;
+        
+        if (e.touches.length === 1 && this.isMouseDown) {
+            // Single finger: paint
+            this.simulation.splat(x, y, this.currentColor, 0.02);
+        } else if (e.touches.length === 2 || this.isRightMouseDown) {
+            // Two fingers: jet impulse
+            const speed = Math.sqrt(dx * dx + dy * dy);
+            
+            if (speed > 0.001) {
+                const forceMultiplier = 5000.0;
+                const vx = dx * forceMultiplier;
+                const vy = dy * forceMultiplier;
+                this.simulation.splatVelocity(x, y, vx, vy, 0.2);
+            } else {
+                const burstStrength = 500.0;
+                const burstRadius = 0.2;
+                
+                for (let i = 0; i < 8; i++) {
+                    const angle = i * (Math.PI / 4);
+                    const vx = Math.cos(angle) * burstStrength;
+                    const vy = Math.sin(angle) * burstStrength;
+                    this.simulation.splatVelocity(x, y, vx, vy, burstRadius);
+                }
+            }
+        }
+    }
+
+    onTouchEnd(e) {
+        e.preventDefault();
+        if (e.touches.length === 0) {
+            this.isMouseDown = false;
+            this.isRightMouseDown = false;
+            console.log('👋 Touch end');
+        } else if (e.touches.length === 1) {
+            // Down to one finger
+            this.isRightMouseDown = false;
         }
     }
 

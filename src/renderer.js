@@ -16,6 +16,7 @@ export default class Renderer {
         console.log('✓ Float texture extension enabled');
 
         this.backgroundColor = { r: 0.0, g: 0.0, b: 0.0 };
+        this.debugMode = false; // Toggle with M key to show velocity field
 
         this.resize();
         window.addEventListener('resize', () => this.resize());
@@ -117,6 +118,11 @@ export default class Renderer {
     setBackgroundColor(color) {
         this.backgroundColor = color;
     }
+    
+    toggleDebugMode() {
+        this.debugMode = !this.debugMode;
+        console.log(this.debugMode ? '🔍 Debug: Showing VELOCITY field' : '🎨 Debug: Showing COLOR field');
+    }
 
     render(simulation) {
         if (!this.ready || !simulation.ready) return;
@@ -135,7 +141,9 @@ export default class Renderer {
         gl.vertexAttribPointer(positionAttrib, 2, gl.FLOAT, false, 0, 0);
 
         gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, simulation.colorTexture1);
+        // Toggle between color and velocity visualization
+        const sourceTexture = this.debugMode ? simulation.velocityTexture1 : simulation.colorTexture1;
+        gl.bindTexture(gl.TEXTURE_2D, sourceTexture);
         let textureUniform = gl.getUniformLocation(this.passThroughProgram, 'u_texture');
         gl.uniform1i(textureUniform, 0);
 

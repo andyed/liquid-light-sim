@@ -15,8 +15,8 @@ export default class Simulation {
         this.gl = renderer.gl;
         
         // Physics parameters - v0 lessons: document safe ranges
-        this.viscosity = 0.5;  // Valid: 0.1-10.0, Safe: 0.5-2.0, Default: 0.5
-        this.diffusionRate = 0.1;  // Color diffusion
+        this.viscosity = 0.1;  // Valid: 0.01-10.0, Safe: 0.1-2.0, Default: 0.1 (lowered for responsive jets)
+        this.diffusionRate = 0.05;  // Color diffusion (lowered to preserve details)
         this.rotationAmount = 0.0;  // Current rotation force
         this.jetForce = {x: 0, y: 0, strength: 0};  // Jet impulse tool
         

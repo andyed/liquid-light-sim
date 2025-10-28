@@ -37,6 +37,7 @@
 
 ### Testing & Debugging 🧪
 - **P** - Pause/Resume simulation
+- **M** - Toggle velocity visualization (see invisible forces!)
 - **Ctrl+T** - Run automated test suite
 - **Ctrl+S** - Save current state to file
 
