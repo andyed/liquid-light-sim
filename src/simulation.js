@@ -17,6 +17,7 @@ export default class Simulation {
         // Physics parameters - v0 lessons: document safe ranges
         this.viscosity = 0.1;  // Valid: 0.01-10.0, Safe: 0.1-2.0, Default: 0.1 (lowered for responsive jets)
         this.diffusionRate = 0.05;  // Color diffusion (lowered to preserve details)
+        this.spreadStrength = 2.0;  // Concentration-driven pressure spreading (NEW)
         this.rotationAmount = 0.0;  // Current rotation force
         this.jetForce = {x: 0, y: 0, strength: 0};  // Jet impulse tool
         
@@ -75,6 +76,11 @@ export default class Simulation {
         this.splatProgram = this.renderer.createProgram(
             fullscreenVert,
             await loadShader('src/shaders/splat.frag.glsl')
+        );
+        
+        this.concentrationPressureProgram = this.renderer.createProgram(
+            fullscreenVert,
+            await loadShader('src/shaders/concentration-pressure.frag.glsl')
         );
 
         const width = gl.canvas.width;
@@ -229,19 +235,22 @@ export default class Simulation {
         // 1. Apply external forces (rotation, jet)
         this.applyForces(dt);
 
-        // 2. Advect velocity (self-advection)
+        // 2. Apply concentration pressure (NEW - makes accumulated ink spread)
+        this.applyConcentrationPressure();
+
+        // 3. Advect velocity (self-advection)
         this.advectVelocity(dt);
 
-        // 3. Apply viscosity (NEW - adds thickness)
+        // 4. Apply viscosity (adds thickness)
         this.applyViscosity(dt);
 
-        // 4. Make velocity field incompressible (pressure projection)
+        // 5. Make velocity field incompressible (pressure projection)
         this.projectVelocity();
 
-        // 5. Advect color by velocity field
+        // 6. Advect color by velocity field
         this.advectColor(dt);
 
-        // 6. Diffuse color
+        // 7. Diffuse color
         this.diffuseColor(dt);
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -263,6 +272,35 @@ export default class Simulation {
         gl.bindTexture(gl.TEXTURE_2D, this.velocityTexture1);
         gl.uniform1i(gl.getUniformLocation(this.forcesProgram, 'u_velocity_texture'), 0);
         gl.uniform1f(gl.getUniformLocation(this.forcesProgram, 'u_rotation_amount'), this.rotationAmount);
+
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        this.swapVelocityTextures();
+    }
+
+    applyConcentrationPressure() {
+        const gl = this.gl;
+        
+        gl.useProgram(this.concentrationPressureProgram);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.velocityFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.velocityTexture2, 0);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.renderer.quadBuffer);
+        const positionAttrib = gl.getAttribLocation(this.concentrationPressureProgram, 'a_position');
+        gl.enableVertexAttribArray(positionAttrib);
+        gl.vertexAttribPointer(positionAttrib, 2, gl.FLOAT, false, 0, 0);
+
+        // Bind color texture (to measure concentration)
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.colorTexture1);
+        gl.uniform1i(gl.getUniformLocation(this.concentrationPressureProgram, 'u_color_texture'), 0);
+
+        // Bind velocity texture
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, this.velocityTexture1);
+        gl.uniform1i(gl.getUniformLocation(this.concentrationPressureProgram, 'u_velocity_texture'), 1);
+
+        // Set spreading strength parameter
+        gl.uniform1f(gl.getUniformLocation(this.concentrationPressureProgram, 'u_spread_strength'), this.spreadStrength);
 
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         this.swapVelocityTextures();

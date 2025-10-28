@@ -52,6 +52,9 @@ class App {
             this.perfMonitor.logStats();
         }
 
+        // Update controller (continuous injection when buttons held)
+        this.controller.update();
+        
         this.simulation.update(deltaTime);
         this.renderer.render(this.simulation);
 

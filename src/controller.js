@@ -14,6 +14,10 @@ export default class Controller {
         this.lastMouseY = 0;
         this.mouseVelocityX = 0;
         this.mouseVelocityY = 0;
+        
+        // Current mouse position for continuous injection
+        this.currentMouseX = 0;
+        this.currentMouseY = 0;
 
         const canvas = this.gl.canvas;
         
@@ -40,6 +44,16 @@ export default class Controller {
     }
 
     onMouseDown(e) {
+        const rect = this.gl.canvas.getBoundingClientRect();
+        const x = (e.clientX - rect.left) / rect.width;
+        const y = 1.0 - (e.clientY - rect.top) / rect.height;
+        
+        // Initialize position
+        this.currentMouseX = x;
+        this.currentMouseY = y;
+        this.lastMouseX = x;
+        this.lastMouseY = y;
+        
         if (e.button === 0) {
             // Left click - normal color injection
             this.isMouseDown = true;
@@ -62,6 +76,10 @@ export default class Controller {
         const x = (e.clientX - rect.left) / rect.width;
         const y = 1.0 - (e.clientY - rect.top) / rect.height;
         
+        // Update current mouse position
+        this.currentMouseX = x;
+        this.currentMouseY = y;
+        
         // Calculate mouse velocity (for jet direction)
         const dx = x - this.lastMouseX;
         const dy = y - this.lastMouseY;
@@ -69,9 +87,19 @@ export default class Controller {
         this.mouseVelocityY = dy;
         this.lastMouseX = x;
         this.lastMouseY = y;
+    }
+    
+    /**
+     * Called every frame to inject continuously while mouse is held
+     */
+    update() {
+        const x = this.currentMouseX;
+        const y = this.currentMouseY;
+        const dx = this.mouseVelocityX;
+        const dy = this.mouseVelocityY;
 
         if (this.isMouseDown || (this.isSpacePressed && this.isRightMouseDown)) {
-            // Normal splat - color injection with user's selected color
+            // Continuous color injection - like pouring ink
             this.simulation.splat(x, y, this.currentColor, 0.02);
         } 
         
@@ -81,13 +109,13 @@ export default class Controller {
             
             if (speed > 0.001) {
                 // Moving: directional jet (scaled for resolution)
-                const forceMultiplier = 5000.0; // 10x stronger to overcome damping
+                const forceMultiplier = 5000.0;
                 const vx = dx * forceMultiplier;
                 const vy = dy * forceMultiplier;
                 this.simulation.splatVelocity(x, y, vx, vy, 0.2);
             } else {
                 // Stationary: explosive radial burst
-                const burstStrength = 500.0; // 10x stronger
+                const burstStrength = 500.0;
                 const burstRadius = 0.2;
                 
                 for (let i = 0; i < 8; i++) {
@@ -128,6 +156,16 @@ export default class Controller {
             const nextIndex = (currentIndex + 1) % viscosities.length;
             this.simulation.viscosity = viscosities[nextIndex];
             console.log(`Viscosity: ${this.simulation.viscosity} (lower = more responsive jets)`);
+        }
+        
+        // Concentration spreading controls
+        else if (e.key === 'b') {
+            // B key: Cycle spreading strength: 0 -> 1 -> 2 -> 4 -> 0
+            const strengths = [0, 1.0, 2.0, 4.0];
+            const currentIndex = strengths.findIndex(s => Math.abs(s - this.simulation.spreadStrength) < 0.1);
+            const nextIndex = (currentIndex + 1) % strengths.length;
+            this.simulation.spreadStrength = strengths[nextIndex];
+            console.log(`Spreading: ${this.simulation.spreadStrength} (ink accumulation pressure)`);
         }
         
         // Pause/Resume (F004 requirement: freeze state for debugging)
@@ -176,12 +214,16 @@ export default class Controller {
         const x = (touch.clientX - rect.left) / rect.width;
         const y = 1.0 - (touch.clientY - rect.top) / rect.height;
         
+        // Initialize position
+        this.currentMouseX = x;
+        this.currentMouseY = y;
+        this.lastMouseX = x;
+        this.lastMouseY = y;
+        
         // Single touch = left-click (paint)
         // Two fingers = jet (handled in touchmove)
         if (e.touches.length === 1) {
             this.isMouseDown = true;
-            this.lastMouseX = x;
-            this.lastMouseY = y;
             console.log('👆 Touch start: paint mode');
         } else if (e.touches.length === 2) {
             this.isRightMouseDown = true;
@@ -196,6 +238,10 @@ export default class Controller {
         const x = (touch.clientX - rect.left) / rect.width;
         const y = 1.0 - (touch.clientY - rect.top) / rect.height;
         
+        // Update current position
+        this.currentMouseX = x;
+        this.currentMouseY = y;
+        
         // Calculate touch velocity
         const dx = x - this.lastMouseX;
         const dy = y - this.lastMouseY;
@@ -203,31 +249,6 @@ export default class Controller {
         this.mouseVelocityY = dy;
         this.lastMouseX = x;
         this.lastMouseY = y;
-        
-        if (e.touches.length === 1 && this.isMouseDown) {
-            // Single finger: paint
-            this.simulation.splat(x, y, this.currentColor, 0.02);
-        } else if (e.touches.length === 2 || this.isRightMouseDown) {
-            // Two fingers: jet impulse
-            const speed = Math.sqrt(dx * dx + dy * dy);
-            
-            if (speed > 0.001) {
-                const forceMultiplier = 5000.0;
-                const vx = dx * forceMultiplier;
-                const vy = dy * forceMultiplier;
-                this.simulation.splatVelocity(x, y, vx, vy, 0.2);
-            } else {
-                const burstStrength = 500.0;
-                const burstRadius = 0.2;
-                
-                for (let i = 0; i < 8; i++) {
-                    const angle = i * (Math.PI / 4);
-                    const vx = Math.cos(angle) * burstStrength;
-                    const vy = Math.sin(angle) * burstStrength;
-                    this.simulation.splatVelocity(x, y, vx, vy, burstRadius);
-                }
-            }
-        }
     }
 
     onTouchEnd(e) {
