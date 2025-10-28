@@ -20,6 +20,7 @@ export default class Simulation {
         this.spreadStrength = 0.0;  // Concentration pressure (removed - not real physics)
         this.rotationAmount = 0.0;  // Current rotation force
         this.jetForce = {x: 0, y: 0, strength: 0};  // Jet impulse tool
+        this.useMacCormack = true;  // High-fidelity advection (eliminates numerical diffusion)
         
         // Iteration counts
         this.viscosityIterations = 20;  // Jacobi iterations for viscosity
