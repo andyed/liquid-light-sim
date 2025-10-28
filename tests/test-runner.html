@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulation Test Runner</title>
+    <style>
+        body {
+            font-family: 'Monaco', 'Courier New', monospace;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 { color: #4fc3f7; }
+        h2 { color: #81c784; }
+        .test-section {
+            background: #252526;
+            padding: 20px;
+            margin: 20px 0;
+            border-left: 4px solid #4fc3f7;
+            border-radius: 4px;
+        }
+        .test-result {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .test-pass {
+            background: #1b5e20;
+            border-left: 4px solid #4caf50;
+        }
+        .test-fail {
+            background: #5d1414;
+            border-left: 4px solid #f44336;
+        }
+        .test-pending {
+            background: #3e2723;
+            border-left: 4px solid #ff9800;
+        }
+        button {
+            background: #4fc3f7;
+            color: #1e1e1e;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 4px;
+            margin: 5px;
+            font-weight: bold;
+        }
+        button:hover {
+            background: #81d4fa;
+        }
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        #test-output {
+            background: #1e1e1e;
+            border: 1px solid #4fc3f7;
+            padding: 15px;
+            margin: 20px 0;
+            font-size: 14px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .console-log { color: #d4d4d4; }
+        .console-error { color: #f44336; }
+        .console-success { color: #4caf50; }
+        .console-warning { color: #ff9800; }
+        canvas {
+            border: 2px solid #4fc3f7;
+            display: block;
+            margin: 20px auto;
+            max-width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Fluid Simulation Test Runner</h1>
+    <p>Automated testing suite for water layer physics validation</p>
+
+    <div class="test-section">
+        <h2>Quick Actions</h2>
+        <button onclick="runAllTests()">▶️ Run All Tests</button>
+        <button onclick="runPhysicsTests()">⚡ Physics Tests</button>
+        <button onclick="runPerformanceTests()">📊 Performance Tests</button>
+        <button onclick="captureState()">📸 Capture State</button>
+        <button onclick="clearOutput()">🗑️ Clear Output</button>
+    </div>
+
+    <div class="test-section">
+        <h2>Manual Tests</h2>
+        <button onclick="testRotation()">🔄 Test Rotation</button>
+        <button onclick="testViscosity()">💧 Test Viscosity</button>
+        <button onclick="testPressureSolve()">⚙️ Test Pressure</button>
+        <button onclick="checkForNaN()">🔍 Check for NaN</button>
+    </div>
+
+    <div id="test-output"></div>
+
+    <canvas id="gl-canvas" width="512" height="512"></canvas>
+
+    <script type="module">
+        import Renderer from '../src/renderer.js';
+        import Simulation from '../src/simulation.js';
+        import { SimulationTester, PerformanceMonitor } from './test-utils.js';
+
+        // Initialize simulation for testing
+        const renderer = new Renderer();
+        const simulation = new Simulation(renderer);
+        const tester = new SimulationTester(simulation);
+        const perfMonitor = new PerformanceMonitor();
+
+        // Make available globally
+        window.simulation = simulation;
+        window.tester = tester;
+        window.perfMonitor = perfMonitor;
+        window.testResults = [];
+
+        // Initialize
+        (async () => {
+            await renderer.init();
+            await simulation.init();
+            log('✅ Simulation initialized', 'success');
+            
+            // Start animation loop for visual tests
+            let lastTime = 0;
+            function animate(currentTime) {
+                const deltaTime = (currentTime - lastTime) * 0.001;
+                lastTime = currentTime;
+                
+                perfMonitor.recordFrame(deltaTime);
+                simulation.update(deltaTime);
+                renderer.render(simulation);
+                
+                requestAnimationFrame(animate);
+            }
+            animate(0);
+        })();
+
+        // Logging utilities
+        function log(message, type = 'log') {
+            const output = document.getElementById('test-output');
+            const div = document.createElement('div');
+            div.className = `console-${type}`;
+            div.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            output.appendChild(div);
+            output.scrollTop = output.scrollHeight;
+            console.log(message);
+        }
+
+        window.clearOutput = () => {
+            document.getElementById('test-output').innerHTML = '';
+        };
+
+        // Test runners
+        window.runAllTests = async () => {
+            log('🧪 Running all tests...', 'success');
+            await runPhysicsTests();
+            await runPerformanceTests();
+            log('✅ All tests complete!', 'success');
+        };
+
+        window.runPhysicsTests = () => {
+            log('⚡ Running physics tests...', 'success');
+            const results = tester.runTests();
+            
+            if (results.noNaN) {
+                log('✅ No NaN/Infinity detected', 'success');
+            } else {
+                log('❌ NaN/Infinity found in simulation!', 'error');
+            }
+            
+            log(`📊 Velocity - Max: ${results.velocityStats.maxSpeed.toFixed(6)}, Avg: ${results.velocityStats.avgSpeed.toFixed(6)}`, 'log');
+        };
+
+        window.runPerformanceTests = () => {
+            log('📊 Running performance tests...', 'success');
+            const stats = perfMonitor.getStats();
+            
+            if (stats) {
+                log(`FPS: ${stats.fps} (Target: ≥55)`, stats.isSmooth ? 'success' : 'warning');
+                log(`Frame Time: ${stats.avgFrameTime}ms (min: ${stats.minFrameTime}, max: ${stats.maxFrameTime})`, 'log');
+                
+                if (parseFloat(stats.fps) < 55) {
+                    log('⚠️  Performance below target!', 'warning');
+                }
+            } else {
+                log('⚠️  Not enough data yet, wait a few seconds', 'warning');
+            }
+        };
+
+        window.testRotation = () => {
+            log('🔄 Testing rotation force...', 'success');
+            const before = tester.analyzeVelocity();
+            log(`Before rotation - Avg speed: ${before.avgSpeed.toFixed(6)}`, 'log');
+            
+            // Apply rotation
+            simulation.setRotation(0.05);
+            setTimeout(() => {
+                const after = tester.analyzeVelocity();
+                log(`After rotation - Avg speed: ${after.avgSpeed.toFixed(6)}`, 'log');
+                
+                if (after.avgSpeed > before.avgSpeed * 1.1) {
+                    log('✅ Rotation creates velocity increase', 'success');
+                } else {
+                    log('❌ Rotation not working - no velocity increase detected!', 'error');
+                }
+                
+                simulation.setRotation(0.0);
+            }, 1000);
+        };
+
+        window.testViscosity = () => {
+            log('💧 Testing viscosity...', 'success');
+            const viscosities = [0.5, 2.0, 5.0];
+            let index = 0;
+            
+            function testNext() {
+                if (index >= viscosities.length) {
+                    log('✅ Viscosity test complete', 'success');
+                    return;
+                }
+                
+                const v = viscosities[index];
+                simulation.viscosity = v;
+                log(`Setting viscosity to ${v}...`, 'log');
+                
+                setTimeout(() => {
+                    const stats = tester.analyzeVelocity();
+                    log(`  Avg speed: ${stats.avgSpeed.toFixed(6)}`, 'log');
+                    index++;
+                    testNext();
+                }, 1000);
+            }
+            
+            testNext();
+        };
+
+        window.testPressureSolve = () => {
+            log('⚙️  Testing pressure solve (incompressibility)...', 'success');
+            
+            // Inject splats in multiple locations
+            simulation.splat(0.3, 0.3, {r: 1, g: 0, b: 0}, 0.05);
+            simulation.splat(0.7, 0.7, {r: 0, g: 1, b: 0}, 0.05);
+            
+            setTimeout(() => {
+                const check = tester.checkForNaN();
+                if (check) {
+                    log('✅ Pressure solve stable (no NaN)', 'success');
+                } else {
+                    log('❌ Pressure solve unstable!', 'error');
+                }
+            }, 2000);
+        };
+
+        window.checkForNaN = () => {
+            log('🔍 Checking for NaN/Infinity...', 'success');
+            const result = tester.checkForNaN();
+            
+            if (result) {
+                log('✅ No NaN/Infinity detected', 'success');
+            } else {
+                log('❌ NaN/Infinity found! Simulation may be unstable', 'error');
+            }
+        };
+
+        window.captureState = () => {
+            log('📸 Capturing simulation state...', 'success');
+            const state = tester.captureState('test-capture');
+            tester.saveState(state);
+            log('💾 State saved to download', 'success');
+        };
+    </script>
+</body>
+</html>
