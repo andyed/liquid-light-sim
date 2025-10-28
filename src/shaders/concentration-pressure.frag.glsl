@@ -26,16 +26,21 @@ void main() {
     float topConc = dot(top.rgb, vec3(0.299, 0.587, 0.114));
     float bottomConc = dot(bottom.rgb, vec3(0.299, 0.587, 0.114));
     
-    // Calculate pressure gradient (high concentration = high pressure)
-    // Fluid flows from high to low pressure
-    vec2 pressureGradient = vec2(
-        (leftConc - rightConc),   // Push away from high concentration
-        (bottomConc - topConc)
+    // Calculate concentration gradient (central differences)
+    // Gradient points from low to high concentration
+    // We want force opposite to gradient (from high to low)
+    vec2 gradient = vec2(
+        (rightConc - leftConc) * 0.5,   // dC/dx
+        (topConc - bottomConc) * 0.5    // dC/dy
     );
+    
+    // Force opposes gradient: pushes from high concentration to low
+    // Strong force to overcome pressure projection damping
+    // Scale by concentration squared to amplify high-concentration areas
+    vec2 spreadForce = -gradient * u_spread_strength * 50.0 * (centerConcentration * centerConcentration);
     
     // Add spreading force to velocity
     vec2 velocity = texture(u_velocity_texture, v_texCoord).xy;
-    vec2 spreadForce = pressureGradient * u_spread_strength * centerConcentration;
     
     outColor = vec4(velocity + spreadForce, 0.0, 0.0);
 }

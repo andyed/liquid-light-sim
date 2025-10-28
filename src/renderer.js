@@ -16,7 +16,7 @@ export default class Renderer {
         console.log('✓ Float texture extension enabled');
 
         this.backgroundColor = { r: 0.0, g: 0.0, b: 0.0 };
-        this.debugMode = false; // Toggle with M key to show velocity field
+        this.debugMode = 0; // 0=color, 1=velocity, 2=concentration gradient
 
         this.resize();
         window.addEventListener('resize', () => this.resize());
@@ -33,6 +33,10 @@ export default class Renderer {
         // Load boundary shader for circular container visualization
         const boundaryFrag = await loadShader('src/shaders/boundary.frag.glsl');
         this.boundaryProgram = this.createProgram(passThroughVert, boundaryFrag);
+        
+        // Load concentration debug shader
+        const debugConcentrationFrag = await loadShader('src/shaders/debug-concentration.frag.glsl');
+        this.debugConcentrationProgram = this.createProgram(passThroughVert, debugConcentrationFrag);
         
         // Create intermediate texture for boundary rendering
         this.createBoundaryTexture();
@@ -120,8 +124,9 @@ export default class Renderer {
     }
     
     toggleDebugMode() {
-        this.debugMode = !this.debugMode;
-        console.log(this.debugMode ? '🔍 Debug: Showing VELOCITY field' : '🎨 Debug: Showing COLOR field');
+        this.debugMode = (this.debugMode + 1) % 3;
+        const modes = ['🎨 COLOR', '🔍 VELOCITY', '🌊 CONCENTRATION GRADIENT'];
+        console.log(`Debug mode: ${modes[this.debugMode]}`);
     }
 
     render(simulation) {
@@ -141,11 +146,25 @@ export default class Renderer {
         gl.vertexAttribPointer(positionAttrib, 2, gl.FLOAT, false, 0, 0);
 
         gl.activeTexture(gl.TEXTURE0);
-        // Toggle between color and velocity visualization
-        const sourceTexture = this.debugMode ? simulation.velocityTexture1 : simulation.colorTexture1;
-        gl.bindTexture(gl.TEXTURE_2D, sourceTexture);
-        let textureUniform = gl.getUniformLocation(this.passThroughProgram, 'u_texture');
-        gl.uniform1i(textureUniform, 0);
+        
+        if (this.debugMode === 2) {
+            // Concentration gradient debug mode
+            gl.useProgram(this.debugConcentrationProgram);
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
+            positionAttrib = gl.getAttribLocation(this.debugConcentrationProgram, 'a_position');
+            gl.enableVertexAttribArray(positionAttrib);
+            gl.vertexAttribPointer(positionAttrib, 2, gl.FLOAT, false, 0, 0);
+            
+            gl.bindTexture(gl.TEXTURE_2D, simulation.colorTexture1);
+            let textureUniform = gl.getUniformLocation(this.debugConcentrationProgram, 'u_color_texture');
+            gl.uniform1i(textureUniform, 0);
+        } else {
+            // Color or velocity mode
+            const sourceTexture = this.debugMode === 1 ? simulation.velocityTexture1 : simulation.colorTexture1;
+            gl.bindTexture(gl.TEXTURE_2D, sourceTexture);
+            let textureUniform = gl.getUniformLocation(this.passThroughProgram, 'u_texture');
+            gl.uniform1i(textureUniform, 0);
+        }
 
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         
@@ -162,8 +181,8 @@ export default class Renderer {
         
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, this.boundaryTexture);
-        textureUniform = gl.getUniformLocation(this.boundaryProgram, 'u_texture');
-        gl.uniform1i(textureUniform, 0);
+        let boundaryTextureUniform = gl.getUniformLocation(this.boundaryProgram, 'u_texture');
+        gl.uniform1i(boundaryTextureUniform, 0);
         
         // Set boundary parameters
         const centerUniform = gl.getUniformLocation(this.boundaryProgram, 'u_center');

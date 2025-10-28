@@ -30,10 +30,17 @@
 
 ### Viscosity Control 💧
 - **V** - Cycle viscosity presets
+  - 0.1 (Very watery - responsive jets)
   - 0.5 (Watery - fast, energetic)
   - 1.0 (Standard - balanced)
   - 2.0 (Thick - slow swirls)
-  - 5.0 (Syrupy - very slow, organic)
+
+### Diffusion Control 🌊
+- **D** - Cycle molecular diffusion rate
+  - 0.0001 (Realistic - very slow molecular spreading)
+  - 0.001 (Faster - visible spreading)
+  - 0.01 (Fast - rapid mixing)
+  - Note: Real ink has D ≈ 10⁻¹⁰ to 10⁻⁸ m²/s
 
 ### Testing & Debugging 🧪
 - **P** - Pause/Resume simulation

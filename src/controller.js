@@ -7,7 +7,7 @@ export default class Controller {
         this.isMouseDown = false;
         this.isRightMouseDown = false;
         this.isSpacePressed = false;
-        this.currentColor = { r: 0.3, g: 0.7, b: 0.9 };  // Default color
+        this.currentColor = { r: 0.3, g: 0.898, b: 1.0 };  // Default: cyan (#4de5ff)
         
         // Track mouse position for velocity calculation
         this.lastMouseX = 0;
@@ -100,7 +100,23 @@ export default class Controller {
 
         if (this.isMouseDown || (this.isSpacePressed && this.isRightMouseDown)) {
             // Continuous color injection - like pouring ink
-            this.simulation.splat(x, y, this.currentColor, 0.02);
+            if (!this._injectionFrameCount) {
+                this._injectionFrameCount = 0;
+            }
+            this._injectionFrameCount++;
+            
+            // Log every 30 frames (every ~0.5 seconds at 60fps)
+            if (this._injectionFrameCount % 30 === 1) {
+                console.log(`🎨 Injecting... ${this._injectionFrameCount} frames at`, x.toFixed(2), y.toFixed(2));
+            }
+            
+            // Larger radius for overlapping/merging splats (creates continuous pool)
+            this.simulation.splat(x, y, this.currentColor, 0.05);
+        } else {
+            if (this._injectionFrameCount) {
+                console.log(`✅ Injection complete - ${this._injectionFrameCount} total frames`);
+                this._injectionFrameCount = 0;
+            }
         } 
         
         if (this.isRightMouseDown) {
@@ -158,20 +174,20 @@ export default class Controller {
             console.log(`Viscosity: ${this.simulation.viscosity} (lower = more responsive jets)`);
         }
         
-        // Concentration spreading controls
-        else if (e.key === 'b') {
-            // B key: Cycle spreading strength: 0 -> 1 -> 2 -> 4 -> 0
-            const strengths = [0, 1.0, 2.0, 4.0];
-            const currentIndex = strengths.findIndex(s => Math.abs(s - this.simulation.spreadStrength) < 0.1);
-            const nextIndex = (currentIndex + 1) % strengths.length;
-            this.simulation.spreadStrength = strengths[nextIndex];
-            console.log(`Spreading: ${this.simulation.spreadStrength} (ink accumulation pressure)`);
+        // Diffusion controls (molecular spreading)
+        else if (e.key === 'd') {
+            // D key: Cycle diffusion rates (realistic to fast)
+            const rates = [0.0001, 0.001, 0.01, 0.1];
+            const currentIndex = rates.findIndex(r => Math.abs(r - this.simulation.diffusionRate) < 0.00005);
+            const nextIndex = (currentIndex + 1) % rates.length;
+            this.simulation.diffusionRate = rates[nextIndex];
+            console.log(`🌊 Diffusion: ${this.simulation.diffusionRate} (molecular spreading rate)`);
         }
         
         // Pause/Resume (F004 requirement: freeze state for debugging)
         else if (e.key === 'p') {
             this.simulation.paused = !this.simulation.paused;
-            console.log(this.simulation.paused ? '⏸️  Paused' : '▶️  Resumed');
+            console.log(this.simulation.paused ? '⏸️  Paused (colors stay put) - Try painting now!' : '▶️  Resumed');
         }
         
         // Debug visualization
@@ -271,9 +287,10 @@ export default class Controller {
         
         // Update current color for splats
         this.currentColor = { r, g, b };
+        console.log(`🎨 Color changed to ${hex}`);
         
-        // Update background color
-        this.renderer.setBackgroundColor({ r, g, b });
+        // DON'T update background - keep it black for contrast!
+        // this.renderer.setBackgroundColor({ r, g, b });
     }
 }
 

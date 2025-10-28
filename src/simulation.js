@@ -14,10 +14,10 @@ export default class Simulation {
         this.renderer = renderer;
         this.gl = renderer.gl;
         
-        // Physics parameters - v0 lessons: document safe ranges
-        this.viscosity = 0.1;  // Valid: 0.01-10.0, Safe: 0.1-2.0, Default: 0.1 (lowered for responsive jets)
-        this.diffusionRate = 0.05;  // Color diffusion (lowered to preserve details)
-        this.spreadStrength = 2.0;  // Concentration-driven pressure spreading (NEW)
+        // Physics parameters - based on real fluid properties
+        this.viscosity = 0.1;  // Water-like: ~1 mPa·s, Valid: 0.01-10.0
+        this.diffusionRate = 0.0001;  // Molecular diffusion: D ≈ 10⁻¹⁰ to 10⁻⁸ m²/s (very slow!)
+        this.spreadStrength = 0.0;  // Concentration pressure (removed - not real physics)
         this.rotationAmount = 0.0;  // Current rotation force
         this.jetForce = {x: 0, y: 0, strength: 0};  // Jet impulse tool
         
@@ -78,10 +78,16 @@ export default class Simulation {
             await loadShader('src/shaders/splat.frag.glsl')
         );
         
-        this.concentrationPressureProgram = this.renderer.createProgram(
-            fullscreenVert,
-            await loadShader('src/shaders/concentration-pressure.frag.glsl')
-        );
+        try {
+            this.concentrationPressureProgram = this.renderer.createProgram(
+                fullscreenVert,
+                await loadShader('src/shaders/concentration-pressure.frag.glsl')
+            );
+            console.log('✓ Concentration pressure shader loaded');
+        } catch (e) {
+            console.error('❌ Failed to load concentration pressure shader:', e);
+            this.concentrationPressureProgram = null;
+        }
 
         const width = gl.canvas.width;
         const height = gl.canvas.height;
@@ -184,7 +190,10 @@ export default class Simulation {
     }
 
     splat(x, y, color, radius = 0.01) {
-        if (!this.ready || !this.renderer.ready) return;
+        if (!this.ready || !this.renderer.ready) {
+            console.warn('⚠️ Splat called but not ready:', {ready: this.ready, rendererReady: this.renderer.ready});
+            return;
+        }
 
         const gl = this.gl;
 
@@ -235,8 +244,10 @@ export default class Simulation {
         // 1. Apply external forces (rotation, jet)
         this.applyForces(dt);
 
-        // 2. Apply concentration pressure (NEW - makes accumulated ink spread)
-        this.applyConcentrationPressure();
+        // 2. Apply concentration pressure (DISABLED - unstable, using diffusion instead)
+        // if (this.concentrationPressureProgram && this.spreadStrength > 0) {
+        //     this.applyConcentrationPressure();
+        // }
 
         // 3. Advect velocity (self-advection)
         this.advectVelocity(dt);
@@ -250,8 +261,10 @@ export default class Simulation {
         // 6. Advect color by velocity field
         this.advectColor(dt);
 
-        // 7. Diffuse color
-        this.diffuseColor(dt);
+        // 7. Diffuse color (only if diffusion rate > 0)
+        if (this.diffusionRate > 0) {
+            this.diffuseColor(dt);
+        }
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
@@ -279,6 +292,16 @@ export default class Simulation {
 
     applyConcentrationPressure() {
         const gl = this.gl;
+        
+        if (!this._concentrationFrameCount) {
+            this._concentrationFrameCount = 0;
+        }
+        this._concentrationFrameCount++;
+        
+        // Log every 60 frames to confirm it's running
+        if (this._concentrationFrameCount % 60 === 1) {
+            console.log(`🌊 Concentration pressure: ${this._concentrationFrameCount} frames, strength: ${this.spreadStrength}`);
+        }
         
         gl.useProgram(this.concentrationPressureProgram);
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.velocityFBO);

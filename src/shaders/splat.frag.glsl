@@ -13,14 +13,18 @@ void main() {
     float d = distance(v_texCoord, u_point);
     vec4 existing = texture(u_texture, v_texCoord);
     
-    if (d < u_radius) {
-        // Smooth falloff from center to edge
-        float alpha = smoothstep(u_radius, 0.0, d) * 0.5; // Reduced intensity
-        
-        // Mix instead of add to prevent oversaturation
-        vec3 blended = mix(existing.rgb, u_color, alpha);
-        outColor = vec4(blended, 1.0);
-    } else {
-        outColor = existing;
-    }
+    // Continuous source injection with Gaussian falloff
+    // Models a point source adding concentration to the field
+    float gaussian = exp(-d * d / (u_radius * u_radius * 0.5));
+    float sourceStrength = 0.015; // Gentle continuous injection
+    
+    // Add to concentration field (passive scalar)
+    // This is the proper physics: ∂φ/∂t = source + advection + diffusion
+    vec3 newConcentration = existing.rgb + u_color * gaussian * sourceStrength;
+    
+    // Cap at 0.8 to preserve color information (prevents pure white)
+    // When it spreads, it will thin from bright cyan to faint cyan
+    newConcentration = min(newConcentration, u_color * 0.8);
+    
+    outColor = vec4(newConcentration, 1.0);
 }

@@ -2,6 +2,14 @@
 
 ## [Unreleased] - 2025-10-28
 
+### Changed - Proper Passive Scalar Physics Model
+- **BREAKING:** Replaced discrete splat system with continuous source injection
+- Implemented proper advection-diffusion equation for color transport (∂φ/∂t = source + u·∇φ + D∇²φ)
+- Color now properly advects with velocity field (swirls, rotates, responds to jets)
+- Realistic molecular diffusion rates (D ≈ 10⁻¹⁰ to 10⁻⁸ m²/s)
+- Gaussian source injection with saturation cap (prevents white oversaturation)
+- Removed concentration pressure (non-physical, unstable)
+
 ### Added - Milestone 2 Water Layer Complete
 - ✅ **Viscosity simulation** - Fluid thickness and drag (20 Jacobi iterations)
 - ✅ **Circular container boundary** - Visible glass plate with physics constraints
