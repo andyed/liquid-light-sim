@@ -61,9 +61,8 @@ void main() {
     // Clamp corrected value to neighborhood bounds
     outColor = clamp(corrected, minVal, maxVal);
     
-    // Aesthetic enhancement: Preserve sharp features
-    // If corrected value is close to limits, use it (sharper)
-    // Otherwise blend slightly with forward (smoother)
-    float sharpness = 0.85; // Magic number for aesthetics
+    // Aesthetic enhancement: Balance sharpness with smoothness
+    // Lower sharpness reduces banding artifacts
+    float sharpness = 0.75; // Balanced for quality without artifacts
     outColor = mix(forward, outColor, sharpness);
 }

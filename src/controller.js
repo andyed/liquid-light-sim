@@ -166,12 +166,12 @@ export default class Controller {
         
         // Viscosity controls
         else if (e.key === 'v') {
-            // Cycle viscosity: 0.1 -> 0.5 -> 1.0 -> 2.0 -> 0.1
-            const viscosities = [0.1, 0.5, 1.0, 2.0];
-            const currentIndex = viscosities.findIndex(v => Math.abs(v - this.simulation.viscosity) < 0.05);
+            // Cycle viscosity: 0.05 -> 0.1 -> 0.5 -> 1.0 -> 2.0 -> 0.05
+            const viscosities = [0.05, 0.1, 0.5, 1.0, 2.0];
+            const currentIndex = viscosities.findIndex(v => Math.abs(v - this.simulation.viscosity) < 0.03);
             const nextIndex = (currentIndex + 1) % viscosities.length;
             this.simulation.viscosity = viscosities[nextIndex];
-            console.log(`Viscosity: ${this.simulation.viscosity} (lower = more responsive jets)`);
+            console.log(`Viscosity: ${this.simulation.viscosity} (lower = longer-lasting vortices)`);
         }
         
         // Diffusion controls (molecular spreading)

@@ -16,7 +16,7 @@ void main() {
     // Continuous source injection with Gaussian falloff
     // Models a point source adding concentration to the field
     float gaussian = exp(-d * d / (u_radius * u_radius * 0.5));
-    float sourceStrength = 0.015; // Gentle continuous injection
+    float sourceStrength = 0.008; // Very gentle (doesn't disrupt flow)
     
     // Add to concentration field (passive scalar)
     // This is the proper physics: ∂φ/∂t = source + advection + diffusion

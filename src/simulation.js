@@ -15,13 +15,13 @@ export default class Simulation {
         this.gl = renderer.gl;
         
         // Physics parameters - based on real fluid properties
-        this.viscosity = 0.1;  // Water-like: ~1 mPa·s, Valid: 0.01-10.0
+        this.viscosity = 0.05;  // Very low viscosity (less damping, vortices persist longer)
         this.diffusionRate = 0.0001;  // Molecular diffusion: D ≈ 10⁻¹⁰ to 10⁻⁸ m²/s (very slow!)
         this.spreadStrength = 0.0;  // Concentration pressure (removed - not real physics)
         this.rotationAmount = 0.0;  // Current rotation force
         this.jetForce = {x: 0, y: 0, strength: 0};  // Jet impulse tool
         this.useMacCormack = true;  // High-fidelity advection (eliminates numerical diffusion)
-        this.vorticityStrength = 0.3;  // Vorticity confinement (adds small-scale turbulence)
+        this.vorticityStrength = 0.5;  // Vorticity confinement (adds small-scale turbulence, breaks up lines)
         
         // Iteration counts
         this.viscosityIterations = 20;  // Jacobi iterations for viscosity
