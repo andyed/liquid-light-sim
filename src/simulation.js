@@ -21,6 +21,7 @@ export default class Simulation {
         this.rotationAmount = 0.0;  // Current rotation force
         this.jetForce = {x: 0, y: 0, strength: 0};  // Jet impulse tool
         this.useMacCormack = true;  // High-fidelity advection (eliminates numerical diffusion)
+        this.vorticityStrength = 0.3;  // Vorticity confinement (adds small-scale turbulence)
         
         // Iteration counts
         this.viscosityIterations = 20;  // Jacobi iterations for viscosity
@@ -89,6 +90,11 @@ export default class Simulation {
             console.error('❌ Failed to load concentration pressure shader:', e);
             this.concentrationPressureProgram = null;
         }
+        
+        this.vorticityConfinementProgram = this.renderer.createProgram(
+            fullscreenVert,
+            await loadShader('src/shaders/vorticity-confinement.frag.glsl')
+        );
 
         const width = gl.canvas.width;
         const height = gl.canvas.height;
@@ -245,10 +251,10 @@ export default class Simulation {
         // 1. Apply external forces (rotation, jet)
         this.applyForces(dt);
 
-        // 2. Apply concentration pressure (DISABLED - unstable, using diffusion instead)
-        // if (this.concentrationPressureProgram && this.spreadStrength > 0) {
-        //     this.applyConcentrationPressure();
-        // }
+        // 2. Apply vorticity confinement (adds small-scale turbulence)
+        if (this.vorticityStrength > 0) {
+            this.applyVorticityConfinement();
+        }
 
         // 3. Advect velocity (self-advection)
         this.advectVelocity(dt);
@@ -286,6 +292,28 @@ export default class Simulation {
         gl.bindTexture(gl.TEXTURE_2D, this.velocityTexture1);
         gl.uniform1i(gl.getUniformLocation(this.forcesProgram, 'u_velocity_texture'), 0);
         gl.uniform1f(gl.getUniformLocation(this.forcesProgram, 'u_rotation_amount'), this.rotationAmount);
+
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        this.swapVelocityTextures();
+    }
+
+    applyVorticityConfinement() {
+        const gl = this.gl;
+        
+        gl.useProgram(this.vorticityConfinementProgram);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.velocityFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.velocityTexture2, 0);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.renderer.quadBuffer);
+        const positionAttrib = gl.getAttribLocation(this.vorticityConfinementProgram, 'a_position');
+        gl.enableVertexAttribArray(positionAttrib);
+        gl.vertexAttribPointer(positionAttrib, 2, gl.FLOAT, false, 0, 0);
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.velocityTexture1);
+        gl.uniform1i(gl.getUniformLocation(this.vorticityConfinementProgram, 'u_velocity_texture'), 0);
+        gl.uniform1f(gl.getUniformLocation(this.vorticityConfinementProgram, 'u_confinement_strength'), this.vorticityStrength);
+        gl.uniform2f(gl.getUniformLocation(this.vorticityConfinementProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
 
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         this.swapVelocityTextures();

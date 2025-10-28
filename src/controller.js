@@ -184,6 +184,16 @@ export default class Controller {
             console.log(`🌊 Diffusion: ${this.simulation.diffusionRate} (molecular spreading rate)`);
         }
         
+        // Vorticity confinement controls
+        else if (e.key === 't') {
+            // T key: Cycle turbulence strength (vorticity confinement)
+            const strengths = [0.0, 0.1, 0.3, 0.5, 1.0];
+            const currentIndex = strengths.findIndex(s => Math.abs(s - this.simulation.vorticityStrength) < 0.05);
+            const nextIndex = (currentIndex + 1) % strengths.length;
+            this.simulation.vorticityStrength = strengths[nextIndex];
+            console.log(`🌀 Turbulence: ${this.simulation.vorticityStrength} (vorticity confinement)`);
+        }
+        
         // Pause/Resume (F004 requirement: freeze state for debugging)
         else if (e.key === 'p') {
             this.simulation.paused = !this.simulation.paused;

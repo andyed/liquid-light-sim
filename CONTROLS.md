@@ -42,6 +42,14 @@
   - 0.01 (Fast - rapid mixing)
   - Note: Real ink has D ≈ 10⁻¹⁰ to 10⁻⁸ m²/s
 
+### Turbulence Control 🌀
+- **T** - Cycle vorticity confinement strength
+  - 0.0 (Off - smooth laminar flow)
+  - 0.1 (Subtle - gentle turbulence)
+  - 0.3 (Moderate - natural small-scale eddies) ⭐ Default
+  - 0.5 (Strong - active turbulence)
+  - 1.0 (Very strong - chaotic motion)
+
 ### Testing & Debugging 🧪
 - **P** - Pause/Resume simulation
 - **M** - Toggle velocity visualization (see invisible forces!)
