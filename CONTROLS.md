@@ -81,11 +81,23 @@
 
 ## UI Controls
 
-### Color Picker
-- Click the color picker in UI
-- Select any color
-- All left-click splats use your selected color
-- Also changes background tint
+### Color Wheel (Top-Left)
+- One-click hue selection (conic wheel)
+- Affects paint color and background light tint
+
+### Rotation Button (Bottom-Left)
+- Tap to toggle container rotation on/off
+
+### Hamburger Menu (Top-Right)
+- Touch-first slide-out panel with toggles and actions:
+  - Volumetric (L), Organic Flow (O), Paused (P)
+  - Viscosity cycle (V) with live value
+  - Clear Canvas, Run Quality Tests
+  - GitHub link
+
+### Jets (Right-Click)
+- Curl-preserving ring burst, repeats while held (≈250ms cadence)
+- Auto-stops after ~2 seconds per click to preserve stability
 
 ---
 

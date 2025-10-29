@@ -9,6 +9,8 @@ uniform float u_time;
 uniform vec2 u_resolution;
 uniform float u_distortionStrength; // 0.0 = off, 0.1 = subtle, 0.5 = strong
 uniform float u_smoothingStrength; // 0.0 = off, 0.5 = subtle, 1.0 = strong
+uniform float u_paletteDominance; // 0.0 = original, 1.0 = hard winner-takes-all
+uniform float u_paletteSoftPower; // softness of dominance (lower = softer)
 
 // Simplex noise for organic distortion
 vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
@@ -109,6 +111,18 @@ void main() {
     // Boost saturation for more vibrant look
     float luminance = dot(color.rgb, vec3(0.299, 0.587, 0.114));
     color.rgb = mix(vec3(luminance), color.rgb, 1.2);
+
+    // Winner-takes-all palette (soft): push toward dominant channel while preserving luminance
+    if (u_paletteDominance > 0.0) {
+        float lum = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+        // Softmax weights over channels to avoid abrupt snapping
+        float p = max(u_paletteSoftPower, 0.0001);
+        vec3 w = exp(vec3(color.r, color.g, color.b) * p);
+        float sumw = max(w.r + w.g + w.b, 1e-6);
+        vec3 softOneHot = w / sumw; // smoothly approaches one-hot as p increases
+        vec3 target = softOneHot * lum; // preserve luminance while biasing palette
+        color.rgb = mix(color.rgb, target, clamp(u_paletteDominance, 0.0, 1.0));
+    }
     
     outColor = color;
 }

@@ -22,6 +22,8 @@ export default class Renderer {
         this.usePostProcessing = true; // Organic flow distortion (O key to toggle)
         this.distortionStrength = 0.35; // 0.0-1.0, higher = more organic
         this.smoothingStrength = 0.6; // 0.0-1.0, bilateral blur strength
+        this.paletteDominance = 0.2; // 0.0-1.0, winner-takes-all strength
+        this.paletteSoftPower = 3.0; // softmax power; lower = softer, higher = snappier
 
         this.resize();
         window.addEventListener('resize', () => this.resize());
@@ -236,6 +238,8 @@ export default class Renderer {
             gl.uniform2f(gl.getUniformLocation(this.postProcessProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
             gl.uniform1f(gl.getUniformLocation(this.postProcessProgram, 'u_distortionStrength'), this.distortionStrength);
             gl.uniform1f(gl.getUniformLocation(this.postProcessProgram, 'u_smoothingStrength'), this.smoothingStrength);
+            gl.uniform1f(gl.getUniformLocation(this.postProcessProgram, 'u_paletteDominance'), this.paletteDominance);
+            gl.uniform1f(gl.getUniformLocation(this.postProcessProgram, 'u_paletteSoftPower'), this.paletteSoftPower);
             
             gl.drawArrays(gl.TRIANGLES, 0, 6);
             

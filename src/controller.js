@@ -39,6 +39,8 @@ export default class Controller {
         this.didJetThisClick = false; // kept for initial state logging
         this.lastJetTime = 0;
         this.jetIntervalMs = 250; // safe sustained repeat cadence
+        this.maxJetDurationMs = 2000; // hard cap per click
+        this.jetHoldStart = 0;
         
         // Light color rotation (for volumetric rendering)
         this.lightHue = 0; // 0-360 degrees
@@ -429,6 +431,13 @@ export default class Controller {
         // Handle jets (right-click): repeat while held
         if (this.isRightMouseDown) {
             const now = performance.now();
+            // Stop after max duration (require re-click to continue)
+            if (now - this.jetHoldStart >= this.maxJetDurationMs) {
+                this.isRightMouseDown = false;
+                this.didJetThisClick = false;
+                console.log('🧨 Jet: auto-stop (duration cap)');
+                return;
+            }
             if (now - this.lastJetTime < this.jetIntervalMs) {
                 return; // wait for next interval
             }
@@ -479,6 +488,7 @@ export default class Controller {
             this.didJetThisClick = false;
             // allow immediate first burst
             this.lastJetTime = 0;
+            this.jetHoldStart = performance.now();
             console.log('Jet: armed');
         }
     }
