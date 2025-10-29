@@ -24,6 +24,8 @@ export default class Controller {
         this.currentMouseY = 0;
 
         const canvas = this.gl.canvas;
+        // Disable native gesture handling so touches map to paint/jets
+        canvas.style.touchAction = 'none';
         
         // Bind event listeners
         this.canvas = canvas;
@@ -31,6 +33,11 @@ export default class Controller {
         this.canvas.addEventListener('mousemove', (e) => this.onMouseMove(e));
         this.canvas.addEventListener('mouseup', (e) => this.onMouseUp(e));
         this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+        // Touch input (painting and jets on mobile)
+        this.canvas.addEventListener('touchstart', (e) => this.onTouchStart(e), { passive: false });
+        this.canvas.addEventListener('touchmove', (e) => this.onTouchMove(e), { passive: false });
+        this.canvas.addEventListener('touchend', (e) => this.onTouchEnd(e), { passive: false });
+        this.canvas.addEventListener('touchcancel', (e) => this.onTouchEnd(e), { passive: false });
         
         document.addEventListener('keydown', (e) => this.onKeyDown(e));
         document.addEventListener('keyup', (e) => this.onKeyUp(e));
