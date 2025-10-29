@@ -16,7 +16,7 @@ export default class Simulation {
         
         // Physics parameters - based on real fluid properties
         this.viscosity = 0.05;  // Very low viscosity (less damping, vortices persist longer)
-        this.diffusionRate = 0.0001;  // Molecular diffusion: D ≈ 10⁻¹⁰ to 10⁻⁸ m²/s (very slow!)
+        this.diffusionRate = 0.0;  // Disable diffusion (was causing fading)
         this.spreadStrength = 0.0;  // Concentration pressure (removed - not real physics)
         this.rotationAmount = 0.0;  // Current rotation force
         this.jetForce = {x: 0, y: 0, strength: 0};  // Jet impulse tool
@@ -192,6 +192,24 @@ export default class Simulation {
         
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         this.swapVelocityTextures();
+        
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
+
+    clearColor() {
+        if (!this.ready) return;
+        
+        const gl = this.gl;
+        
+        // Clear both color textures
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.colorFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.colorTexture1, 0);
+        gl.clearColor(0, 0, 0, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.colorTexture2, 0);
+        gl.clearColor(0, 0, 0, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
         
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }

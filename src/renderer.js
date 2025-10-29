@@ -17,6 +17,8 @@ export default class Renderer {
 
         this.backgroundColor = { r: 0.0, g: 0.0, b: 0.0 };
         this.debugMode = 0; // 0=color, 1=velocity, 2=concentration gradient
+        this.useVolumetric = false; // DISABLED until light rotation works
+        this.absorptionCoefficient = 3.0; // Higher = more saturated glow
 
         this.resize();
         window.addEventListener('resize', () => this.resize());
@@ -37,6 +39,10 @@ export default class Renderer {
         // Load concentration debug shader
         const debugConcentrationFrag = await loadShader('src/shaders/debug-concentration.frag.glsl');
         this.debugConcentrationProgram = this.createProgram(passThroughVert, debugConcentrationFrag);
+        
+        // Load volumetric rendering shader (Beer-Lambert absorption)
+        const volumetricFrag = await loadShader('src/shaders/volumetric.frag.glsl');
+        this.volumetricProgram = this.createProgram(passThroughVert, volumetricFrag);
         
         // Create intermediate texture for boundary rendering
         this.createBoundaryTexture();
@@ -158,8 +164,22 @@ export default class Renderer {
             gl.bindTexture(gl.TEXTURE_2D, simulation.colorTexture1);
             let textureUniform = gl.getUniformLocation(this.debugConcentrationProgram, 'u_color_texture');
             gl.uniform1i(textureUniform, 0);
+        } else if (this.debugMode === 0 && this.useVolumetric) {
+            // Volumetric rendering mode (Beer-Lambert absorption)
+            gl.useProgram(this.volumetricProgram);
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
+            positionAttrib = gl.getAttribLocation(this.volumetricProgram, 'a_position');
+            gl.enableVertexAttribArray(positionAttrib);
+            gl.vertexAttribPointer(positionAttrib, 2, gl.FLOAT, false, 0, 0);
+            
+            gl.bindTexture(gl.TEXTURE_2D, simulation.colorTexture1);
+            let textureUniform = gl.getUniformLocation(this.volumetricProgram, 'u_color_texture');
+            gl.uniform1i(textureUniform, 0);
+            gl.uniform1f(gl.getUniformLocation(this.volumetricProgram, 'u_absorption_coefficient'), this.absorptionCoefficient);
+            gl.uniform3f(gl.getUniformLocation(this.volumetricProgram, 'u_light_color'), 
+                this.backgroundColor.r, this.backgroundColor.g, this.backgroundColor.b);
         } else {
-            // Color or velocity mode
+            // Simple color or velocity mode
             const sourceTexture = this.debugMode === 1 ? simulation.velocityTexture1 : simulation.colorTexture1;
             gl.bindTexture(gl.TEXTURE_2D, sourceTexture);
             let textureUniform = gl.getUniformLocation(this.passThroughProgram, 'u_texture');

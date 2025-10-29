@@ -46,9 +46,23 @@
 - **T** - Cycle vorticity confinement strength
   - 0.0 (Off - smooth laminar flow)
   - 0.1 (Subtle - gentle turbulence)
-  - 0.3 (Moderate - natural small-scale eddies) ⭐ Default
-  - 0.5 (Strong - active turbulence)
+  - 0.3 (Moderate - natural small-scale eddies)
+  - 0.5 (Strong - active turbulence) ⭐ Default
   - 1.0 (Very strong - chaotic motion)
+
+### Colored Light Projection 💡
+- **C** - Cycle RGB light rotation speed
+  - OFF: Black background (no light)
+  - 0.5°/frame: Slow, smooth color transitions
+  - 1.0°/frame: Moderate speed
+  - 2.0°/frame: Fast rotation
+  - 5.0°/frame: Very fast, dynamic
+  - Visual indicator in bottom-right corner shows current light color
+- **L** - Toggle volumetric rendering (Beer-Lambert absorption)
+  - ON: Light interacts with ink volumetrically
+  - OFF: Simple flat color display ⭐ Default
+- **K** - Cycle absorption coefficient (when volumetric is ON)
+  - 0.5 → 1.0 → 2.0 → 4.0 → 8.0
 
 ### Testing & Debugging 🧪
 - **P** - Pause/Resume simulation
@@ -135,6 +149,16 @@ Or use V key to cycle through presets during runtime.
 - Check FPS counter (if implemented)
 - Reduce window size
 - Check GPU usage in Activity Monitor
+
+---
+
+## Painting & Color
+
+- **Left-click + Drag** - Paint with current color
+- **C** - Cycle through color palette
+  - Red → Orange → Yellow → Green → Cyan → Blue → Purple → Magenta → White
+- **X** - Clear all ink (fresh canvas)
+- **Color Picker** - Select custom color (top-left UI, if available)
 
 ---
 

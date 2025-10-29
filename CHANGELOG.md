@@ -2,6 +2,16 @@
 
 ## [Unreleased] - 2025-10-28
 
+### Added - RGB Light Projection System
+- **Automated color wheel** - RGB light rotation for liquid light show aesthetics
+- **C key control** - Cycle through rotation speeds (OFF → 0.5 → 1.0 → 2.0 → 5.0°/frame)
+- **Visual indicator** - Glowing circle in bottom-right shows current light color
+- **Volumetric rendering** - Beer-Lambert absorption shader (disabled by default)
+- **X key** - Clear canvas for testing color changes
+- Foundation for oil phase lighting (refraction, caustics)
+
+## [Previous] - 2025-10-28
+
 ### Changed - Proper Passive Scalar Physics Model
 - **BREAKING:** Replaced discrete splat system with continuous source injection
 - Implemented proper advection-diffusion equation for color transport (∂φ/∂t = source + u·∇φ + D∇²φ)
