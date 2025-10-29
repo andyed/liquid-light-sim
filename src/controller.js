@@ -1,11 +1,12 @@
 import Simulation from './simulation.js';
-import ColorWheel from './color-wheel.js';
+import { QualityTester } from './quality-tests.js';
 
 export default class Controller {
     constructor(simulation, renderer) {
         this.simulation = simulation;
         this.renderer = renderer;
         this.gl = simulation.gl;
+        this.qualityTester = new QualityTester(simulation);
 
         this.isMouseDown = false;
         this.isRightMouseDown = false;
@@ -65,9 +66,19 @@ export default class Controller {
             border: 3px solid rgba(255, 255, 255, 0.6);
             box-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
             z-index: 1000;
-            pointer-events: none;
+            cursor: pointer;
             background: black;
         `;
+        
+        // Click to cycle rotation speed
+        this.lightIndicator.addEventListener('click', () => {
+            const speeds = [0, 0.5, 1.0, 2.0, 5.0];
+            const currentIndex = speeds.findIndex(s => Math.abs(s - this.lightRotationSpeed) < 0.1);
+            const nextIndex = (currentIndex + 1) % speeds.length;
+            this.lightRotationSpeed = speeds[nextIndex];
+            console.log(`💡 Light rotation: ${this.lightRotationSpeed === 0 ? 'OFF' : this.lightRotationSpeed + '°/frame'}`);
+        });
+        
         document.body.appendChild(this.lightIndicator);
     }
     
@@ -145,14 +156,14 @@ export default class Controller {
             
             if (speed > 0.001) {
                 // Moving: directional jet (scaled for resolution)
-                const forceMultiplier = 5000.0;
+                const forceMultiplier = 50000.0; // Much stronger
                 const vx = dx * forceMultiplier;
                 const vy = dy * forceMultiplier;
-                this.simulation.splatVelocity(x, y, vx, vy, 0.2);
+                this.simulation.splatVelocity(x, y, vx, vy, 0.3); // Larger radius
             } else {
                 // Stationary: explosive radial burst
-                const burstStrength = 500.0;
-                const burstRadius = 0.2;
+                const burstStrength = 5000.0; // Much stronger
+                const burstRadius = 0.3; // Larger radius
                 
                 for (let i = 0; i < 8; i++) {
                     const angle = i * (Math.PI / 4);
@@ -304,6 +315,13 @@ export default class Controller {
             // M key: Toggle velocity visualization mode
             this.renderer.toggleDebugMode();
             console.log('🔍 Debug mode toggled');
+        }
+        
+        // Quality tests
+        else if (e.key === 'q' && e.ctrlKey) {
+            // Ctrl+Q: Run quality tests
+            e.preventDefault();
+            this.qualityTester.runTests();
         }
         
         // Testing shortcuts

@@ -58,6 +58,8 @@ void main() {
         
         // Add force to velocity
         vec2 newVelocity = vC + force;
+        // Clamp to prevent overflow
+        newVelocity = clamp(newVelocity, vec2(-5000.0), vec2(5000.0));
         outColor = vec4(newVelocity, 0.0, 0.0);
     } else {
         // No gradient, no confinement

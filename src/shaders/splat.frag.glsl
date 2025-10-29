@@ -14,17 +14,22 @@ void main() {
     vec4 existing = texture(u_texture, v_texCoord);
     
     // Continuous source injection with Gaussian falloff
-    // Models a point source adding concentration to the field
     float gaussian = exp(-d * d / (u_radius * u_radius * 0.5));
-    float sourceStrength = 0.03; // Strong enough to be visible
+    float sourceStrength = 0.03;
     
-    // Add to concentration field (passive scalar)
-    // This is the proper physics: ∂φ/∂t = source + advection + diffusion
-    vec3 newConcentration = existing.rgb + u_color * gaussian * sourceStrength;
+    // Calculate how much new ink to add
+    vec3 newInk = u_color * gaussian * sourceStrength;
     
-    // Cap at 0.8 to preserve color information (prevents pure white)
-    // When it spreads, it will thin from bright cyan to faint cyan
-    newConcentration = min(newConcentration, u_color * 0.8);
+    // Get total concentration of existing ink
+    float existingConc = length(existing.rgb);
+    
+    // Only add new ink where there's space (don't mix colors)
+    // If existing ink is strong, don't add new ink on top
+    float spaceAvailable = max(0.0, 0.8 - existingConc);
+    vec3 inkToAdd = newInk * spaceAvailable;
+    
+    // Final: existing ink + new ink (only in empty space)
+    vec3 newConcentration = existing.rgb + inkToAdd;
     
     outColor = vec4(newConcentration, 1.0);
 }

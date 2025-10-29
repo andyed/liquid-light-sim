@@ -16,28 +16,36 @@ A GPU-accelerated fluid simulation for VJ performance and digital art, built wit
 ### ✅ Core Physics
 - **Navier-Stokes Fluid Dynamics** - Incompressible flow with pressure projection
 - **Viscosity** - 20 Jacobi iterations for realistic thickness/drag
-- **Advection** - Semi-Lagrangian transport of velocity and color
-- **Diffusion** - Color spreading with 20 iterations
+- **Advection** - MacCormack scheme for sharp, artifact-free transport
+- **Vorticity Confinement** - Preserves small-scale turbulence
 - **Circular Container** - Visible boundary with physics constraints (radius 0.48)
 
-### ✅ User Interaction
-- **Color Painting** - Left-click to inject dye (smooth blending, no oversaturation)
-- **Jet Impulse** - Right-click for invisible turbulent forces (stirs existing colors)
-- **Container Rotation** - Arrow keys create visible vortex (12x stronger)
-- **Viscosity Control** - V key cycles presets (0.5→1.0→2.0→5.0)
+### ✅ Volumetric Rendering
+- **Beer-Lambert Absorption** - Realistic light absorption through ink
+- **RGB Light Projection** - Automated color wheel rotation (0-5°/frame)
+- **Clickable Light Indicator** - Visual feedback in bottom-right corner
+- **Absorption Control** - K key cycles intensity (0.5-4.0)
 
-### ✅ Testing Infrastructure
-- **Pause/Freeze State** (PRD F004) - P key to inspect
-- **State Serialization** - Ctrl+S to save state as JSON
-- **Automated Tests** - Ctrl+T runs test suite
+### ✅ User Interaction
+- **Color Painting** - Left-click to inject dye (no color mixing)
+- **Jet Impulse** - Right-click for strong turbulent forces (50k multiplier)
+- **Container Rotation** - Arrow keys create visible vortex (10x force)
+- **Viscosity Control** - V key cycles presets (0.05→0.1→0.5→1.0→2.0)
+- **Clear Canvas** - X key resets all ink
+
+### ✅ Testing & Quality
+- **Auto-Corruption Detection** - Pauses on NaN/Inf detection
+- **Quality Tests** - Ctrl+Q measures straightness % (MacCormack artifacts)
+- **Pause/Freeze State** - P key to inspect
+- **Velocity Visualization** - M key shows flow field
 - **Performance Monitor** - Real-time FPS tracking
-- **Debug Console** - `window.tester`, `window.perfMonitor` APIs
 
 ### ✅ Visual Quality
-- Smooth color blending (no oversaturation)
-- Visible circular glass plate boundary
+- Volumetric light absorption (Beer-Lambert law)
+- No color mixing when painting over existing ink
+- Smooth, curved flow patterns (low straightness %)
 - 60 FPS at 1024×1024 resolution
-- Clean rendering with boundary overlay
+- Stable motion without corruption
 
 ---
 
@@ -54,11 +62,18 @@ http://localhost:8001
 
 ### Controls
 - **Left-click + drag** - Paint colors
-- **Right-click + drag** - Create jets
+- **Right-click + drag** - Create powerful jets
 - **A/D or Arrows** - Rotate container
+- **C** - Cycle RGB light rotation speed
+- **Click light indicator** - Toggle light rotation
 - **V** - Cycle viscosity
+- **T** - Cycle turbulence strength
+- **L** - Toggle volumetric rendering
+- **K** - Cycle absorption coefficient
+- **X** - Clear canvas
 - **P** - Pause/Resume
-- **Ctrl+T** - Run tests
+- **M** - View velocity field
+- **Ctrl+Q** - Run quality tests
 
 See [CONTROLS.md](CONTROLS.md) for full reference.
 
@@ -96,12 +111,13 @@ See [CONTROLS.md](CONTROLS.md) for full reference.
 
 ### Physics Pipeline
 ```
-1. Apply Forces      → Rotation, user input
-2. Advect Velocity   → Self-advection
-3. Apply Viscosity   → 20 Jacobi iterations
-4. Pressure Solve    → 50 iterations for incompressibility
-5. Advect Color      → Transport by velocity
-6. Diffuse Color     → 20 iterations
+1. Apply Forces           → Rotation, jets (clamped to ±5000)
+2. Vorticity Confinement  → Preserve small-scale turbulence
+3. Advect Velocity        → MacCormack self-advection
+4. Apply Viscosity        → 20 Jacobi iterations
+5. Pressure Projection    → 50 iterations for incompressibility
+6. Advect Color           → MacCormack transport
+7. Corruption Check       → Auto-pause on NaN/Inf (every 10 frames)
 ```
 
 ### GPU Textures (Float32)
@@ -113,12 +129,15 @@ See [CONTROLS.md](CONTROLS.md) for full reference.
 | `divergenceTexture` | Divergence field | Canvas |
 
 ### Shaders
-- `advection.frag.glsl` - Transport quantities, boundary clamping
-- `forces.frag.glsl` - Apply rotation, wall reflection
-- `viscosity.frag.glsl` - Momentum diffusion
-- `pressure.frag.glsl` - Jacobi iteration for Poisson solve
+- `advection.frag.glsl` - MacCormack transport with sharpness control
+- `forces.frag.glsl` - Rotation/jets with NaN guards and velocity clamping
+- `vorticity-confinement.frag.glsl` - Preserve small-scale turbulence
+- `viscosity.frag.glsl` - Momentum diffusion (20 iterations)
+- `pressure.frag.glsl` - Jacobi iteration for Poisson solve (50 iterations)
 - `gradient.frag.glsl` - Subtract pressure gradient
-- `splat.frag.glsl` - Inject color/velocity
+- `divergence.frag.glsl` - Compute velocity divergence
+- `splat.frag.glsl` - Inject color/velocity (no mixing)
+- `volumetric.frag.glsl` - Beer-Lambert absorption rendering
 - `boundary.frag.glsl` - Circular container visualization
 
 ---
@@ -250,14 +269,15 @@ tester.checkForNaN()
 ## Known Issues
 
 ### Current Limitations
-- **Right-click jets are invisible** - They only inject velocity, so you must have colors present to see the stirring effect (this is by design to prevent accumulation)
+- **Straight lines in velocity field** - MacCormack can create horizontal/vertical artifacts at high sharpness. Use Ctrl+Q to measure, increase turbulence (T key) if >15%
 - Water layer only (oil/water pending phase field implementation)
 - No buoyancy or surface tension yet
-- Rotation dissipates quickly with high viscosity
+- Light rotation off by default (press C to enable)
 
 ### Workarounds
-- Left-click to add colors before using right-click jets
-- Use V key to lower viscosity for faster rotation
+- Press T to increase turbulence if seeing straight lines
+- Use Ctrl+Q to measure straightness % (target <5%)
+- Press M to visualize velocity field
 - Press P to pause and inspect state
 
 ---

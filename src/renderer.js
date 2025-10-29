@@ -17,7 +17,7 @@ export default class Renderer {
 
         this.backgroundColor = { r: 0.0, g: 0.0, b: 0.0 };
         this.debugMode = 0; // 0=color, 1=velocity, 2=concentration gradient
-        this.useVolumetric = false; // DISABLED until light rotation works
+        this.useVolumetric = true; // Beer-Lambert volumetric rendering
         this.absorptionCoefficient = 3.0; // Higher = more saturated glow
 
         this.resize();

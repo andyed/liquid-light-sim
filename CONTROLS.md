@@ -52,21 +52,27 @@
 
 ### Colored Light Projection 💡
 - **C** - Cycle RGB light rotation speed
-  - OFF: Black background (no light)
+  - OFF: Black background (no light) ⭐ Default
   - 0.5°/frame: Slow, smooth color transitions
   - 1.0°/frame: Moderate speed
   - 2.0°/frame: Fast rotation
   - 5.0°/frame: Very fast, dynamic
   - Visual indicator in bottom-right corner shows current light color
+  - Click indicator to cycle speeds
 - **L** - Toggle volumetric rendering (Beer-Lambert absorption)
-  - ON: Light interacts with ink volumetrically
-  - OFF: Simple flat color display ⭐ Default
-- **K** - Cycle absorption coefficient (when volumetric is ON)
-  - 0.5 → 1.0 → 2.0 → 4.0 → 8.0
+  - ON: Realistic light absorption through ink ⭐ Default
+  - OFF: Simple flat color display
+- **K** - Cycle absorption coefficient
+  - 0.5 (Subtle - light, translucent)
+  - 1.0 (Moderate - balanced)
+  - 2.0 (Strong - rich, saturated)
+  - 3.0 (Very strong - deep, dark) ⭐ Default
+  - 4.0 (Extreme - almost opaque)
 
 ### Testing & Debugging 🧪
 - **P** - Pause/Resume simulation
 - **M** - Toggle velocity visualization (see invisible forces!)
+- **Ctrl+Q** - Run quality tests (measure straightness %)
 - **Ctrl+T** - Run automated test suite
 - **Ctrl+S** - Save current state to file
 

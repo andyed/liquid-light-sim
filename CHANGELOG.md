@@ -1,6 +1,21 @@
 # Changelog
 
-## [Unreleased] - 2025-10-28
+## [Unreleased] - 2025-10-29
+
+### Fixed - Motion and Stability
+- **Fixed velocity corruption** - NaN from normalize() at zero-length vectors
+- **Fixed velocity overflow** - Added clamping to ±5000 in force shaders
+- **Fixed ink painting** - Corrected texture ping-pong in splat method
+- **Fixed color mixing** - Ink no longer mixes when painted on existing ink
+- **Increased jet forces** - 2.5x stronger for visible effect (50k multiplier)
+- **Auto-corruption detection** - Pauses simulation on NaN/Inf detection
+
+### Added - Quality Testing
+- **Quality test suite** - Measure straightness % to detect MacCormack artifacts
+- **Ctrl+Q hotkey** - Run quality tests (horizontal/vertical line detection)
+- **Clickable light indicator** - Click to cycle rotation speed (same as C key)
+
+## [Previous] - 2025-10-28
 
 ### Added - RGB Light Projection System
 - **Automated color wheel** - RGB light rotation for liquid light show aesthetics

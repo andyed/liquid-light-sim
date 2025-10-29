@@ -222,7 +222,8 @@ export default class Simulation {
 
         const gl = this.gl;
 
-        // Splat color
+        // Splat color - use proper ping-pong to avoid feedback loop
+        // Read from texture1, write to texture2, then swap
         gl.useProgram(this.splatProgram);
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.colorFBO);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.colorTexture2, 0);
@@ -240,7 +241,7 @@ export default class Simulation {
         gl.uniform1f(gl.getUniformLocation(this.splatProgram, 'u_radius'), radius);
 
         gl.drawArrays(gl.TRIANGLES, 0, 6);
-        this.swapColorTextures();
+        this.swapColorTextures(); // Swap so texture2 becomes the current state
 
         // Also inject velocity for stirring effect
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.velocityFBO);
@@ -290,8 +291,46 @@ export default class Simulation {
         if (this.diffusionRate > 0) {
             this.diffuseColor(dt);
         }
-
+        
+        // 8. Check for corruption (NaN/Inf detection)
+        if (this.checkForCorruption()) {
+            console.error('❌ Simulation paused due to corruption');
+        }
+        
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
+    
+    /**
+     * Check velocity field for NaN or Inf values
+     * Auto-pauses simulation if corruption detected
+     */
+    checkForCorruption() {
+        if (!this._corruptionCheckInterval) {
+            this._corruptionCheckInterval = 0;
+        }
+        
+        // Check every 10 frames for performance
+        if (++this._corruptionCheckInterval % 10 !== 0) {
+            return false;
+        }
+        
+        const gl = this.gl;
+        const pixels = new Float32Array(4 * 10); // Sample 10 pixels
+        
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.velocityFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.velocityTexture1, 0);
+        gl.readPixels(0, 0, 10, 1, gl.RGBA, gl.FLOAT, pixels);
+        
+        // Check for NaN or Inf
+        for (let i = 0; i < pixels.length; i++) {
+            if (!isFinite(pixels[i])) {
+                this.paused = true;
+                console.error('Corrupted velocity values:', pixels.slice(0, 8));
+                return true;
+            }
+        }
+        
+        return false;
     }
 
     applyForces(dt) {

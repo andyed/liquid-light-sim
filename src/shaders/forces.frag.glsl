@@ -16,18 +16,22 @@ void main() {
     
     // Tangential force: perpendicular to radius vector
     // For counter-clockwise rotation: force = (-y, x) * strength
-    // Multiplied by 3.0 for better visibility
-    vec2 force = vec2(-centered_coord.y, centered_coord.x) * u_rotation_amount * 3.0;
+    // Multiplied by 10.0 for strong, visible rotation
+    vec2 force = vec2(-centered_coord.y, centered_coord.x) * u_rotation_amount * 10.0;
     
     vec4 velocity = texture(u_velocity_texture, v_texCoord);
     
     // Apply boundary constraint: reflect velocity at walls
     if (dist > containerRadius) {
         // Outside container - push velocity inward
-        vec2 normal = normalize(centered_coord);
+        // Prevent NaN: only normalize if dist > 0
+        vec2 normal = dist > 0.001 ? normalize(centered_coord) : vec2(1.0, 0.0);
         vec2 reflection = velocity.xy - 2.0 * dot(velocity.xy, normal) * normal;
         outColor = vec4(reflection * 0.5, 0.0, 0.0); // Dampen at walls
     } else {
-        outColor = velocity + vec4(force, 0.0, 0.0);
+        vec2 newVelocity = velocity.xy + force;
+        // Clamp velocity to prevent overflow to Inf
+        newVelocity = clamp(newVelocity, vec2(-5000.0), vec2(5000.0));
+        outColor = vec4(newVelocity, 0.0, 0.0);
     }
 }
