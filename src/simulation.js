@@ -360,6 +360,11 @@ export default class Simulation {
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, this.velocityTexture1);
         gl.uniform1i(gl.getUniformLocation(this.forcesProgram, 'u_velocity_texture'), 0);
+        
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, this.colorTexture1);
+        gl.uniform1i(gl.getUniformLocation(this.forcesProgram, 'u_color_texture'), 1);
+        
         gl.uniform1f(gl.getUniformLocation(this.forcesProgram, 'u_rotation_amount'), this.rotationAmount);
 
         gl.drawArrays(gl.TRIANGLES, 0, 6);

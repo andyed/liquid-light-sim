@@ -68,12 +68,18 @@ export default class Controller {
     
     createColorWheel() {
         this.colorWheel = document.createElement('div');
+        // Smaller on mobile to avoid canvas overlap
+        const isMobile = window.innerWidth <= 768;
+        const size = isMobile ? 60 : 80;
+        const top = isMobile ? 15 : 20;
+        const left = isMobile ? 15 : 20;
+        
         this.colorWheel.style.cssText = `
             position: fixed;
-            top: 20px;
-            left: 20px;
-            width: 80px;
-            height: 80px;
+            top: ${top}px;
+            left: ${left}px;
+            width: ${size}px;
+            height: ${size}px;
             border-radius: 50%;
             background: conic-gradient(
                 red, yellow, lime, cyan, blue, magenta, red

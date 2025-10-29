@@ -101,6 +101,15 @@
 
 ---
 
+## Physics Behavior
+
+### Overflow & Conservation
+- Dye concentration is strictly conserved (no artificial decay)
+- Near the rim (r > 0.45), a gentle radial drain force pushes excess dye outward
+- Drain strength scales with local dye concentration (spillway effect)
+- Boundary shader clips anything beyond r = 0.48
+- Result: overfilled container naturally overflows, mimicking real liquid light projectors
+
 ## Physics Parameters (For Developers)
 
 ### Current Settings

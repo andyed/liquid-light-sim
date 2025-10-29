@@ -5,6 +5,7 @@ in vec2 v_texCoord;
 out vec4 outColor;
 
 uniform sampler2D u_velocity_texture;
+uniform sampler2D u_color_texture;
 uniform float u_rotation_amount;
 
 void main() {
@@ -16,9 +17,20 @@ void main() {
     
     // Tangential force: perpendicular to radius vector
     // For counter-clockwise rotation: force = (-y, x) * strength
-    // Stronger at edges (like spinning a glass plate)
+    // Gentle radial gradient so center rotates too (viscosity propagates motion)
     float edgeFactor = smoothstep(0.0, containerRadius, dist);
-    vec2 force = vec2(-centered_coord.y, centered_coord.x) * u_rotation_amount * 25.0 * (0.5 + edgeFactor);
+    vec2 force = vec2(-centered_coord.y, centered_coord.x) * u_rotation_amount * 25.0 * (0.75 + 0.25 * edgeFactor);
+    
+    // Passive edge drain: gentle spillway near rim
+    // Scales with local dye concentration - more ink = more drain force
+    if (dist > 0.45) {
+        vec3 dye = texture(u_color_texture, v_texCoord).rgb;
+        float concentration = length(dye);
+        float drainStrength = smoothstep(0.45, containerRadius, dist) * concentration;
+        vec2 drainDir = dist > 0.001 ? normalize(centered_coord) : vec2(1.0, 0.0);
+        vec2 drainForce = drainDir * drainStrength * 0.3; // gentle radial push
+        force += drainForce;
+    }
     
     vec4 velocity = texture(u_velocity_texture, v_texCoord);
     
