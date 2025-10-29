@@ -19,6 +19,9 @@ export default class Renderer {
         this.debugMode = 0; // 0=color, 1=velocity, 2=concentration gradient
         this.useVolumetric = true; // Beer-Lambert volumetric rendering
         this.absorptionCoefficient = 3.0; // Higher = more saturated glow
+        this.usePostProcessing = true; // Organic flow distortion (O key to toggle)
+        this.distortionStrength = 0.35; // 0.0-1.0, higher = more organic
+        this.smoothingStrength = 0.6; // 0.0-1.0, bilateral blur strength
 
         this.resize();
         window.addEventListener('resize', () => this.resize());
@@ -44,11 +47,34 @@ export default class Renderer {
         const volumetricFrag = await loadShader('src/shaders/volumetric.frag.glsl');
         this.volumetricProgram = this.createProgram(passThroughVert, volumetricFrag);
         
+        // Load post-processing shader (organic flow distortion)
+        const postProcessFrag = await loadShader('src/shaders/post-process.frag.glsl');
+        this.postProcessProgram = this.createProgram(passThroughVert, postProcessFrag);
+        
         // Create intermediate texture for boundary rendering
         this.createBoundaryTexture();
         
+        // Create intermediate texture for post-processing
+        this.createPostProcessTexture();
+        
         this.ready = true;
         console.log('✓ Renderer initialized');
+    }
+    
+    createPostProcessTexture() {
+        const gl = this.gl;
+        const width = gl.canvas.width;
+        const height = gl.canvas.height;
+        
+        this.postProcessTexture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, this.postProcessTexture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        
+        this.postProcessFBO = gl.createFramebuffer();
     }
     
     createBoundaryTexture() {
@@ -188,7 +214,35 @@ export default class Renderer {
 
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         
-        // Step 2: Render with circular boundary overlay to screen
+        // Step 2: Optional post-processing (organic flow distortion)
+        let sourceTexture = this.boundaryTexture;
+        
+        if (this.usePostProcessing) {
+            gl.bindFramebuffer(gl.FRAMEBUFFER, this.postProcessFBO);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.postProcessTexture, 0);
+            gl.clearColor(0.0, 0.0, 0.0, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+            
+            gl.useProgram(this.postProcessProgram);
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
+            positionAttrib = gl.getAttribLocation(this.postProcessProgram, 'a_position');
+            gl.enableVertexAttribArray(positionAttrib);
+            gl.vertexAttribPointer(positionAttrib, 2, gl.FLOAT, false, 0, 0);
+            
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, this.boundaryTexture);
+            gl.uniform1i(gl.getUniformLocation(this.postProcessProgram, 'u_texture'), 0);
+            gl.uniform1f(gl.getUniformLocation(this.postProcessProgram, 'u_time'), performance.now() / 1000.0);
+            gl.uniform2f(gl.getUniformLocation(this.postProcessProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+            gl.uniform1f(gl.getUniformLocation(this.postProcessProgram, 'u_distortionStrength'), this.distortionStrength);
+            gl.uniform1f(gl.getUniformLocation(this.postProcessProgram, 'u_smoothingStrength'), this.smoothingStrength);
+            
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+            
+            sourceTexture = this.postProcessTexture;
+        }
+        
+        // Step 3: Render with circular boundary overlay to screen
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.clearColor(0.0, 0.0, 0.0, 1.0);
         gl.clear(gl.COLOR_BUFFER_BIT);
@@ -200,7 +254,7 @@ export default class Renderer {
         gl.vertexAttribPointer(positionAttrib, 2, gl.FLOAT, false, 0, 0);
         
         gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this.boundaryTexture);
+        gl.bindTexture(gl.TEXTURE_2D, sourceTexture);
         let boundaryTextureUniform = gl.getUniformLocation(this.boundaryProgram, 'u_texture');
         gl.uniform1i(boundaryTextureUniform, 0);
         

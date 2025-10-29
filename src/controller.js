@@ -52,6 +52,12 @@ export default class Controller {
         
         // Create light indicator UI
         this.createLightIndicator();
+        
+        // Create rotation button
+        this.createRotationButton();
+        
+        // Create hamburger menu
+        this.createHamburgerMenu();
     }
     
     createLightIndicator() {
@@ -290,9 +296,16 @@ export default class Controller {
         
         // Volumetric rendering controls
         else if (e.key === 'l') {
-            // L key: Toggle volumetric lighting (Beer-Lambert)
+            // L key: Toggle volumetric rendering
             this.renderer.useVolumetric = !this.renderer.useVolumetric;
-            console.log(`💡 Volumetric: ${this.renderer.useVolumetric ? 'ON (Beer-Lambert absorption)' : 'OFF (simple)'}`);
+            console.log(`💡 Volumetric rendering: ${this.renderer.useVolumetric ? 'ON' : 'OFF'}`);
+        }
+        
+        // Post-processing controls
+        else if (e.key === 'o') {
+            // O key: Toggle organic flow distortion
+            this.renderer.usePostProcessing = !this.renderer.usePostProcessing;
+            console.log(`🌊 Organic flow: ${this.renderer.usePostProcessing ? 'ON' : 'OFF'} (${this.renderer.distortionStrength})`);
         }
         
         else if (e.key === 'k') {
