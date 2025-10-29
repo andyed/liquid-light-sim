@@ -18,7 +18,7 @@ void main() {
     // For counter-clockwise rotation: force = (-y, x) * strength
     // Stronger at edges (like spinning a glass plate)
     float edgeFactor = smoothstep(0.0, containerRadius, dist);
-    vec2 force = vec2(-centered_coord.y, centered_coord.x) * u_rotation_amount * 15.0 * (0.5 + edgeFactor);
+    vec2 force = vec2(-centered_coord.y, centered_coord.x) * u_rotation_amount * 25.0 * (0.5 + edgeFactor);
     
     vec4 velocity = texture(u_velocity_texture, v_texCoord);
     

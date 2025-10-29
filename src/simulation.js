@@ -15,13 +15,13 @@ export default class Simulation {
         this.gl = renderer.gl;
         
         // Physics parameters - based on real fluid properties
-        this.viscosity = 0.02;  // Very low viscosity for better rotational energy conservation
+        this.viscosity = 0.05;  // Slightly higher viscosity for more coherent, perceivable jets
         this.diffusionRate = 0.0;  // Disable diffusion (was causing fading)
         this.spreadStrength = 0.0;  // Concentration pressure (removed - not real physics)
         this.rotationAmount = 0.0;  // Current rotation force
         this.jetForce = {x: 0, y: 0, strength: 0};  // Jet impulse tool
         this.useMacCormack = true;  // High-fidelity advection (eliminates numerical diffusion)
-        this.vorticityStrength = 0.5;  // Vorticity confinement (adds small-scale turbulence, breaks up lines)
+        this.vorticityStrength = 0.8;  // Stronger confinement for visible swirling at higher viscosity
         
         // Iteration counts
         this.viscosityIterations = 20;  // Jacobi iterations for viscosity
@@ -189,6 +189,7 @@ export default class Simulation {
         gl.uniform2f(gl.getUniformLocation(this.splatProgram, 'u_point'), x, y);
         gl.uniform3f(gl.getUniformLocation(this.splatProgram, 'u_color'), vx, vy, 0);
         gl.uniform1f(gl.getUniformLocation(this.splatProgram, 'u_radius'), radius);
+        gl.uniform1i(gl.getUniformLocation(this.splatProgram, 'u_isVelocity'), 1);
         
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         this.swapVelocityTextures();
@@ -239,6 +240,7 @@ export default class Simulation {
         gl.uniform2f(gl.getUniformLocation(this.splatProgram, 'u_point'), x, y);
         gl.uniform3f(gl.getUniformLocation(this.splatProgram, 'u_color'), color.r, color.g, color.b);
         gl.uniform1f(gl.getUniformLocation(this.splatProgram, 'u_radius'), radius);
+        gl.uniform1i(gl.getUniformLocation(this.splatProgram, 'u_isVelocity'), 0);
 
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         this.swapColorTextures(); // Swap so texture2 becomes the current state
@@ -250,10 +252,12 @@ export default class Simulation {
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, this.velocityTexture1);
         gl.uniform1i(gl.getUniformLocation(this.splatProgram, 'u_texture'), 0);
+        gl.uniform2f(gl.getUniformLocation(this.splatProgram, 'u_point'), x, y);
         // Small velocity splat
         gl.uniform3f(gl.getUniformLocation(this.splatProgram, 'u_color'), 
             (Math.random() - 0.5) * 0.1, (Math.random() - 0.5) * 0.1, 0);
         gl.uniform1f(gl.getUniformLocation(this.splatProgram, 'u_radius'), radius * 2);
+        gl.uniform1i(gl.getUniformLocation(this.splatProgram, 'u_isVelocity'), 1);
         
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         this.swapVelocityTextures();

@@ -65,4 +65,15 @@ void main() {
     // Lower sharpness reduces banding artifacts
     float sharpness = 0.75; // Balanced for quality without artifacts
     outColor = mix(forward, outColor, sharpness);
+
+    // --- Conservation guards ---
+    // 1) Clamp channels to [0,1]
+    outColor.rgb = clamp(outColor.rgb, vec3(0.0), vec3(1.0));
+    // 2) Per-pixel concentration cap: ||color|| <= 1.0
+    float conc = length(outColor.rgb);
+    if (conc > 1.0) {
+        outColor.rgb *= (1.0 / conc);
+    }
+    // 3) Force alpha to 1.0
+    outColor.a = 1.0;
 }

@@ -34,6 +34,11 @@ export default class Controller {
         
         document.addEventListener('keydown', (e) => this.onKeyDown(e));
         document.addEventListener('keyup', (e) => this.onKeyUp(e));
+
+        // Jet control: repeat while held
+        this.didJetThisClick = false; // kept for initial state logging
+        this.lastJetTime = 0;
+        this.jetIntervalMs = 250; // safe sustained repeat cadence
         
         // Light color rotation (for volumetric rendering)
         this.lightHue = 0; // 0-360 degrees
@@ -421,24 +426,36 @@ export default class Controller {
             }
         }
         
-        // Handle jets (right-click drag)
+        // Handle jets (right-click): repeat while held
         if (this.isRightMouseDown) {
+            const now = performance.now();
+            if (now - this.lastJetTime < this.jetIntervalMs) {
+                return; // wait for next interval
+            }
             const x = this.currentMouseX;
             const y = this.currentMouseY;
-            const dx = this.mouseVelocityX;
-            const dy = this.mouseVelocityY;
             
-            // Jet impulse - 360° radial burst from touch point
-            const burstStrength = 800.0; // Strong radial push
-            const burstRadius = 0.25;
+            // Curl-preserving ring burst (tangential) so projection doesn't cancel it
+            const directions = 12;
+            const ringRadius = 0.025; // tighter ring
+            const burstStrength = 120.0; // gentle tangential speed for long holds
+            const splatRadius = 0.05; // smaller influence per spoke
             
-            // Create 16-direction radial burst for smooth 360° spray
-            for (let i = 0; i < 16; i++) {
-                const angle = (i / 16) * Math.PI * 2;
-                const vx = Math.cos(angle) * burstStrength;
-                const vy = Math.sin(angle) * burstStrength;
-                this.simulation.splatVelocity(x, y, vx, vy, burstRadius);
+            for (let i = 0; i < directions; i++) {
+                const angle = (i / directions) * Math.PI * 2;
+                const dirX = Math.cos(angle);
+                const dirY = Math.sin(angle);
+                // Position around a small ring
+                const px = x + dirX * ringRadius;
+                const py = y + dirY * ringRadius;
+                // Tangential velocity (perpendicular to radius vector)
+                const vx = -dirY * burstStrength;
+                const vy =  dirX * burstStrength;
+                this.simulation.splatVelocity(px, py, vx, vy, splatRadius);
             }
+            this.didJetThisClick = true;
+            this.lastJetTime = now;
+            console.log(`🌊 Jet ring @(${x.toFixed(3)}, ${y.toFixed(3)})`, {strength: burstStrength, ringRadius, splatRadius, directions});
         }
     }
 
@@ -454,11 +471,15 @@ export default class Controller {
         this.lastMouseY = y;
         
         if (e.button === 0) {
-            // Left click - normal color injection
             this.isMouseDown = true;
+            console.log('Paint: start');
         } else if (e.button === 2) {
             // Right click - jet impulse tool
             this.isRightMouseDown = true;
+            this.didJetThisClick = false;
+            // allow immediate first burst
+            this.lastJetTime = 0;
+            console.log('Jet: armed');
         }
     }
 
@@ -467,6 +488,8 @@ export default class Controller {
             this.isMouseDown = false;
         } else if (e.button === 2) {
             this.isRightMouseDown = false;
+            this.didJetThisClick = false;
+            console.log('🧨 Jet: end');
         }
     }
 
