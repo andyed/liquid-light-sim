@@ -2,11 +2,11 @@ This is the complete Product Requirements Document (PRD) for the Alpha release o
 
 ---
 
-# **📝 Product Requirements Document (PRD): Project Eye Candy**
+# **📝 Product Requirements Document (PRD): Liquid Light Simulator**
 
 | Key Detail | Value |
 | :---- | :---- |
-| **Product Name** | Project Eye Candy (Working Title) |
+| **Product Name** | Liquid Light Simulator |
 | **Release Version** | **Alpha 1.0** |
 | **Product Manager** | User (Self) |
 | **Target User** | VJs, Live Visual Artists, Digital Art Enthusiasts |

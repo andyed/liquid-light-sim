@@ -1,4 +1,4 @@
-# Project Eye Candy - Controls Reference
+# Liquid Light Simulator - Controls
 
 **Status:** Milestone 2 - Water Layer Complete ✅
 
@@ -185,24 +185,6 @@ Or use V key to cycle through presets during runtime.
 - Colors should stay inside
 - Rotation should be contained
 - Gray boundary should be visible
-
----
-
-## Development Testing
-
-```bash
-# Start local server
-cd /Users/andyed/Documents/dev/oillamp/v1
-python3 -m http.server 8001
-
-# Open in browser
-open http://localhost:8001
-```
-
-Check console for:
-- `✓ Simulation initialized`
-- `✓ Renderer initialized`
-- No error messages
 
 ---
 

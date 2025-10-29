@@ -15,7 +15,7 @@ export default class Simulation {
         this.gl = renderer.gl;
         
         // Physics parameters - based on real fluid properties
-        this.viscosity = 0.05;  // Very low viscosity (less damping, vortices persist longer)
+        this.viscosity = 0.02;  // Very low viscosity for better rotational energy conservation
         this.diffusionRate = 0.0;  // Disable diffusion (was causing fading)
         this.spreadStrength = 0.0;  // Concentration pressure (removed - not real physics)
         this.rotationAmount = 0.0;  // Current rotation force
@@ -321,13 +321,21 @@ export default class Simulation {
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.velocityTexture1, 0);
         gl.readPixels(0, 0, 10, 1, gl.RGBA, gl.FLOAT, pixels);
         
-        // Check for NaN or Inf
+        // Check for NaN or Inf (allow up to 10k velocity)
+        let maxVal = 0;
         for (let i = 0; i < pixels.length; i++) {
+            maxVal = Math.max(maxVal, Math.abs(pixels[i]));
             if (!isFinite(pixels[i])) {
                 this.paused = true;
-                console.error('Corrupted velocity values:', pixels.slice(0, 8));
+                console.error('❌ NaN/Inf detected in velocity field');
+                console.error('Corrupted values:', pixels.slice(0, 8));
                 return true;
             }
+        }
+        
+        // Warn if velocity is getting very high
+        if (maxVal > 10000) {
+            console.warn(`⚠️ High velocity detected: ${maxVal.toFixed(0)} (may cause instability)`);
         }
         
         return false;

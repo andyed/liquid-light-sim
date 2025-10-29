@@ -3,7 +3,7 @@ import Simulation from './simulation.js';
 import Controller from './controller.js';
 import { SimulationTester, PerformanceMonitor } from '../tests/test-utils.js';
 
-console.log("🎨 Welcome to Project Eye Candy!");
+console.log("🎨 Welcome to Liquid Light Simulator!");
 
 class App {
     constructor() {

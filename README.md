@@ -1,4 +1,4 @@
-# Project Eye Candy - Liquid Light Simulator
+# Liquid Light Simulator
 
 **Status:** Milestone 2 - Water Layer Complete ✅
 

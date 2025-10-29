@@ -16,8 +16,9 @@ void main() {
     
     // Tangential force: perpendicular to radius vector
     // For counter-clockwise rotation: force = (-y, x) * strength
-    // Multiplied by 10.0 for strong, visible rotation
-    vec2 force = vec2(-centered_coord.y, centered_coord.x) * u_rotation_amount * 10.0;
+    // Stronger at edges (like spinning a glass plate)
+    float edgeFactor = smoothstep(0.0, containerRadius, dist);
+    vec2 force = vec2(-centered_coord.y, centered_coord.x) * u_rotation_amount * 15.0 * (0.5 + edgeFactor);
     
     vec4 velocity = texture(u_velocity_texture, v_texCoord);
     
@@ -31,7 +32,7 @@ void main() {
     } else {
         vec2 newVelocity = velocity.xy + force;
         // Clamp velocity to prevent overflow to Inf
-        newVelocity = clamp(newVelocity, vec2(-5000.0), vec2(5000.0));
+        newVelocity = clamp(newVelocity, vec2(-50000.0), vec2(50000.0));
         outColor = vec4(newVelocity, 0.0, 0.0);
     }
 }

@@ -31,5 +31,8 @@ void main() {
     // Final: existing ink + new ink (only in empty space)
     vec3 newConcentration = existing.rgb + inkToAdd;
     
+    // Clamp to prevent overflow (important for velocity splatting)
+    newConcentration = clamp(newConcentration, vec3(-50000.0), vec3(50000.0));
+    
     outColor = vec4(newConcentration, 1.0);
 }
