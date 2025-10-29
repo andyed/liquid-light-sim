@@ -17,9 +17,9 @@ void main() {
     
     // Tangential force: perpendicular to radius vector
     // For counter-clockwise rotation: force = (-y, x) * strength
-    // Gentle radial gradient so center rotates too (viscosity propagates motion)
-    float edgeFactor = smoothstep(0.0, containerRadius, dist);
-    vec2 force = vec2(-centered_coord.y, centered_coord.x) * u_rotation_amount * 25.0 * (0.75 + 0.25 * edgeFactor);
+    // Stronger at center, weaker at edge (compensates for radius in v = ω × r)
+    float edgeFactor = dist / containerRadius; // linear ramp
+    vec2 force = vec2(-centered_coord.y, centered_coord.x) * u_rotation_amount * 25.0 * (1.3 - 0.3 * edgeFactor);
     
     // Passive edge drain: gentle spillway near rim
     // Scales with local dye concentration - more ink = more drain force
