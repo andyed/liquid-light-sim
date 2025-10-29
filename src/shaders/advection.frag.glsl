@@ -24,7 +24,8 @@ vec2 clampToCircle(vec2 coord) {
 
 void main() {
     vec2 velocity = texture(u_velocity_texture, v_texCoord).xy;
-    vec2 dt_vel = velocity * u_dt / u_resolution;
+    // Increase velocity scaling to get visible movement
+    vec2 dt_vel = velocity * u_dt * 10.0 / u_resolution;
     
     // MacCormack advection for high-fidelity transport
     // Reference: GPU Gems 3, Chapter 30
@@ -35,7 +36,7 @@ void main() {
     
     // Step 2: Backward advection (reverse step to estimate error)
     vec2 vel_forward = texture(u_velocity_texture, coord_forward).xy;
-    vec2 coord_backward = clampToCircle(coord_forward + vel_forward * u_dt / u_resolution);
+    vec2 coord_backward = clampToCircle(coord_forward + vel_forward * u_dt * 10.0 / u_resolution);
     vec4 backward = texture(u_color_texture, coord_backward);
     
     // Step 3: Error correction

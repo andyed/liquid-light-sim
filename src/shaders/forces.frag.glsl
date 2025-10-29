@@ -14,12 +14,22 @@ void main() {
     
     // Circular container boundary (radius = 0.48 to leave edge space)
     const float containerRadius = 0.48;
+    vec2 force;
     
     // Tangential force: perpendicular to radius vector
     // For counter-clockwise rotation: force = (-y, x) * strength
-    // Stronger at center, weaker at edge (compensates for radius in v = ω × r)
-    float edgeFactor = dist / containerRadius; // linear ramp
-    vec2 force = vec2(-centered_coord.y, centered_coord.x) * u_rotation_amount * 25.0 * (1.3 - 0.3 * edgeFactor);
+    // Use solid body rotation: v = ω × r, where ω is angular velocity
+    // This creates smoother, more physically accurate rotation
+    float maxRadius = containerRadius * 0.9; // Don't apply force at very edge
+    if (dist < maxRadius) {
+        // Angular velocity decreases near center to avoid singularity
+        float radiusFactor = smoothstep(0.0, 0.1, dist) * (1.0 - smoothstep(maxRadius * 0.8, maxRadius, dist));
+        // Tangential velocity = angular_velocity × radius
+        vec2 tangentialVel = vec2(-centered_coord.y, centered_coord.x) * u_rotation_amount * radiusFactor;
+        force = tangentialVel;
+    } else {
+        force = vec2(0.0);
+    }
     
     // Passive edge drain: gentle spillway near rim
     // Scales with local dye concentration - more ink = more drain force
@@ -34,15 +44,17 @@ void main() {
     
     vec4 velocity = texture(u_velocity_texture, v_texCoord);
     
-    // Apply boundary constraint: reflect velocity at walls
+    // Apply smooth boundary constraint: soften velocity near walls
     if (dist > containerRadius) {
-        // Outside container - push velocity inward
-        // Prevent NaN: only normalize if dist > 0
+        // Outside container - push velocity inward with smooth falloff
         vec2 normal = dist > 0.001 ? normalize(centered_coord) : vec2(1.0, 0.0);
         vec2 reflection = velocity.xy - 2.0 * dot(velocity.xy, normal) * normal;
-        outColor = vec4(reflection * 0.5, 0.0, 0.0); // Dampen at walls
+        float falloff = 1.0 - smoothstep(containerRadius, containerRadius + 0.02, dist);
+        outColor = vec4(reflection * 0.5 * falloff, 0.0, 0.0);
     } else {
-        vec2 newVelocity = velocity.xy + force;
+        // Inside container - apply forces with smooth edge falloff
+        float edgeFalloff = 1.0 - smoothstep(0.45, containerRadius, dist);
+        vec2 newVelocity = velocity.xy + force * edgeFalloff;
         // Clamp velocity to prevent overflow to Inf
         newVelocity = clamp(newVelocity, vec2(-50000.0), vec2(50000.0));
         outColor = vec4(newVelocity, 0.0, 0.0);

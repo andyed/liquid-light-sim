@@ -568,7 +568,7 @@ export default class Simulation {
         gl.bindTexture(gl.TEXTURE_2D, this.velocityTexture1);
         gl.uniform1i(gl.getUniformLocation(this.advectionProgram, 'u_velocity_texture'), 1);
 
-        gl.uniform1f(gl.getUniformLocation(this.advectionProgram, 'u_dt'), dt);
+        gl.uniform1f(gl.getUniformLocation(this.advectionProgram, 'u_dt'), dt * 10.0);
         gl.uniform2f(gl.getUniformLocation(this.advectionProgram, 'u_resolution'), 
             gl.canvas.width, gl.canvas.height);
 
