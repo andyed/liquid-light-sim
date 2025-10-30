@@ -19,10 +19,20 @@ vec2 clampToCircle(vec2 coord) {
     vec2 r = coord - center;
     vec2 r_as = vec2(r.x * aspect, r.y);
     float d = length(r_as);
-    if (d > containerRadius) {
+    
+    // Smooth falloff near boundary instead of hard snap
+    float softEdge = 0.015; // blend zone width (balance smoothness vs accumulation)
+    if (d > containerRadius - softEdge) {
+        float overshoot = d - (containerRadius - softEdge);
+        float blend = smoothstep(0.0, softEdge, overshoot);
+        
+        // Target: clamped position at boundary
         vec2 r_as_clamped = (r_as / max(d, 1e-6)) * containerRadius;
-        vec2 r_uv = vec2(r_as_clamped.x / max(aspect, 1e-6), r_as_clamped.y);
-        return center + r_uv;
+        vec2 r_uv_clamped = vec2(r_as_clamped.x / max(aspect, 1e-6), r_as_clamped.y);
+        vec2 target = center + r_uv_clamped;
+        
+        // Smooth blend toward boundary
+        return mix(coord, target, blend);
     }
     return coord;
 }
@@ -70,12 +80,13 @@ void main() {
     vec4 minVal = min(min(min(n0, n1), min(n2, n3)), min(min(n4, n5), min(n6, min(n7, n8))));
     vec4 maxVal = max(max(max(n0, n1), max(n2, n3)), max(max(n4, n5), max(n6, max(n7, n8))));
     
-    // Clamp corrected value to neighborhood bounds
-    outColor = clamp(corrected, minVal, maxVal);
+    // Soften limiter: allow significant overshoots to reduce banding
+    float epsilon = 0.08; // larger margin to avoid hard clamping steps
+    outColor = clamp(corrected, minVal - epsilon, maxVal + epsilon);
     
     if (u_isVelocity == 0) {
-        // Color-only: apply aesthetic sharpness and display-range clamps
-        float sharpness = 0.5; // gentler to reduce aliasing
+        // Color-only: blend with forward to reduce banding from limiter
+        float sharpness = 0.3; // lower = more forward, less MacCormack artifacts
         outColor = mix(forward, outColor, sharpness);
         outColor.rgb = clamp(outColor.rgb, vec3(0.0), vec3(1.0));
 
@@ -84,7 +95,7 @@ void main() {
         float newMag = length(outColor.rgb);
         float neiMax = max(max(max(length(n0.rgb), length(n1.rgb)), max(length(n2.rgb), length(n3.rgb))),
                           max(max(length(n4.rgb), length(n5.rgb)), max(length(n6.rgb), max(length(n7.rgb), length(n8.rgb)))));
-        float cap = min(neiMax, prevMag + 0.02); // allow tiny growth to avoid ringing
+        float cap = min(neiMax, prevMag + 0.05); // allow more growth to reduce banding
         if (newMag > cap && newMag > 1e-6) {
             outColor.rgb *= cap / newMag;
             newMag = cap;
@@ -94,6 +105,15 @@ void main() {
         if (conc > 1.0) {
             outColor.rgb *= (1.0 / conc);
         }
+        
+        // Gentle rim absorption to prevent accumulation artifact
+        float aspect = u_resolution.x / max(u_resolution.y, 1.0);
+        vec2 r = v_texCoord - center;
+        vec2 r_as = vec2(r.x * aspect, r.y);
+        float d = length(r_as);
+        float rimAbsorption = smoothstep(containerRadius - 0.03, containerRadius, d);
+        outColor.rgb *= (1.0 - rimAbsorption * 0.15); // 15% absorption in rim band
+        
         outColor.a = 1.0;
     } else {
         // Velocity: keep signed components, do not clamp to [0,1]

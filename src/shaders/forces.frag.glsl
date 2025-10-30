@@ -35,8 +35,8 @@ void main() {
     vec2 v_uv = vec2(v_as.x / max(aspect, 1e-6), v_as.y);
     
     // Viscous coupling: blend factor mimics friction transmission (not instant velocity replacement)
-    // Lower = gentler, more like diffusion; higher = stronger coupling
-    const float viscousCoupling = 0.15; // 15% blend per frame (adjust 0.1-0.3)
+    // Higher = stronger coupling, longer persistence
+    const float viscousCoupling = 0.25; // 25% blend per frame for lingering rotation
     const float rotationGain = 18.0; // base strength
     
     force = v_uv * rotationGain * viscousCoupling * rimFeather;
@@ -58,21 +58,18 @@ void main() {
         float falloff = 1.0 - smoothstep(containerRadius, containerRadius + 0.02, dist);
         outColor = vec4(reflection * 0.5 * falloff, 0.0, 0.0);
     } else {
-        // Inside container - apply forces with smooth edge falloff
-        float edgeFalloff = 1.0 - smoothstep(0.45, containerRadius, dist);
-        vec2 newVelocity = velocity.xy + force * edgeFalloff;
+        // Inside container - apply forces uniformly (rotation persists to rim)
+        vec2 newVelocity = velocity.xy + force;
 
         // Bounce impulse: in a thin rim band, cancel inward normal velocity component
         float rimBand = smoothstep(containerRadius - 0.04, containerRadius, dist);
-        if (rimBand > 0.0) {
-            vec2 normal_as = dist > 0.0 ? centered_aspect / dist : vec2(1.0, 0.0);
-            vec2 normal = normalize(vec2(normal_as.x / max(aspect, 1e-6), normal_as.y));
-            float vN = dot(newVelocity, normal); // normal component (positive = outward)
-            float inward = max(0.0, -vN);
-            // Remove a fraction of inward component to emulate elastic reflection
-            float k = 0.95; // 0..1, 1 = perfectly elastic cancellation of inward component
-            newVelocity += normal * (inward * k);
-        }
+        vec2 normal_as = dist > 0.001 ? centered_aspect / dist : vec2(1.0, 0.0);
+        vec2 normal = normalize(vec2(normal_as.x / max(aspect, 1e-6), normal_as.y));
+        float vN = dot(newVelocity, normal); // normal component (positive = outward)
+        float inward = max(0.0, -vN);
+        // Apply bounce smoothly as a blend (no hard conditional)
+        float k = 0.95; // 0..1, 1 = perfectly elastic cancellation of inward component
+        newVelocity += normal * (inward * k * rimBand);
         // Clamp velocity to prevent overflow to Inf
         newVelocity = clamp(newVelocity, vec2(-50000.0), vec2(50000.0));
         outColor = vec4(newVelocity, 0.0, 0.0);

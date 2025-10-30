@@ -12,6 +12,12 @@ uniform float u_smoothingStrength; // 0.0 = off, 0.5 = subtle, 1.0 = strong
 uniform float u_paletteDominance; // 0.0 = original, 1.0 = hard winner-takes-all
 uniform float u_paletteSoftPower; // softness of dominance (lower = softer)
 
+// Dither to break up banding (blue noise approximation)
+float dither(vec2 coord) {
+    float noise = fract(sin(dot(coord, vec2(12.9898, 78.233))) * 43758.5453);
+    return noise * 2.0 - 1.0; // -1 to 1
+}
+
 // Simplex noise for organic distortion
 vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
 vec2 mod289(vec2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
@@ -50,10 +56,13 @@ void main() {
         float noise2 = snoise(uv * 7.0 - u_time * 0.15);
         float noise3 = snoise(uv * 15.0 + u_time * 0.2);
         
+        // Add high-frequency noise specifically to break horizontal banding
+        float horizontalBreaker = snoise(vec2(uv.x * 100.0, uv.y * 3.0 + u_time * 0.05));
+        
         // Combine scales for organic distortion
         vec2 distortion = vec2(
             noise1 * 0.5 + noise2 * 0.3 + noise3 * 0.2,
-            noise2 * 0.5 + noise3 * 0.3 + noise1 * 0.2
+            noise2 * 0.5 + noise3 * 0.3 + noise1 * 0.2 + horizontalBreaker * 0.3
         );
         
         // Apply distortion (breaks up straight lines)
@@ -62,6 +71,10 @@ void main() {
     
     // Sample with distorted coordinates
     vec4 color = texture(u_texture, uv);
+    
+    // Add dither to break up banding artifacts
+    float ditherAmount = dither(uv * u_resolution) / 255.0; // ~1 color step
+    color.rgb += ditherAmount * 2.0; // stronger to break visible banding
     
     // Bilateral blur: smooth colors while preserving edges
     if (u_smoothingStrength > 0.0) {
@@ -92,25 +105,29 @@ void main() {
         color = mix(color, smoothed, u_smoothingStrength);
     }
     
-    // Optional: Subtle glow for more organic feel
-    vec2 texel = 1.0 / u_resolution;
-    vec4 glow = vec4(0.0);
-    float glowStrength = 0.3;
-    
-    // 3x3 blur for glow
-    for (int x = -1; x <= 1; x++) {
-        for (int y = -1; y <= 1; y++) {
-            glow += texture(u_texture, uv + vec2(x, y) * texel * 2.0);
+    // Optional: Subtle glow for more organic feel (only if distortion active)
+    if (u_distortionStrength > 0.0) {
+        vec2 texel = 1.0 / u_resolution;
+        vec4 glow = vec4(0.0);
+        float glowStrength = 0.25;
+        
+        // 3x3 blur for glow
+        for (int x = -1; x <= 1; x++) {
+            for (int y = -1; y <= 1; y++) {
+                glow += texture(u_texture, uv + vec2(x, y) * texel * 2.0);
+            }
         }
+        glow /= 9.0;
+        
+        // Blend original with glow
+        color = mix(color, glow, glowStrength * 0.3);
     }
-    glow /= 9.0;
     
-    // Blend original with glow
-    color = mix(color, glow, glowStrength * 0.3);
-    
-    // Boost saturation for more vibrant look
-    float luminance = dot(color.rgb, vec3(0.299, 0.587, 0.114));
-    color.rgb = mix(vec3(luminance), color.rgb, 1.2);
+    // Subtle saturation boost for more vibrant look (only if distortion active)
+    if (u_distortionStrength > 0.0) {
+        float luminance = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+        color.rgb = mix(vec3(luminance), color.rgb, 1.08);
+    }
 
     // Winner-takes-all palette (soft): push toward dominant channel while preserving luminance
     if (u_paletteDominance > 0.0) {
