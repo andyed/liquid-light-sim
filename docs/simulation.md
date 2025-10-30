@@ -43,39 +43,57 @@ This document is a snapshot of the current simulation architecture, the major im
   - advection clamps backtraces to an aspect‑correct circle.
 - **Forces (rotation/bounce):**
   - Rotation modeled as **viscous coupling** from spinning plate boundary (mimics friction transmission through fluid layers).
-  - Applied everywhere with gentle blend factor (`viscousCoupling = 0.15`) instead of instant velocity replacement—no center dead-zone to avoid pooling.
+  - Applied everywhere with blend factor (`viscousCoupling = 0.25`) for lingering rotation influence—no center dead-zone to avoid pooling.
+  - Removed edgeFalloff; rotation applies uniformly inside plate to rim for persistent angular momentum.
   - Tiny epsilon (`0.002`) at exact center to avoid singularity; rim feather only.
   - Rotation masked to the circular domain.
-  - Added rim bounce (thin band) that cancels inward normal velocity (elastic reflection without artificial drain).
+  - Added rim bounce (thin band) that cancels inward normal velocity (elastic reflection without artificial drain); applied as smooth blend factor (no hard conditionals).
 - **Advection:**
   - Velocity advection uses **stable semi‑Lagrangian** (no MacCormack) to avoid center oscillations and blocky inflation.
-  - Color advection uses **MacCormack + limiter**; conservative magnitude cap against the neighborhood max and prior value (+0.02 allowance) to curb density growth.
-  - Neighborhood sampling now uses `textureSize(...)` texel size to remove rectangular bias.
+  - Color advection uses **MacCormack + softened limiter** (epsilon=0.08, sharpness=0.3); conservative magnitude cap against neighborhood max and prior value (+0.05 allowance).
+  - Smooth boundary clamp (0.015 blend zone) instead of hard snap to eliminate rim banding.
+  - Gentle rim absorption (15% in 3% band) to prevent accumulation artifact at boundary.
+  - Neighborhood sampling uses `textureSize(...)` texel size to remove rectangular bias.
 - **Precision / Formats:**
   - Switched to half‑float FBOs: `RGBA16F/RG16F/R16F` with `HALF_FLOAT`.
   - Upgraded physics shaders to `highp float`.
   - Fixed `readPixels` for RG16F by using `HALF_FLOAT` and half→float conversion for corruption checks.
 - **Debug tooling:**
   - Restored HSV velocity debug shader and integrated into the renderer.
+- **Post‑processing (anti‑banding):**
+  - Anisotropic distortion (0.4) with high‑frequency noise targeting horizontal lines.
+  - Strengthened dither (2.0x) to break up quantization artifacts.
+  - Bilateral blur (0.5) for edge‑preserving smoothing.
+  - Conditional glow and saturation boost (only when distortion active).
 
 ## Known Issues + Mitigations
 - **Color inflation under rotation:**
-  - MacCormack can overshoot; we added a limiter and conservative cap. If needed, tighten cap to `+0.01`.
+  - MacCormack can overshoot; softened limiter (epsilon=0.08) and conservative cap (+0.05 allowance) prevent growth.
 - **Central artifacts:**
   - Fixed via viscous coupling model (gentle blend instead of instant injection) and semi‑Lagrangian on velocity advection.
-- **Rim behavior:**
-  - Bounce improved by canceling inward normal component in a 4–5% band near the wall; adjust elasticity `k` if needed.
+- **Rim banding (horizontal lines):**
+  - Fixed via smooth boundary clamp (0.015 blend zone), softened MacCormack limiter, anisotropic distortion, and dither.
+- **Rim accumulation (bright ring):**
+  - Fixed via gentle rim absorption (15% in 3% band) and narrowed smooth clamp zone.
+- **Rim bounce:**
+  - Applied as smooth blend factor (no hard conditionals); cancels inward normal in 4% band; adjust elasticity `k` if needed.
 - **Visualization vs. physics:**
-  - The RG pass‑through view can look “rectangular.” Use HSV velocity debug for ground truth.
+  - The RG pass‑through view can look "rectangular." Use HSV velocity debug for ground truth.
 
 ## Tuning Guide (Current Good Defaults)
 - Rotation gain in `forces.frag.glsl`: `rotationGain = 18–22`.
-- Viscous coupling: `viscousCoupling = 0.1–0.3` (0.15 default; higher = stronger torque transmission).
+- Viscous coupling: `viscousCoupling = 0.2–0.3` (0.25 default; higher = stronger torque transmission and longer persistence).
 - Rim feather band: `smoothstep(containerRadius - 0.03, containerRadius, dist)`.
 - Rim bounce band: `smoothstep(containerRadius - 0.04, containerRadius, dist)`.
-- Bounce elasticity: `k = 0.9–1.0` (1.0 = perfectly elastic cancel of inward normal).
+- Bounce elasticity: `k = 0.9–1.0` (0.95 default; 1.0 = perfectly elastic cancel of inward normal).
+- Boundary clamp soft edge: `0.01–0.02` (0.015 default; balance smoothness vs accumulation).
+- Rim absorption: `0.1–0.2` (0.15 default; prevents bright ring artifact).
+- MacCormack limiter epsilon: `0.05–0.1` (0.08 default; higher = softer, less banding).
+- MacCormack sharpness: `0.2–0.4` (0.3 default; lower = more forward blend, less artifacts).
 - Pressure iterations: `50–70` (raise if faint divergence leaks under strong rotation).
 - Vorticity confinement: `0.0–0.8` (set to `0.0` when validating conservation).
+- Post distortion: `0.3–0.5` (0.4 default; breaks up axis‑aligned banding).
+- Post dither: `1.5–2.5` (2.0 default; breaks up quantization).
 
 ## Adding the Oil Layer (Next)
 Goal: Two‑layer system – water (ink carrier) + oil (lens/viscosity layer) with distinct advection/viscosity and coupling at the interface.
@@ -113,3 +131,5 @@ Goal: Two‑layer system – water (ink carrier) + oil (lens/viscosity layer) wi
 ---
 
 If something looks strangely rectangular, it's probably the visualization. Flip to HSV velocity debug first. If rotation still creates artifacts, adjust `viscousCoupling` (lower = gentler) and ensure velocity advection is semi‑Lagrangian. The viscous coupling model eliminates both center pooling and hard seams by mimicking friction transmission from the spinning plate boundary.
+
+If horizontal banding persists at the rim: increase `softEdge` in `clampToCircle` (0.015 → 0.02) and/or increase post‑processing distortion (0.4 → 0.5). If a bright ring appears at the rim: increase `rimAbsorption` (0.15 → 0.2) or widen the absorption band (0.03 → 0.04).
