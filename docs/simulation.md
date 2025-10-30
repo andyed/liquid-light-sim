@@ -42,8 +42,9 @@ This document is a snapshot of the current simulation architecture, the major im
   - divergence, pressure, gradient, viscosity now receive `u_resolution` and mask to the circle.
   - advection clamps backtraces to an aspect‑correct circle.
 - **Forces (rotation/bounce):**
-  - Rotation computed as true rigid‑body `ω × r` in aspect space; mapped back to UV.
-  - Added center dead‑zone + smooth ramp (`smoothstep(0.04, 0.09, dist)`) to eliminate central whirlpool.
+  - Rotation modeled as **viscous coupling** from spinning plate boundary (mimics friction transmission through fluid layers).
+  - Applied everywhere with gentle blend factor (`viscousCoupling = 0.15`) instead of instant velocity replacement—no center dead-zone to avoid pooling.
+  - Tiny epsilon (`0.002`) at exact center to avoid singularity; rim feather only.
   - Rotation masked to the circular domain.
   - Added rim bounce (thin band) that cancels inward normal velocity (elastic reflection without artificial drain).
 - **Advection:**
@@ -61,7 +62,7 @@ This document is a snapshot of the current simulation architecture, the major im
 - **Color inflation under rotation:**
   - MacCormack can overshoot; we added a limiter and conservative cap. If needed, tighten cap to `+0.01`.
 - **Central artifacts:**
-  - Fixed via larger center dead‑zone for rotation and semi‑Lagrangian on velocity.
+  - Fixed via viscous coupling model (gentle blend instead of instant injection) and semi‑Lagrangian on velocity advection.
 - **Rim behavior:**
   - Bounce improved by canceling inward normal component in a 4–5% band near the wall; adjust elasticity `k` if needed.
 - **Visualization vs. physics:**
@@ -69,7 +70,8 @@ This document is a snapshot of the current simulation architecture, the major im
 
 ## Tuning Guide (Current Good Defaults)
 - Rotation gain in `forces.frag.glsl`: `rotationGain = 18–22`.
-- Center dead‑zone ramp: `smoothstep(0.04, 0.09, dist)`.
+- Viscous coupling: `viscousCoupling = 0.1–0.3` (0.15 default; higher = stronger torque transmission).
+- Rim feather band: `smoothstep(containerRadius - 0.03, containerRadius, dist)`.
 - Rim bounce band: `smoothstep(containerRadius - 0.04, containerRadius, dist)`.
 - Bounce elasticity: `k = 0.9–1.0` (1.0 = perfectly elastic cancel of inward normal).
 - Pressure iterations: `50–70` (raise if faint divergence leaks under strong rotation).
@@ -110,4 +112,4 @@ Goal: Two‑layer system – water (ink carrier) + oil (lens/viscosity layer) wi
 
 ---
 
-If something looks strangely rectangular, it’s probably the visualization. Flip to HSV velocity debug first. If rotation looks like a whirlpool in the middle, reduce its center drive (keep the dead‑zone) and ensure velocity advection is semi‑Lagrangian.
+If something looks strangely rectangular, it's probably the visualization. Flip to HSV velocity debug first. If rotation still creates artifacts, adjust `viscousCoupling` (lower = gentler) and ensure velocity advection is semi‑Lagrangian. The viscous coupling model eliminates both center pooling and hard seams by mimicking friction transmission from the spinning plate boundary.

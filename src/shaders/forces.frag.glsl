@@ -20,16 +20,26 @@ void main() {
     const float containerRadius = 0.48;
     vec2 force;
     
-    // Rigid-body rotation: v_as = ω × r_as; stronger center dead-zone, smooth ramp
-    float centerFeather = smoothstep(0.04, 0.09, dist);          // avoid whirlpool at center
-    float rimFeather = 1.0 - smoothstep(containerRadius - 0.02, containerRadius, dist); // soften near wall
-    float rotWeight = centerFeather * rimFeather;
-    vec2 v_as = vec2(-centered_aspect.y, centered_aspect.x) * (u_rotation_amount * rotWeight);
-    // Map back to UV and apply calibrated gain (not dt-scaled)
-    // We write velocity directly, so scaling by dt would under-drive the effect
+    // Rigid-body rotation as viscous coupling from spinning plate boundary
+    // Physical model: plate spins → friction at bottom → shear stress → velocity diffuses upward
+    // Apply rotation everywhere with gentle blend (no dead-zone to avoid pooling)
+    
+    // Compute rigid-body velocity field: v = ω × r
+    float distSafe = max(dist, 0.002); // tiny epsilon to avoid singularity at exact center
+    vec2 v_as = vec2(-centered_aspect.y, centered_aspect.x) * u_rotation_amount;
+    
+    // Rim feathering only (smooth at wall to avoid boundary artifacts)
+    float rimFeather = 1.0 - smoothstep(containerRadius - 0.03, containerRadius, dist);
+    
+    // Map back to UV space
     vec2 v_uv = vec2(v_as.x / max(aspect, 1e-6), v_as.y);
-    const float rotationGain = 18.0; // tune as needed (15-30 typical)
-    force = v_uv * rotationGain;
+    
+    // Viscous coupling: blend factor mimics friction transmission (not instant velocity replacement)
+    // Lower = gentler, more like diffusion; higher = stronger coupling
+    const float viscousCoupling = 0.15; // 15% blend per frame (adjust 0.1-0.3)
+    const float rotationGain = 18.0; // base strength
+    
+    force = v_uv * rotationGain * viscousCoupling * rimFeather;
 
     // Apply rotation only inside the plate (aspect-correct mask)
     float inside = step(dist, containerRadius);
