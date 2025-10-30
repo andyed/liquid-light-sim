@@ -8,12 +8,15 @@ uniform sampler2D u_texture;
 uniform vec2 u_center;
 uniform float u_radius;
 uniform float u_thickness;
+uniform vec2 u_resolution; // canvas size in pixels
 
 void main() {
     vec4 color = texture(u_texture, v_texCoord);
     
-    // Distance from center
-    float dist = distance(v_texCoord, u_center);
+    // Aspect-correct distance from center so the ring stays circular
+    float aspect = u_resolution.x / max(u_resolution.y, 1.0);
+    vec2 d = v_texCoord - u_center;
+    float dist = length(vec2(d.x * aspect, d.y));
     
     // Draw circular boundary
     float edge = abs(dist - u_radius);

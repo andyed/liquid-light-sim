@@ -45,6 +45,10 @@ export default class Renderer {
         const debugConcentrationFrag = await loadShader('src/shaders/debug-concentration.frag.glsl');
         this.debugConcentrationProgram = this.createProgram(passThroughVert, debugConcentrationFrag);
         
+        // Load velocity debug shader (HSV: angle->hue, magnitude->value)
+        const debugVelocityFrag = await loadShader('src/shaders/debug-velocity.frag.glsl');
+        this.debugVelocityProgram = this.createProgram(passThroughVert, debugVelocityFrag);
+        
         // Load volumetric rendering shader (Beer-Lambert absorption)
         const volumetricFrag = await loadShader('src/shaders/volumetric.frag.glsl');
         this.volumetricProgram = this.createProgram(passThroughVert, volumetricFrag);
@@ -192,6 +196,17 @@ export default class Renderer {
             gl.bindTexture(gl.TEXTURE_2D, simulation.colorTexture1);
             let textureUniform = gl.getUniformLocation(this.debugConcentrationProgram, 'u_color_texture');
             gl.uniform1i(textureUniform, 0);
+        } else if (this.debugMode === 1) {
+            // Velocity visualization mode (HSV)
+            gl.useProgram(this.debugVelocityProgram);
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
+            positionAttrib = gl.getAttribLocation(this.debugVelocityProgram, 'a_position');
+            gl.enableVertexAttribArray(positionAttrib);
+            gl.vertexAttribPointer(positionAttrib, 2, gl.FLOAT, false, 0, 0);
+
+            gl.bindTexture(gl.TEXTURE_2D, simulation.velocityTexture1);
+            gl.uniform1i(gl.getUniformLocation(this.debugVelocityProgram, 'u_velocity_texture'), 0);
+            gl.uniform1f(gl.getUniformLocation(this.debugVelocityProgram, 'u_scale'), 3.0);
         } else if (this.debugMode === 0 && this.useVolumetric) {
             // Volumetric rendering mode (Beer-Lambert absorption)
             gl.useProgram(this.volumetricProgram);
@@ -208,8 +223,7 @@ export default class Renderer {
                 this.backgroundColor.r, this.backgroundColor.g, this.backgroundColor.b);
         } else {
             // Simple color or velocity mode
-            const sourceTexture = this.debugMode === 1 ? simulation.velocityTexture1 : simulation.colorTexture1;
-            gl.bindTexture(gl.TEXTURE_2D, sourceTexture);
+            gl.bindTexture(gl.TEXTURE_2D, simulation.colorTexture1);
             let textureUniform = gl.getUniformLocation(this.passThroughProgram, 'u_texture');
             gl.uniform1i(textureUniform, 0);
         }
@@ -263,6 +277,8 @@ export default class Renderer {
         gl.uniform1i(boundaryTextureUniform, 0);
         
         // Set boundary parameters
+        const resUniform = gl.getUniformLocation(this.boundaryProgram, 'u_resolution');
+        gl.uniform2f(resUniform, gl.canvas.width, gl.canvas.height);
         const centerUniform = gl.getUniformLocation(this.boundaryProgram, 'u_center');
         gl.uniform2f(centerUniform, 0.5, 0.5);
         

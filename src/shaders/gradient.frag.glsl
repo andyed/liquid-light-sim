@@ -1,11 +1,15 @@
 #version 300 es
-precision mediump float;
+precision highp float;
 
 in vec2 v_texCoord;
 out vec4 outColor;
 
 uniform sampler2D u_pressure_texture;
 uniform sampler2D u_velocity_texture;
+uniform vec2 u_resolution;
+
+const vec2 center = vec2(0.5, 0.5);
+const float containerRadius = 0.48;
 
 void main() {
     float dx = 1.0 / float(textureSize(u_pressure_texture, 0).x);
@@ -19,5 +23,13 @@ void main() {
     vec2 gradient = 0.5 * vec2(right - left, top - bottom);
     vec2 velocity = texture(u_velocity_texture, v_texCoord).xy;
 
-    outColor = vec4(velocity - gradient, 0.0, 1.0);
+    vec2 v_new = velocity - gradient;
+
+    // Aspect-correct inside mask
+    float aspect = u_resolution.x / max(u_resolution.y, 1.0);
+    vec2 c = v_texCoord - center;
+    float dist = length(vec2(c.x * aspect, c.y));
+    float inside = step(dist, containerRadius);
+
+    outColor = vec4(v_new * inside, 0.0, 1.0);
 }

@@ -99,31 +99,35 @@ export default class Simulation {
         const width = gl.canvas.width;
         const height = gl.canvas.height;
 
-        // Create texture pairs for ping-pong rendering
-        this.colorTexture1 = this.createTexture(width, height);
-        this.colorTexture2 = this.createTexture(width, height);
+        // Create texture pairs for ping-pong rendering (WebGL2 half-float)
+        // Color: RGBA16F
+        this.colorTexture1 = this.createTexture(width, height, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
+        this.colorTexture2 = this.createTexture(width, height, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
         this.colorFBO = this.createFBO(this.colorTexture1);
 
-        this.velocityTexture1 = this.createTexture(width, height);
-        this.velocityTexture2 = this.createTexture(width, height);
+        // Velocity: RG16F
+        this.velocityTexture1 = this.createTexture(width, height, gl.RG16F, gl.RG, gl.HALF_FLOAT);
+        this.velocityTexture2 = this.createTexture(width, height, gl.RG16F, gl.RG, gl.HALF_FLOAT);
         this.velocityFBO = this.createFBO(this.velocityTexture1);
 
-        this.divergenceTexture = this.createTexture(width, height);
+        // Divergence: R16F
+        this.divergenceTexture = this.createTexture(width, height, gl.R16F, gl.RED, gl.HALF_FLOAT);
         this.divergenceFBO = this.createFBO(this.divergenceTexture);
 
-        this.pressureTexture1 = this.createTexture(width, height);
-        this.pressureTexture2 = this.createTexture(width, height);
+        // Pressure: R16F
+        this.pressureTexture1 = this.createTexture(width, height, gl.R16F, gl.RED, gl.HALF_FLOAT);
+        this.pressureTexture2 = this.createTexture(width, height, gl.R16F, gl.RED, gl.HALF_FLOAT);
         this.pressureFBO = this.createFBO(this.pressureTexture1);
 
         this.ready = true;
         console.log('✓ Simulation initialized');
     }
 
-    createTexture(width, height) {
+    createTexture(width, height, internalFormat, format, type) {
         const gl = this.gl;
         const texture = gl.createTexture();
         gl.bindTexture(gl.TEXTURE_2D, texture);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, width, height, 0, gl.RGBA, gl.FLOAT, null);
+        gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, width, height, 0, format, type, null);
         // Use NEAREST filtering for FBO attachments (LINEAR can cause issues)
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
@@ -319,20 +323,36 @@ export default class Simulation {
         }
         
         const gl = this.gl;
-        const pixels = new Float32Array(4 * 10); // Sample 10 pixels
+        // Match velocity texture format (RG16F) for readback: use HALF_FLOAT and Uint16Array
+        const pixels = new Uint16Array(2 * 10); // 10 pixels * 2 channels (RG)
         
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.velocityFBO);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.velocityTexture1, 0);
-        gl.readPixels(0, 0, 10, 1, gl.RGBA, gl.FLOAT, pixels);
+        gl.readPixels(0, 0, 10, 1, gl.RG, gl.HALF_FLOAT, pixels);
         
         // Check for NaN or Inf (allow up to 10k velocity)
         let maxVal = 0;
+        const halfToFloat = (h) => {
+            const s = (h & 0x8000) >> 15;
+            const e = (h & 0x7C00) >> 10;
+            const f = h & 0x03FF;
+            if (e === 0) {
+                if (f === 0) return s ? -0 : 0;
+                return (s ? -1 : 1) * Math.pow(2, -14) * (f / 1024);
+            }
+            if (e === 31) {
+                return f ? NaN : (s ? -Infinity : Infinity);
+            }
+            return (s ? -1 : 1) * Math.pow(2, e - 15) * (1 + f / 1024);
+        };
+
         for (let i = 0; i < pixels.length; i++) {
-            maxVal = Math.max(maxVal, Math.abs(pixels[i]));
-            if (!isFinite(pixels[i])) {
+            const v = halfToFloat(pixels[i]);
+            maxVal = Math.max(maxVal, Math.abs(v));
+            if (!isFinite(v)) {
                 this.paused = true;
                 console.error('❌ NaN/Inf detected in velocity field');
-                console.error('Corrupted values:', pixels.slice(0, 8));
+                console.error('Corrupted (half) values:', Array.from(pixels.slice(0, 8)));
                 return true;
             }
         }
@@ -366,6 +386,8 @@ export default class Simulation {
         gl.uniform1i(gl.getUniformLocation(this.forcesProgram, 'u_color_texture'), 1);
         
         gl.uniform1f(gl.getUniformLocation(this.forcesProgram, 'u_rotation_amount'), this.rotationAmount);
+        gl.uniform2f(gl.getUniformLocation(this.forcesProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+        gl.uniform1f(gl.getUniformLocation(this.forcesProgram, 'u_dt'), dt);
 
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         this.swapVelocityTextures();
@@ -455,6 +477,7 @@ export default class Simulation {
         gl.uniform1f(gl.getUniformLocation(this.advectionProgram, 'u_dt'), dt);
         gl.uniform2f(gl.getUniformLocation(this.advectionProgram, 'u_resolution'), 
             gl.canvas.width, gl.canvas.height);
+        gl.uniform1i(gl.getUniformLocation(this.advectionProgram, 'u_isVelocity'), 1);
 
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         this.swapVelocityTextures();
@@ -466,6 +489,7 @@ export default class Simulation {
         gl.useProgram(this.viscosityProgram);
         gl.uniform1f(gl.getUniformLocation(this.viscosityProgram, 'u_viscosity'), this.viscosity);
         gl.uniform1f(gl.getUniformLocation(this.viscosityProgram, 'u_dt'), dt);
+        gl.uniform2f(gl.getUniformLocation(this.viscosityProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
 
         for (let i = 0; i < this.viscosityIterations; i++) {
             gl.bindFramebuffer(gl.FRAMEBUFFER, this.velocityFBO);
@@ -500,6 +524,7 @@ export default class Simulation {
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, this.velocityTexture1);
         gl.uniform1i(gl.getUniformLocation(this.divergenceProgram, 'u_velocity_texture'), 0);
+        gl.uniform2f(gl.getUniformLocation(this.divergenceProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
 
         gl.drawArrays(gl.TRIANGLES, 0, 6);
 
@@ -521,6 +546,7 @@ export default class Simulation {
             gl.activeTexture(gl.TEXTURE1);
             gl.bindTexture(gl.TEXTURE_2D, this.divergenceTexture);
             gl.uniform1i(gl.getUniformLocation(this.pressureProgram, 'u_divergence_texture'), 1);
+            gl.uniform2f(gl.getUniformLocation(this.pressureProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
 
             gl.drawArrays(gl.TRIANGLES, 0, 6);
             this.swapPressureTextures();
@@ -543,6 +569,7 @@ export default class Simulation {
         gl.activeTexture(gl.TEXTURE1);
         gl.bindTexture(gl.TEXTURE_2D, this.velocityTexture1);
         gl.uniform1i(gl.getUniformLocation(this.gradientProgram, 'u_velocity_texture'), 1);
+        gl.uniform2f(gl.getUniformLocation(this.gradientProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
 
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         this.swapVelocityTextures();
@@ -568,9 +595,10 @@ export default class Simulation {
         gl.bindTexture(gl.TEXTURE_2D, this.velocityTexture1);
         gl.uniform1i(gl.getUniformLocation(this.advectionProgram, 'u_velocity_texture'), 1);
 
-        gl.uniform1f(gl.getUniformLocation(this.advectionProgram, 'u_dt'), dt * 10.0);
+        gl.uniform1f(gl.getUniformLocation(this.advectionProgram, 'u_dt'), dt);
         gl.uniform2f(gl.getUniformLocation(this.advectionProgram, 'u_resolution'), 
             gl.canvas.width, gl.canvas.height);
+        gl.uniform1i(gl.getUniformLocation(this.advectionProgram, 'u_isVelocity'), 0);
 
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         this.swapColorTextures();
