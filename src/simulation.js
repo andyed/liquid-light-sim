@@ -28,8 +28,8 @@ export default class Simulation {
         this.pixelSoupPercent = 0.0; // 0..1 fraction of inked pixels that are mixed/speckled
         this.occupancyEveryN = 8; // compute occupancy every N frames
         this._frameCounter = 0;
-        this.overflowLower = 0.85; // target lower bound
-        this.overflowUpper = 0.90; // trigger threshold
+        this.overflowLower = 0.88; // target lower bound (was 0.85)
+        this.overflowUpper = 0.93; // trigger threshold (was 0.90)
         
         // Central spiral force accumulation
         this.centralSpiralPower = 0.0; // 0..1, builds up with sustained rotation
@@ -108,13 +108,18 @@ export default class Simulation {
         gl.bindTexture(gl.TEXTURE_2D, this.colorTexture1);
         gl.uniform1i(gl.getUniformLocation(this.overflowProgram, 'u_color_texture'), 0);
         gl.uniform2f(gl.getUniformLocation(this.overflowProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
-        gl.uniform1f(gl.getUniformLocation(this.overflowProgram, 'u_strength'), strength);
+        // Scale strength gentler on smaller screens and when rotating
+        const resMin = Math.min(gl.canvas.width, gl.canvas.height);
+        const resScale = Math.max(0.6, Math.min(1.0, resMin / 1080.0));
+        const rotationScale = Math.max(0.7, 1.0 - 0.35 * Math.min(1.0, Math.abs(this.rotationAmount))); // 0.7..1.0
+        const scaledStrength = strength * 0.6 * resScale * rotationScale; // global 0.6 multiplier to ease overall damping
+        gl.uniform1f(gl.getUniformLocation(this.overflowProgram, 'u_strength'), scaledStrength);
 
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         this.swapColorTextures();
 
         // Optional: log one-shot
-        console.log(`🚰 Overflow valve engaged: strength=${strength.toFixed(2)} → target ${(this.overflowLower*100)|0}-${(this.overflowUpper*100)|0}%`);
+        console.log(`🚰 Overflow valve engaged: strength=${scaledStrength.toFixed(2)} (raw ${strength.toFixed(2)}) → target ${(this.overflowLower*100)|0}-${(this.overflowUpper*100)|0}%`);
     }
 
     async init() {
@@ -304,6 +309,7 @@ export default class Simulation {
         gl.uniform3f(gl.getUniformLocation(this.splatProgram, 'u_color'), vx, vy, 0);
         gl.uniform1f(gl.getUniformLocation(this.splatProgram, 'u_radius'), radius);
         gl.uniform1i(gl.getUniformLocation(this.splatProgram, 'u_isVelocity'), 1);
+        gl.uniform2f(gl.getUniformLocation(this.splatProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
         
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         this.swapVelocityTextures();
@@ -355,6 +361,7 @@ export default class Simulation {
         gl.uniform3f(gl.getUniformLocation(this.splatProgram, 'u_color'), color.r, color.g, color.b);
         gl.uniform1f(gl.getUniformLocation(this.splatProgram, 'u_radius'), radius);
         gl.uniform1i(gl.getUniformLocation(this.splatProgram, 'u_isVelocity'), 0);
+        gl.uniform2f(gl.getUniformLocation(this.splatProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
 
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         this.swapColorTextures(); // Swap so texture2 becomes the current state
@@ -372,10 +379,38 @@ export default class Simulation {
             (Math.random() - 0.5) * 0.06, (Math.random() - 0.5) * 0.06, 0);
         gl.uniform1f(gl.getUniformLocation(this.splatProgram, 'u_radius'), radius * 2);
         gl.uniform1i(gl.getUniformLocation(this.splatProgram, 'u_isVelocity'), 1);
+        gl.uniform2f(gl.getUniformLocation(this.splatProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
         
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         this.swapVelocityTextures();
 
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
+
+    // Recreate simulation textures/FBOs after canvas resize
+    resize() {
+        if (!this.renderer || !this.gl) return;
+        const gl = this.gl;
+        const width = gl.canvas.width;
+        const height = gl.canvas.height;
+
+        // Recreate textures
+        this.colorTexture1 = this.createTexture(width, height, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
+        this.colorTexture2 = this.createTexture(width, height, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
+        this.velocityTexture1 = this.createTexture(width, height, gl.RG16F, gl.RG, gl.HALF_FLOAT);
+        this.velocityTexture2 = this.createTexture(width, height, gl.RG16F, gl.RG, gl.HALF_FLOAT);
+        this.divergenceTexture = this.createTexture(width, height, gl.R16F, gl.RED, gl.HALF_FLOAT);
+        this.pressureTexture1 = this.createTexture(width, height, gl.R16F, gl.RED, gl.HALF_FLOAT);
+        this.pressureTexture2 = this.createTexture(width, height, gl.R16F, gl.RED, gl.HALF_FLOAT);
+
+        // Recreate FBOs bound to the new textures
+        this.colorFBO = this.createFBO(this.colorTexture1);
+        this.velocityFBO = this.createFBO(this.velocityTexture1);
+        this.divergenceFBO = this.createFBO(this.divergenceTexture);
+        this.pressureFBO = this.createFBO(this.pressureTexture1);
+
+        // Clear new targets
+        this.clearColor();
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
 
