@@ -40,7 +40,7 @@ void main() {
     // Viscous coupling: blend factor mimics friction transmission (not instant velocity replacement)
     // Higher = stronger coupling, longer persistence
     const float viscousCoupling = 0.25; // 25% blend per frame for lingering rotation
-    const float rotationGain = 0.35; // slightly reduced to prevent over-energizing
+    const float rotationGain = 0.4; // drastically reduced to prevent over-energizing (was 16.0)
     
     force = v_uv * rotationGain * viscousCoupling * rimFeather;
     
@@ -65,7 +65,7 @@ void main() {
     vec2 tangentDir_uv = vec2(tangentDir.x / max(aspect, 1e-6), tangentDir.y);
     
     // Base strength scales with rotation, modulated by accumulated power
-    float baseStrength = abs(u_rotation_amount) * 0.2; // tuned down for stability
+    float baseStrength = abs(u_rotation_amount) * 0.25; // increased from 0.08 for stronger push
     float powerMultiplier = u_central_spiral_power; // 0 at start, 1.0 at full power (no minimum)
     float outflowStrength = baseStrength * powerMultiplier * angularFalloff;
     
@@ -73,14 +73,6 @@ void main() {
     float rotationSign = sign(u_rotation_amount + 1e-6);
     vec2 centralOutflow = (radialDir_uv * 0.7 + tangentDir_uv * rotationSign * 0.3) * centralStrength * outflowStrength;
     force += centralOutflow;
-
-    // Make forces frame-rate independent (normalize to 60 FPS)
-    force *= (u_dt * 60.0);
-
-    // Tame on smaller screens: scale forces by resolution so mobile is gentler
-    float resMin = min(u_resolution.x, u_resolution.y);
-    float resScale = clamp(resMin / 1080.0, 0.6, 1.0); // ~0.6 at 648px, 1.0 at 1080px+
-    force *= resScale;
 
     // Apply rotation only inside the plate (aspect-correct mask)
     float inside = step(dist, containerRadius);

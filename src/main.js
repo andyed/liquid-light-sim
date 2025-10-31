@@ -20,8 +20,6 @@ class App {
     async run() {
         await this.renderer.init();
         await this.simulation.init();
-        // Keep simulation buffers in sync with canvas size/DPR changes
-        window.addEventListener('resize', () => this.simulation.resize());
         
         // Initialize testing tools (F004 requirement)
         window.tester = new SimulationTester(this.simulation);

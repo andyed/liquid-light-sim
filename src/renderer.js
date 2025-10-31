@@ -103,17 +103,13 @@ export default class Renderer {
     }
 
     resize() {
-        const dpr = Math.min(window.devicePixelRatio || 1, 2);
-        const cssWidth = window.innerWidth;
-        const cssHeight = window.innerHeight;
-        this.gl.canvas.width = Math.max(1, Math.floor(cssWidth * dpr));
-        this.gl.canvas.height = Math.max(1, Math.floor(cssHeight * dpr));
+        this.gl.canvas.width = window.innerWidth;
+        this.gl.canvas.height = window.innerHeight;
         this.gl.viewport(0, 0, this.gl.canvas.width, this.gl.canvas.height);
         
-        // Recreate render targets with new size
+        // Recreate boundary texture with new size
         if (this.ready) {
             this.createBoundaryTexture();
-            this.createPostProcessTexture();
         }
     }
 
