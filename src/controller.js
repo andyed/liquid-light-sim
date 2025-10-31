@@ -250,6 +250,10 @@ export default class Controller {
                     <span>Organic Flow (O)</span>
                     <span class="toggle-state">ON</span>
                 </div>
+                <div class="menu-action" data-action="absorption" style="display: flex; justify-content: space-between; align-items: center; padding: 12px; margin-top: 8px; background: rgba(255,255,255,0.05); border-radius: 4px; cursor: pointer;">
+                    <span>Absorption (K)</span>
+                    <span class="absorption-value" style="opacity: 0.7; font-size: 12px;">3.0</span>
+                </div>
             </div>
             
             <div style="margin-bottom: 30px;">
@@ -358,6 +362,9 @@ export default class Controller {
                 } else if (action.dataset.action === 'boundary') {
                     this.cycleBoundaryMode();
                     this.updateMenuStates();
+                } else if (action.dataset.action === 'absorption') {
+                    this.cycleAbsorption();
+                    this.updateMenuStates();
                 }
             }
         });
@@ -389,6 +396,12 @@ export default class Controller {
             const modes = ['Bounce', 'Viscous Drag', 'Repulsive Force'];
             boundaryValue.textContent = modes[this.simulation.boundaryMode];
         }
+
+        // Update absorption display
+        const absorptionValue = this.menuPanel.querySelector('.absorption-value');
+        if (absorptionValue) {
+            absorptionValue.textContent = this.renderer.absorptionCoefficient.toFixed(1);
+        }
     }
     
     cycleViscosity() {
@@ -403,6 +416,14 @@ export default class Controller {
         const modes = ['Bounce', 'Viscous Drag', 'Repulsive Force'];
         this.simulation.boundaryMode = (this.simulation.boundaryMode + 1) % 3;
         console.log(`🔲 Boundary: ${modes[this.simulation.boundaryMode]} (mode ${this.simulation.boundaryMode})`);
+    }
+
+    cycleAbsorption() {
+        const coefficients = [0.5, 1.0, 2.0, 4.0, 8.0];
+        const currentIndex = coefficients.findIndex(c => Math.abs(c - this.renderer.absorptionCoefficient) < 0.1);
+        const nextIndex = (currentIndex + 1) % coefficients.length;
+        this.renderer.absorptionCoefficient = coefficients[nextIndex];
+        console.log(`💡 Absorption: ${this.renderer.absorptionCoefficient} (higher = darker/richer)`);
     }
     
     update() {
