@@ -15,7 +15,7 @@ export default class Simulation {
         this.gl = renderer.gl;
         
         // Physics parameters - based on real fluid properties
-        this.viscosity = 0.05;  // Slightly higher viscosity for more coherent, perceivable jets
+        this.viscosity = 0.03;  // Lower viscosity so momentum lingers longer
         this.diffusionRate = 0.0;  // Disable diffusion (was causing fading)
         this.spreadStrength = 0.0;  // Concentration pressure (removed - not real physics)
         this.rotationAmount = 0.0;  // Current rotation force
@@ -259,7 +259,7 @@ export default class Simulation {
         gl.uniform2f(gl.getUniformLocation(this.splatProgram, 'u_point'), x, y);
         // Small velocity splat
         gl.uniform3f(gl.getUniformLocation(this.splatProgram, 'u_color'), 
-            (Math.random() - 0.5) * 0.1, (Math.random() - 0.5) * 0.1, 0);
+            (Math.random() - 0.5) * 0.06, (Math.random() - 0.5) * 0.06, 0);
         gl.uniform1f(gl.getUniformLocation(this.splatProgram, 'u_radius'), radius * 2);
         gl.uniform1i(gl.getUniformLocation(this.splatProgram, 'u_isVelocity'), 1);
         

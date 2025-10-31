@@ -460,7 +460,7 @@ export default class Controller {
             // Curl-preserving ring burst (tangential) so projection doesn't cancel it
             const directions = 12;
             const ringRadius = 0.025; // tighter ring
-            const burstStrength = 80.0; // toned down tangential speed for long holds
+            const burstStrength = 60.0; // gentler tangential speed for long holds
             const splatRadius = 0.05; // smaller influence per spoke
             
             for (let i = 0; i < directions; i++) {
