@@ -53,7 +53,9 @@ This document is a snapshot of the current simulation architecture, the major im
     - Mode 2 (Repulsive Force): Soft potential wall - exponentially increasing repulsion as ink approaches edge, prevents collisions
 - **Rotation strength reduction:**
   - Reduced `rotationGain` from `16.0` → `0.4` in `forces.frag.glsl` to avoid over-energizing with single taps and improve visual conservation.
-  - Added gentle radial outflow near center (8% radius) to prevent ink pooling in rotational dead zone; scales with rotation amount.
+  - Added rotating force emitter near center (15% radius) to prevent ink pooling in rotational dead zone.
+  - Force builds up gradually over ~1 second of sustained rotation (invisible at start).
+  - Emitter rotates 3× faster than plate for natural sweeping pattern.
 - **Conservation guardrail (Overflow control):**
   - Added occupancy measurement pass (`occupancy.frag.glsl`) that counts percent of pixels inked inside the circular domain.
   - Added overflow valve pass (`overflow.frag.glsl`) that gently damps color magnitude with a rim bias only when coverage exceeds a threshold.
@@ -91,6 +93,9 @@ This document is a snapshot of the current simulation architecture, the major im
   - New occupancy + overflow controller measures percent pixels inked and applies gentle damping only when coverage > 90%, nudging toward ~85%.
   - Overflow valve preferentially targets highly mixed/speckled areas ("pixel soup") for removal, preserving uniform colors.
   - Low cost (128×128 pass + readback every N frames).
+- **Central pooling (ink stuck at center):**
+  - Fixed via rotating force emitter that builds up gradually with sustained rotation.
+  - Sweeps around center like a sprinkler, pushing ink into rotating flow.
 - **Visualization vs. physics:**
   - The RG pass‑through view can look "rectangular." Use HSV velocity debug for ground truth.
 
@@ -111,13 +116,22 @@ This document is a snapshot of the current simulation architecture, the major im
 - Post distortion: `0.3–0.5` (0.4 default; breaks up axis‑aligned banding).
 - Post dither: `1.5–2.5` (2.0 default; breaks up quantization).
  - **Rotation (updated):** `rotationGain = 0.4` (drastically reduced to prevent flood-on-tap).
- - **Central radial outflow:** `centralRadius = 0.08`, `outflowStrength = rotation × 0.3` (prevents pooling at center).
+ - **Central rotating force emitter:**
+   - `centralRadius = 0.15` (active zone, 15% of plate)
+   - `baseStrength = rotation × 0.25` (force magnitude)
+   - Build rate: `0.015` per frame (~1 second to full power)
+   - Decay rate: `0.05` per frame (~0.3 seconds to zero)
+   - Rotation speed: 3× plate rotation (sweeping pattern)
+   - Angular falloff: cosine lobe (focused directional push)
  - **Overflow controller:**
    - Target band: `overflowLower = 0.85`, `overflowUpper = 0.90` (fraction of inked pixels).
    - Check cadence: `occupancyEveryN = 8` frames.
    - Overflow strength cap: `0.35` (scaled by overfill amount).
    - Occupancy per-pixel threshold: `0.001` in occupancy shader.
    - Mixed area boost: up to 30% extra damping on speckled regions (coherence-based detection).
+ - **Pixel soup measurement:**
+   - Real-time tracking of mixed/speckled pixels (coherence < 70%)
+   - Logged alongside occupancy percentage for monitoring.
 
 ## Adding the Oil Layer (Next)
 Goal: Two‑layer system – water (ink carrier) + oil (lens/viscosity layer) with distinct advection/viscosity and coupling at the interface.

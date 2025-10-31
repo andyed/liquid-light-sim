@@ -31,6 +31,12 @@ export default class Simulation {
         this.overflowLower = 0.85; // target lower bound
         this.overflowUpper = 0.90; // trigger threshold
         
+        // Central spiral force accumulation
+        this.centralSpiralPower = 0.0; // 0..1, builds up with sustained rotation
+        this.centralSpiralBuildRate = 0.015; // how fast it builds per frame (~1 second to full)
+        this.centralSpiralDecayRate = 0.05; // how fast it decays when not rotating
+        this.centralSpiralAngle = 0.0; // rotation angle of the force emitter
+        
         // Iteration counts
         this.viscosityIterations = 20;  // Jacobi iterations for viscosity
         this.pressureIterations = 50;  // Jacobi iterations for pressure
@@ -491,6 +497,17 @@ export default class Simulation {
     applyForces(dt) {
         const gl = this.gl;
         
+        // Update central spiral power accumulation
+        if (Math.abs(this.rotationAmount) > 0.01) {
+            // Build up power when rotating
+            this.centralSpiralPower = Math.min(1.0, this.centralSpiralPower + this.centralSpiralBuildRate);
+            // Rotate the force emitter (faster than plate rotation for variety)
+            this.centralSpiralAngle += this.rotationAmount * 3.0; // 3x plate rotation speed
+        } else {
+            // Decay when not rotating
+            this.centralSpiralPower = Math.max(0.0, this.centralSpiralPower - this.centralSpiralDecayRate);
+        }
+        
         gl.useProgram(this.forcesProgram);
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.velocityFBO);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.velocityTexture2, 0);
@@ -512,6 +529,8 @@ export default class Simulation {
         gl.uniform2f(gl.getUniformLocation(this.forcesProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
         gl.uniform1f(gl.getUniformLocation(this.forcesProgram, 'u_dt'), dt);
         gl.uniform1f(gl.getUniformLocation(this.forcesProgram, 'u_boundary_mode'), this.boundaryMode);
+        gl.uniform1f(gl.getUniformLocation(this.forcesProgram, 'u_central_spiral_power'), this.centralSpiralPower);
+        gl.uniform1f(gl.getUniformLocation(this.forcesProgram, 'u_central_spiral_angle'), this.centralSpiralAngle);
 
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         this.swapVelocityTextures();

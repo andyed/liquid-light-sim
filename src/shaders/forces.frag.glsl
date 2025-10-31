@@ -10,6 +10,8 @@ uniform float u_rotation_amount;
 uniform vec2 u_resolution;
 uniform float u_dt;
 uniform float u_boundary_mode; // 0=bounce, 1=viscous drag, 2=repulsive force
+uniform float u_central_spiral_power; // 0..1, builds up with sustained rotation
+uniform float u_central_spiral_angle; // rotation angle of force emitter
 
 void main() {
     vec2 centered_coord = v_texCoord - 0.5;
@@ -42,17 +44,32 @@ void main() {
     
     force = v_uv * rotationGain * viscousCoupling * rimFeather;
     
-    // Add gentle spiral outflow near center to break up pooling (prevents dead zone)
-    // Physics: spinning creates outward spiral flow at center (like a vortex pump)
-    const float centralRadius = 0.08; // active in central 8% of plate
+    // Add rotating force emitter near center to break up pooling (prevents dead zone)
+    // Physics: spinning creates rotating outward flow at center (like a rotating sprinkler)
+    const float centralRadius = 0.15; // active in central 15% of plate (increased from 0.08)
     float centralStrength = smoothstep(centralRadius, 0.0, dist); // 1 at center, 0 at edge of zone
+    
+    // Create a rotating directional force (not uniform radial)
+    // Angle of current pixel relative to center
+    float pixelAngle = atan(centered_aspect.y, centered_aspect.x);
+    // Angular distance from force emitter direction
+    float angleDiff = mod(pixelAngle - u_central_spiral_angle + 3.14159, 6.28318) - 3.14159; // wrap to [-pi, pi]
+    // Force is strongest in emitter direction, falls off to sides (cosine lobe)
+    float angularFalloff = max(0.0, cos(angleDiff * 1.5)); // 1.5 makes it more focused
+    
+    // Force direction: radial outward with slight tangential component
     vec2 radialDir = dist > 1e-6 ? centered_aspect / dist : vec2(1.0, 0.0);
-    vec2 tangentDir = vec2(-radialDir.y, radialDir.x); // perpendicular to radial (tangential)
+    vec2 tangentDir = vec2(-radialDir.y, radialDir.x);
     vec2 radialDir_uv = vec2(radialDir.x / max(aspect, 1e-6), radialDir.y);
     vec2 tangentDir_uv = vec2(tangentDir.x / max(aspect, 1e-6), tangentDir.y);
-    float outflowStrength = abs(u_rotation_amount) * 0.08; // reduced from 0.3 to be much gentler
-    // Spiral: 70% radial + 30% tangential (in rotation direction)
-    float rotationSign = sign(u_rotation_amount + 1e-6); // preserve rotation direction
+    
+    // Base strength scales with rotation, modulated by accumulated power
+    float baseStrength = abs(u_rotation_amount) * 0.25; // increased from 0.08 for stronger push
+    float powerMultiplier = u_central_spiral_power; // 0 at start, 1.0 at full power (no minimum)
+    float outflowStrength = baseStrength * powerMultiplier * angularFalloff;
+    
+    // Mix radial and tangential (70/30 split)
+    float rotationSign = sign(u_rotation_amount + 1e-6);
     vec2 centralOutflow = (radialDir_uv * 0.7 + tangentDir_uv * rotationSign * 0.3) * centralStrength * outflowStrength;
     force += centralOutflow;
 
