@@ -2,6 +2,8 @@
 
 Try it: https://andyed.github.io/liquid-light-sim/
 
+![Screenshot](https://raw.githubusercontent.com/andyed/liquid-light-sim/main/images/v01.png)
+
 **Status:** Milestone 2 - Water Layer Complete ✅
 
 A GPU-accelerated fluid simulation for VJ performance and digital art, built with WebGL2. Currently implementing single-fluid (water) dynamics as foundation for dual-fluid oil/water system.
