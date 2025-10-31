@@ -38,7 +38,7 @@ void main() {
     // Viscous coupling: blend factor mimics friction transmission (not instant velocity replacement)
     // Higher = stronger coupling, longer persistence
     const float viscousCoupling = 0.25; // 25% blend per frame for lingering rotation
-    const float rotationGain = 16.0; // slightly gentler base strength
+    const float rotationGain = 0.4; // drastically reduced to prevent over-energizing (was 16.0)
     
     force = v_uv * rotationGain * viscousCoupling * rimFeather;
 
