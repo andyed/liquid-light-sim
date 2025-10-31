@@ -254,6 +254,10 @@ export default class Controller {
                     <span>Absorption (K)</span>
                     <span class="absorption-value" style="opacity: 0.7; font-size: 12px;">3.0</span>
                 </div>
+                <div class="menu-action" data-action="palette" style="display: flex; justify-content: space-between; align-items: center; padding: 12px; margin-top: 8px; background: rgba(255,255,255,0.05); border-radius: 4px; cursor: pointer;">
+                    <span>Palette Dominance</span>
+                    <span class="palette-value" style="opacity: 0.7; font-size: 12px;">0.15</span>
+                </div>
             </div>
             
             <div style="margin-bottom: 30px;">
@@ -365,6 +369,9 @@ export default class Controller {
                 } else if (action.dataset.action === 'absorption') {
                     this.cycleAbsorption();
                     this.updateMenuStates();
+                } else if (action.dataset.action === 'palette') {
+                    this.cyclePaletteDominance();
+                    this.updateMenuStates();
                 }
             }
         });
@@ -402,6 +409,12 @@ export default class Controller {
         if (absorptionValue) {
             absorptionValue.textContent = this.renderer.absorptionCoefficient.toFixed(1);
         }
+        
+        // Update palette dominance display
+        const paletteValue = this.menuPanel.querySelector('.palette-value');
+        if (paletteValue) {
+            paletteValue.textContent = this.renderer.paletteDominance.toFixed(2);
+        }
     }
     
     cycleViscosity() {
@@ -424,6 +437,14 @@ export default class Controller {
         const nextIndex = (currentIndex + 1) % coefficients.length;
         this.renderer.absorptionCoefficient = coefficients[nextIndex];
         console.log(`💡 Absorption: ${this.renderer.absorptionCoefficient} (higher = darker/richer)`);
+    }
+    
+    cyclePaletteDominance() {
+        const values = [0.0, 0.15, 0.3, 0.5, 0.7];
+        const currentIndex = values.findIndex(v => Math.abs(v - this.renderer.paletteDominance) < 0.05);
+        const nextIndex = (currentIndex + 1) % values.length;
+        this.renderer.paletteDominance = values[nextIndex];
+        console.log(`🎨 Palette Dominance: ${this.renderer.paletteDominance} (higher = purer hues, less pixel soup)`);
     }
     
     update() {

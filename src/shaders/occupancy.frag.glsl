@@ -22,7 +22,7 @@ void main() {
     float conc = length(c);
 
     // Count as inked if concentration above small threshold
-    float threshold = 0.02; // tune if needed
+    float threshold = 0.001; // very low to detect any ink
     float inked = inside * step(threshold, conc);
 
     // R = inked (0/1), G = inside mask (0/1)

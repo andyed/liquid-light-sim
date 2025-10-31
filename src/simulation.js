@@ -75,10 +75,8 @@ export default class Simulation {
         const inkedNorm = sumInked / 255.0;
         const insideNorm = Math.max(1e-6, sumInside / 255.0);
         this.occupancyPercent = Math.max(0.0, Math.min(1.0, inkedNorm / insideNorm));
-        // Debug (occasionally)
-        if ((this._frameCounter % (this.occupancyEveryN * 8)) === 0) {
-            console.log(`🧪 Occupancy: ${(this.occupancyPercent * 100).toFixed(1)}%`);
-        }
+        // Debug every check (more verbose to diagnose issue)
+        console.log(`🧪 Occupancy: ${(this.occupancyPercent * 100).toFixed(1)}% (threshold: ${this.overflowUpper * 100}%)`);
         // Unbind
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }

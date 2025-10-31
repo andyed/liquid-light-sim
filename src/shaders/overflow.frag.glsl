@@ -28,7 +28,35 @@ void main() {
 
     // Apply damping to color magnitude (preserve hue)
     float strength = clamp(u_strength, 0.0, 1.0);
-    float damp = 1.0 - strength * (0.5 + 0.5 * rim); // 50% base + 50% extra at rim
+    
+    // Detect "pixel soup" - high local color variance indicates speckling
+    vec2 texel = 1.0 / vec2(textureSize(u_color_texture, 0));
+    vec3 n0 = texture(u_color_texture, v_texCoord + texel * vec2(-1.0, -1.0)).rgb;
+    vec3 n1 = texture(u_color_texture, v_texCoord + texel * vec2( 0.0, -1.0)).rgb;
+    vec3 n2 = texture(u_color_texture, v_texCoord + texel * vec2( 1.0, -1.0)).rgb;
+    vec3 n3 = texture(u_color_texture, v_texCoord + texel * vec2(-1.0,  0.0)).rgb;
+    vec3 n4 = texture(u_color_texture, v_texCoord + texel * vec2( 1.0,  0.0)).rgb;
+    vec3 n5 = texture(u_color_texture, v_texCoord + texel * vec2(-1.0,  1.0)).rgb;
+    vec3 n6 = texture(u_color_texture, v_texCoord + texel * vec2( 0.0,  1.0)).rgb;
+    vec3 n7 = texture(u_color_texture, v_texCoord + texel * vec2( 1.0,  1.0)).rgb;
+    
+    // Compute hue directions and variance
+    vec3 avg = (n0 + n1 + n2 + n3 + c.rgb + n4 + n5 + n6 + n7) / 9.0;
+    float m = length(c.rgb);
+    float mAvg = length(avg);
+    
+    // Measure color coherence (low = speckled/mixed, high = uniform)
+    vec3 dir = m > 1e-6 ? c.rgb / m : vec3(0.0);
+    vec3 dirAvg = mAvg > 1e-6 ? avg / mAvg : dir;
+    float coherence = max(0.0, dot(dir, dirAvg)); // 0..1, lower = more mixed
+    float mixedness = 1.0 - coherence; // 0..1, higher = more pixel soup
+    
+    // Target mixed areas more aggressively during overflow
+    // Base damping: 30% base + 40% at rim + up to 30% for mixed areas
+    float baseFactor = 0.3 + 0.4 * rim;
+    float mixedFactor = mixedness * 0.3;
+    float totalDamping = strength * (baseFactor + mixedFactor);
+    float damp = clamp(1.0 - totalDamping, 0.0, 1.0); // ensure valid range
 
     vec3 rgb = c.rgb * damp;
     outColor = vec4(rgb * inside, 1.0);

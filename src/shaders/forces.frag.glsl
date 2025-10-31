@@ -41,6 +41,16 @@ void main() {
     const float rotationGain = 0.4; // drastically reduced to prevent over-energizing (was 16.0)
     
     force = v_uv * rotationGain * viscousCoupling * rimFeather;
+    
+    // Add gentle radial outflow near center to break up pooling (prevents dead zone)
+    // Physics: small pressure gradient from spinning creates slight outward push at center
+    const float centralRadius = 0.08; // active in central 8% of plate
+    float centralStrength = smoothstep(centralRadius, 0.0, dist); // 1 at center, 0 at edge of zone
+    vec2 radialDir = dist > 1e-6 ? centered_aspect / dist : vec2(1.0, 0.0);
+    vec2 radialDir_uv = vec2(radialDir.x / max(aspect, 1e-6), radialDir.y);
+    float outflowStrength = abs(u_rotation_amount) * 0.3; // scale with rotation amount
+    vec2 centralOutflow = radialDir_uv * centralStrength * outflowStrength;
+    force += centralOutflow;
 
     // Apply rotation only inside the plate (aspect-correct mask)
     float inside = step(dist, containerRadius);

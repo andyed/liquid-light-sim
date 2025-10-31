@@ -53,6 +53,7 @@ This document is a snapshot of the current simulation architecture, the major im
     - Mode 2 (Repulsive Force): Soft potential wall - exponentially increasing repulsion as ink approaches edge, prevents collisions
 - **Rotation strength reduction:**
   - Reduced `rotationGain` from `16.0` → `0.4` in `forces.frag.glsl` to avoid over-energizing with single taps and improve visual conservation.
+  - Added gentle radial outflow near center (8% radius) to prevent ink pooling in rotational dead zone; scales with rotation amount.
 - **Conservation guardrail (Overflow control):**
   - Added occupancy measurement pass (`occupancy.frag.glsl`) that counts percent of pixels inked inside the circular domain.
   - Added overflow valve pass (`overflow.frag.glsl`) that gently damps color magnitude with a rim bias only when coverage exceeds a threshold.
@@ -88,6 +89,7 @@ This document is a snapshot of the current simulation architecture, the major im
   - Applied as smooth blend factor (no hard conditionals); cancels inward normal in 4% band; adjust elasticity `k` if needed.
 - **Coverage runaway (plate saturates with ink):**
   - New occupancy + overflow controller measures percent pixels inked and applies gentle damping only when coverage > 90%, nudging toward ~85%.
+  - Overflow valve preferentially targets highly mixed/speckled areas ("pixel soup") for removal, preserving uniform colors.
   - Low cost (128×128 pass + readback every N frames).
 - **Visualization vs. physics:**
   - The RG pass‑through view can look "rectangular." Use HSV velocity debug for ground truth.
@@ -109,11 +111,13 @@ This document is a snapshot of the current simulation architecture, the major im
 - Post distortion: `0.3–0.5` (0.4 default; breaks up axis‑aligned banding).
 - Post dither: `1.5–2.5` (2.0 default; breaks up quantization).
  - **Rotation (updated):** `rotationGain = 0.4` (drastically reduced to prevent flood-on-tap).
+ - **Central radial outflow:** `centralRadius = 0.08`, `outflowStrength = rotation × 0.3` (prevents pooling at center).
  - **Overflow controller:**
    - Target band: `overflowLower = 0.85`, `overflowUpper = 0.90` (fraction of inked pixels).
    - Check cadence: `occupancyEveryN = 8` frames.
    - Overflow strength cap: `0.35` (scaled by overfill amount).
-   - Occupancy per-pixel threshold: `0.02` in occupancy shader.
+   - Occupancy per-pixel threshold: `0.001` in occupancy shader.
+   - Mixed area boost: up to 30% extra damping on speckled regions (coherence-based detection).
 
 ## Adding the Oil Layer (Next)
 Goal: Two‑layer system – water (ink carrier) + oil (lens/viscosity layer) with distinct advection/viscosity and coupling at the interface.
