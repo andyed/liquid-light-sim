@@ -42,14 +42,18 @@ void main() {
     
     force = v_uv * rotationGain * viscousCoupling * rimFeather;
     
-    // Add gentle radial outflow near center to break up pooling (prevents dead zone)
-    // Physics: small pressure gradient from spinning creates slight outward push at center
+    // Add gentle spiral outflow near center to break up pooling (prevents dead zone)
+    // Physics: spinning creates outward spiral flow at center (like a vortex pump)
     const float centralRadius = 0.08; // active in central 8% of plate
     float centralStrength = smoothstep(centralRadius, 0.0, dist); // 1 at center, 0 at edge of zone
     vec2 radialDir = dist > 1e-6 ? centered_aspect / dist : vec2(1.0, 0.0);
+    vec2 tangentDir = vec2(-radialDir.y, radialDir.x); // perpendicular to radial (tangential)
     vec2 radialDir_uv = vec2(radialDir.x / max(aspect, 1e-6), radialDir.y);
-    float outflowStrength = abs(u_rotation_amount) * 0.3; // scale with rotation amount
-    vec2 centralOutflow = radialDir_uv * centralStrength * outflowStrength;
+    vec2 tangentDir_uv = vec2(tangentDir.x / max(aspect, 1e-6), tangentDir.y);
+    float outflowStrength = abs(u_rotation_amount) * 0.08; // reduced from 0.3 to be much gentler
+    // Spiral: 70% radial + 30% tangential (in rotation direction)
+    float rotationSign = sign(u_rotation_amount + 1e-6); // preserve rotation direction
+    vec2 centralOutflow = (radialDir_uv * 0.7 + tangentDir_uv * rotationSign * 0.3) * centralStrength * outflowStrength;
     force += centralOutflow;
 
     // Apply rotation only inside the plate (aspect-correct mask)

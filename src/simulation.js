@@ -25,6 +25,7 @@ export default class Simulation {
         this.boundaryMode = 1;  // 0=bounce, 1=viscous drag, 2=repulsive force
         // Occupancy / overflow control
         this.occupancyPercent = 0.0; // 0..1 fraction of inked pixels inside plate
+        this.pixelSoupPercent = 0.0; // 0..1 fraction of inked pixels that are mixed/speckled
         this.occupancyEveryN = 8; // compute occupancy every N frames
         this._frameCounter = 0;
         this.overflowLower = 0.85; // target lower bound
@@ -65,18 +66,21 @@ export default class Simulation {
         const pixels = new Uint8Array(w * h * 4);
         gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
 
-        // Sum R (inked) and G (inside) components
-        let sumInked = 0, sumInside = 0;
+        // Sum R (inked), G (inside), and B (pixel soup) components
+        let sumInked = 0, sumInside = 0, sumSoup = 0;
         for (let i = 0; i < pixels.length; i += 4) {
             sumInked += pixels[i];      // R
             sumInside += pixels[i + 1]; // G
+            sumSoup += pixels[i + 2];   // B
         }
         // Normalize (bytes 0..255)
         const inkedNorm = sumInked / 255.0;
         const insideNorm = Math.max(1e-6, sumInside / 255.0);
+        const soupNorm = sumSoup / 255.0;
         this.occupancyPercent = Math.max(0.0, Math.min(1.0, inkedNorm / insideNorm));
+        this.pixelSoupPercent = inkedNorm > 1e-6 ? Math.max(0.0, Math.min(1.0, soupNorm / inkedNorm)) : 0.0;
         // Debug every check (more verbose to diagnose issue)
-        console.log(`🧪 Occupancy: ${(this.occupancyPercent * 100).toFixed(1)}% (threshold: ${this.overflowUpper * 100}%)`);
+        console.log(`🧪 Occupancy: ${(this.occupancyPercent * 100).toFixed(1)}% | Pixel Soup: ${(this.pixelSoupPercent * 100).toFixed(1)}% (threshold: ${this.overflowUpper * 100}%)`);
         // Unbind
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
