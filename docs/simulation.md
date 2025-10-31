@@ -123,6 +123,7 @@ This document is a snapshot of the current simulation architecture, the major im
    - Decay rate: `0.05` per frame (~0.3 seconds to zero)
    - Rotation speed: 3× plate rotation (sweeping pattern)
    - Angular falloff: cosine lobe (focused directional push)
+   - Dead zone offset: 90° behind emitter (rotates with force pattern)
  - **Overflow controller:**
    - Target band: `overflowLower = 0.85`, `overflowUpper = 0.90` (fraction of inked pixels).
    - Check cadence: `occupancyEveryN = 8` frames.

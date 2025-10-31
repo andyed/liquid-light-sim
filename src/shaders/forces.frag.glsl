@@ -52,8 +52,9 @@ void main() {
     // Create a rotating directional force (not uniform radial)
     // Angle of current pixel relative to center
     float pixelAngle = atan(centered_aspect.y, centered_aspect.x);
-    // Angular distance from force emitter direction
-    float angleDiff = mod(pixelAngle - u_central_spiral_angle + 3.14159, 6.28318) - 3.14159; // wrap to [-pi, pi]
+    // Angular distance from force emitter direction (offset by 90 deg so dead zone is behind emitter)
+    float emitterAngle = u_central_spiral_angle + 1.5708; // +pi/2 to put dead zone opposite to push direction
+    float angleDiff = mod(pixelAngle - emitterAngle + 3.14159, 6.28318) - 3.14159; // wrap to [-pi, pi]
     // Force is strongest in emitter direction, falls off to sides (cosine lobe)
     float angularFalloff = max(0.0, cos(angleDiff * 1.5)); // 1.5 makes it more focused
     
