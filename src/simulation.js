@@ -22,6 +22,7 @@ export default class Simulation {
         this.jetForce = {x: 0, y: 0, strength: 0};  // Jet impulse tool
         this.useMacCormack = true;  // High-fidelity advection (eliminates numerical diffusion)
         this.vorticityStrength = 0.8;  // Stronger confinement for visible swirling at higher viscosity
+        this.boundaryMode = 1;  // 0=bounce, 1=viscous drag, 2=repulsive force
         
         // Iteration counts
         this.viscosityIterations = 20;  // Jacobi iterations for viscosity
@@ -388,6 +389,7 @@ export default class Simulation {
         gl.uniform1f(gl.getUniformLocation(this.forcesProgram, 'u_rotation_amount'), this.rotationAmount);
         gl.uniform2f(gl.getUniformLocation(this.forcesProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
         gl.uniform1f(gl.getUniformLocation(this.forcesProgram, 'u_dt'), dt);
+        gl.uniform1f(gl.getUniformLocation(this.forcesProgram, 'u_boundary_mode'), this.boundaryMode);
 
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         this.swapVelocityTextures();

@@ -262,6 +262,10 @@ export default class Controller {
                     <span>Viscosity (V)</span>
                     <span class="viscosity-value" style="opacity: 0.7; font-size: 12px;">0.02</span>
                 </div>
+                <div class="menu-action" data-action="boundary" style="display: flex; justify-content: space-between; align-items: center; padding: 12px; margin-bottom: 8px; background: rgba(255,255,255,0.05); border-radius: 4px; cursor: pointer;">
+                    <span>Boundary (B)</span>
+                    <span class="boundary-value" style="opacity: 0.7; font-size: 12px;">Viscous Drag</span>
+                </div>
             </div>
             
             <div style="margin-bottom: 30px;">
@@ -351,6 +355,9 @@ export default class Controller {
                 } else if (action.dataset.action === 'viscosity') {
                     this.cycleViscosity();
                     this.updateMenuStates();
+                } else if (action.dataset.action === 'boundary') {
+                    this.cycleBoundaryMode();
+                    this.updateMenuStates();
                 }
             }
         });
@@ -375,6 +382,13 @@ export default class Controller {
         if (viscosityValue) {
             viscosityValue.textContent = this.simulation.viscosity.toFixed(2);
         }
+        
+        // Update boundary mode display
+        const boundaryValue = this.menuPanel.querySelector('.boundary-value');
+        if (boundaryValue) {
+            const modes = ['Bounce', 'Viscous Drag', 'Repulsive Force'];
+            boundaryValue.textContent = modes[this.simulation.boundaryMode];
+        }
     }
     
     cycleViscosity() {
@@ -383,6 +397,12 @@ export default class Controller {
         const nextIndex = (currentIndex + 1) % viscosities.length;
         this.simulation.viscosity = viscosities[nextIndex];
         console.log(`💧 Viscosity: ${this.simulation.viscosity} (${['Ultra Low', 'Very Low', 'Low', 'Medium', 'High', 'Very High'][nextIndex]})`);
+    }
+    
+    cycleBoundaryMode() {
+        const modes = ['Bounce', 'Viscous Drag', 'Repulsive Force'];
+        this.simulation.boundaryMode = (this.simulation.boundaryMode + 1) % 3;
+        console.log(`🔲 Boundary: ${modes[this.simulation.boundaryMode]} (mode ${this.simulation.boundaryMode})`);
     }
     
     update() {
@@ -582,6 +602,14 @@ export default class Controller {
             const nextIndex = (currentIndex + 1) % strengths.length;
             this.simulation.vorticityStrength = strengths[nextIndex];
             console.log(`🌀 Turbulence: ${this.simulation.vorticityStrength} (vorticity confinement)`);
+        }
+        
+        // Boundary mode controls
+        else if (e.key === 'b') {
+            // B key: Cycle boundary mode
+            const modes = ['Bounce', 'Viscous Drag', 'Repulsive Force'];
+            this.simulation.boundaryMode = (this.simulation.boundaryMode + 1) % 3;
+            console.log(`🔲 Boundary: ${modes[this.simulation.boundaryMode]} (mode ${this.simulation.boundaryMode})`);
         }
         
         // Light color rotation

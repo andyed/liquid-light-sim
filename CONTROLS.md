@@ -12,7 +12,7 @@
 - Blends smoothly (no oversaturation)
 
 ### Right Click + Drag  
-**Jet Impulse Tool** 🌊
+**Jet Impulse Tool** 
 - Creates strong turbulent vortices
 - **Purely invisible** - injects velocity only, no color
 - Stirs and mixes existing colors turbulently
@@ -21,14 +21,20 @@
 
 ## Keyboard Controls
 
-### Container Rotation 🔄
+### Container Rotation 
 - **Arrow Left** or **A** - Rotate fluid counter-clockwise
 - **Arrow Right** or **D** - Rotate fluid clockwise
 - **Arrow Up/Down** - Alternative rotation controls
 - Release to stop rotation
 - **Note:** 12x stronger than before - very visible!
 
-### Viscosity Control 💧
+### Boundary Mode Control 
+- **B** - Cycle boundary mode
+  - Bounce: Reflects fluid at boundary
+  - Viscous Drag: Slows down fluid at boundary
+  - Repulsive Force: Pushes fluid away from boundary
+
+### Viscosity Control 
 - **V** - Cycle viscosity presets
   - 0.1 (Very watery - responsive jets)
   - 0.5 (Watery - fast, energetic)

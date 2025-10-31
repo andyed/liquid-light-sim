@@ -41,13 +41,16 @@ This document is a snapshot of the current simulation architecture, the major im
 - **Aspect‑correct physics (restored):**
   - divergence, pressure, gradient, viscosity now receive `u_resolution` and mask to the circle.
   - advection clamps backtraces to an aspect‑correct circle.
-- **Forces (rotation/bounce):**
+- **Forces (rotation/boundary):**
   - Rotation modeled as **viscous coupling** from spinning plate boundary (mimics friction transmission through fluid layers).
   - Applied everywhere with blend factor (`viscousCoupling = 0.25`) for lingering rotation influence—no center dead-zone to avoid pooling.
   - Removed edgeFalloff; rotation applies uniformly inside plate to rim for persistent angular momentum.
   - Tiny epsilon (`0.002`) at exact center to avoid singularity; rim feather only.
   - Rotation masked to the circular domain.
-  - Added rim bounce (thin band) that cancels inward normal velocity (elastic reflection without artificial drain); applied as smooth blend factor (no hard conditionals).
+  - **Three boundary modes** (B key to cycle):
+    - Mode 0 (Bounce): Elastic reflection - cancels inward normal velocity (original behavior)
+    - Mode 1 (Viscous Drag): Squeeze film effect - models increased resistance from ink between moving ink and wall; damps tangential velocity and strongly resists outward motion
+    - Mode 2 (Repulsive Force): Soft potential wall - exponentially increasing repulsion as ink approaches edge, prevents collisions
 - **Advection:**
   - Velocity advection uses **stable semi‑Lagrangian** (no MacCormack) to avoid center oscillations and blocky inflation.
   - Color advection uses **MacCormack + softened limiter** (epsilon=0.08, sharpness=0.3); conservative magnitude cap against neighborhood max and prior value (+0.05 allowance).
@@ -84,8 +87,10 @@ This document is a snapshot of the current simulation architecture, the major im
 - Rotation gain in `forces.frag.glsl`: `rotationGain = 18–22`.
 - Viscous coupling: `viscousCoupling = 0.2–0.3` (0.25 default; higher = stronger torque transmission and longer persistence).
 - Rim feather band: `smoothstep(containerRadius - 0.03, containerRadius, dist)`.
-- Rim bounce band: `smoothstep(containerRadius - 0.04, containerRadius, dist)`.
-- Bounce elasticity: `k = 0.9–1.0` (0.95 default; 1.0 = perfectly elastic cancel of inward normal).
+- **Boundary modes** (toggle with B key):
+  - Mode 0 (Bounce): `k = 0.9–1.0` (0.95 default; elasticity), band = 0.04
+  - Mode 1 (Viscous Drag): `dragCoeff = 0.85` max, band = 0.08, tangential damp = 0.6, radial resist = 1.2
+  - Mode 2 (Repulsive Force): `repulsionStrength = 0.008`, band = 0.12, cubic falloff
 - Boundary clamp soft edge: `0.01–0.02` (0.015 default; balance smoothness vs accumulation).
 - Rim absorption: `0.1–0.2` (0.15 default; prevents bright ring artifact).
 - MacCormack limiter epsilon: `0.05–0.1` (0.08 default; higher = softer, less banding).

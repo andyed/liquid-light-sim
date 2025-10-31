@@ -9,6 +9,7 @@ uniform sampler2D u_color_texture;
 uniform float u_rotation_amount;
 uniform vec2 u_resolution;
 uniform float u_dt;
+uniform float u_boundary_mode; // 0=bounce, 1=viscous drag, 2=repulsive force
 
 void main() {
     vec2 centered_coord = v_texCoord - 0.5;
@@ -61,15 +62,67 @@ void main() {
         // Inside container - apply forces uniformly (rotation persists to rim)
         vec2 newVelocity = velocity.xy + force;
 
-        // Bounce impulse: in a thin rim band, cancel inward normal velocity component
-        float rimBand = smoothstep(containerRadius - 0.04, containerRadius, dist);
+        // Compute normal for boundary interactions
         vec2 normal_as = dist > 0.001 ? centered_aspect / dist : vec2(1.0, 0.0);
         vec2 normal = normalize(vec2(normal_as.x / max(aspect, 1e-6), normal_as.y));
-        float vN = dot(newVelocity, normal); // normal component (positive = outward)
-        float inward = max(0.0, -vN);
-        // Apply bounce smoothly as a blend (no hard conditional)
-        float k = 0.95; // 0..1, 1 = perfectly elastic cancellation of inward component
-        newVelocity += normal * (inward * k * rimBand);
+        
+        // Three boundary modes:
+        if (u_boundary_mode < 0.5) {
+            // Mode 0: Original bounce (elastic reflection)
+            float rimBand = smoothstep(containerRadius - 0.04, containerRadius, dist);
+            float vN = dot(newVelocity, normal);
+            float inward = max(0.0, -vN);
+            float k = 0.95; // elasticity
+            newVelocity += normal * (inward * k * rimBand);
+            
+        } else if (u_boundary_mode < 1.5) {
+            // Mode 1: Viscous drag (squeeze film effect)
+            // Model: ink between moving ink and wall creates velocity-dependent resistance
+            // Drag increases exponentially as distance to wall decreases
+            float rimBand = smoothstep(containerRadius - 0.08, containerRadius, dist);
+            
+            // Drag coefficient increases near wall (squeeze film effect)
+            // At wall: very high drag; further away: minimal drag
+            float dragCoeff = rimBand * rimBand * 0.85; // quadratic increase, max 85% damping
+            
+            // Apply drag to velocity component perpendicular to radius (tangential)
+            // and stronger drag to radial outward component
+            float vN = dot(newVelocity, normal);
+            vec2 vTangent = newVelocity - vN * normal;
+            
+            // Damp tangential velocity (friction from wall)
+            vTangent *= (1.0 - dragCoeff * 0.6);
+            
+            // Strongly resist outward motion (squeeze film pressure)
+            float outward = max(0.0, vN);
+            vN = vN - outward * dragCoeff * 1.2;
+            
+            // Gentle bounce for strong inward motion
+            float inward = max(0.0, -vN);
+            float bounceStrength = smoothstep(containerRadius - 0.02, containerRadius, dist);
+            vN += inward * 0.7 * bounceStrength;
+            
+            newVelocity = vTangent + vN * normal;
+            
+        } else {
+            // Mode 2: Repulsive force (increases near edge)
+            // Soft potential wall that pushes ink away before collision
+            float repulsionBand = smoothstep(containerRadius - 0.12, containerRadius, dist);
+            
+            // Exponential repulsion: gentle far away, strong near wall
+            float repulsionStrength = repulsionBand * repulsionBand * repulsionBand * 0.008;
+            
+            // Push inward (against the normal)
+            vec2 repulsionForce = -normal * repulsionStrength;
+            newVelocity += repulsionForce;
+            
+            // Still need gentle bounce for any remaining inward velocity
+            float rimBand = smoothstep(containerRadius - 0.02, containerRadius, dist);
+            float vN = dot(newVelocity, normal);
+            float inward = max(0.0, -vN);
+            newVelocity += normal * (inward * 0.8 * rimBand);
+        }
+        
         // Clamp velocity to prevent overflow to Inf
         newVelocity = clamp(newVelocity, vec2(-50000.0), vec2(50000.0));
         outColor = vec4(newVelocity, 0.0, 0.0);
