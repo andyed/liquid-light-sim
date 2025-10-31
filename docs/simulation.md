@@ -51,6 +51,12 @@ This document is a snapshot of the current simulation architecture, the major im
     - Mode 0 (Bounce): Elastic reflection - cancels inward normal velocity (original behavior)
     - Mode 1 (Viscous Drag): Squeeze film effect - models increased resistance from ink between moving ink and wall; damps tangential velocity and strongly resists outward motion
     - Mode 2 (Repulsive Force): Soft potential wall - exponentially increasing repulsion as ink approaches edge, prevents collisions
+- **Rotation strength reduction:**
+  - Reduced `rotationGain` from `16.0` → `0.4` in `forces.frag.glsl` to avoid over-energizing with single taps and improve visual conservation.
+- **Conservation guardrail (Overflow control):**
+  - Added occupancy measurement pass (`occupancy.frag.glsl`) that counts percent of pixels inked inside the circular domain.
+  - Added overflow valve pass (`overflow.frag.glsl`) that gently damps color magnitude with a rim bias only when coverage exceeds a threshold.
+  - Controller keeps ink coverage within a target band (default 85–90%).
 - **Advection:**
   - Velocity advection uses **stable semi‑Lagrangian** (no MacCormack) to avoid center oscillations and blocky inflation.
   - Color advection uses **MacCormack + softened limiter** (epsilon=0.08, sharpness=0.3); conservative magnitude cap against neighborhood max and prior value (+0.05 allowance).
@@ -80,6 +86,9 @@ This document is a snapshot of the current simulation architecture, the major im
   - Fixed via gentle rim absorption (15% in 3% band) and narrowed smooth clamp zone.
 - **Rim bounce:**
   - Applied as smooth blend factor (no hard conditionals); cancels inward normal in 4% band; adjust elasticity `k` if needed.
+- **Coverage runaway (plate saturates with ink):**
+  - New occupancy + overflow controller measures percent pixels inked and applies gentle damping only when coverage > 90%, nudging toward ~85%.
+  - Low cost (128×128 pass + readback every N frames).
 - **Visualization vs. physics:**
   - The RG pass‑through view can look "rectangular." Use HSV velocity debug for ground truth.
 
@@ -99,6 +108,12 @@ This document is a snapshot of the current simulation architecture, the major im
 - Vorticity confinement: `0.0–0.8` (set to `0.0` when validating conservation).
 - Post distortion: `0.3–0.5` (0.4 default; breaks up axis‑aligned banding).
 - Post dither: `1.5–2.5` (2.0 default; breaks up quantization).
+ - **Rotation (updated):** `rotationGain = 0.4` (drastically reduced to prevent flood-on-tap).
+ - **Overflow controller:**
+   - Target band: `overflowLower = 0.85`, `overflowUpper = 0.90` (fraction of inked pixels).
+   - Check cadence: `occupancyEveryN = 8` frames.
+   - Overflow strength cap: `0.35` (scaled by overfill amount).
+   - Occupancy per-pixel threshold: `0.02` in occupancy shader.
 
 ## Adding the Oil Layer (Next)
 Goal: Two‑layer system – water (ink carrier) + oil (lens/viscosity layer) with distinct advection/viscosity and coupling at the interface.

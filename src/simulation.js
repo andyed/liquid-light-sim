@@ -23,6 +23,12 @@ export default class Simulation {
         this.useMacCormack = true;  // High-fidelity advection (eliminates numerical diffusion)
         this.vorticityStrength = 0.8;  // Stronger confinement for visible swirling at higher viscosity
         this.boundaryMode = 1;  // 0=bounce, 1=viscous drag, 2=repulsive force
+        // Occupancy / overflow control
+        this.occupancyPercent = 0.0; // 0..1 fraction of inked pixels inside plate
+        this.occupancyEveryN = 8; // compute occupancy every N frames
+        this._frameCounter = 0;
+        this.overflowLower = 0.85; // target lower bound
+        this.overflowUpper = 0.90; // trigger threshold
         
         // Iteration counts
         this.viscosityIterations = 20;  // Jacobi iterations for viscosity
@@ -33,6 +39,74 @@ export default class Simulation {
         this.paused = false;  // F004 requirement: pause/freeze state
         
         this.ready = false;
+    }
+
+    computeOccupancy() {
+        const gl = this.gl;
+        // Render occupancy mask (R=inked, G=inside) at low resolution
+        gl.useProgram(this.occupancyProgram);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.occupancyFBO);
+        gl.viewport(0, 0, this.occupancyWidth, this.occupancyHeight);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.renderer.quadBuffer);
+        const positionAttrib = gl.getAttribLocation(this.occupancyProgram, 'a_position');
+        gl.enableVertexAttribArray(positionAttrib);
+        gl.vertexAttribPointer(positionAttrib, 2, gl.FLOAT, false, 0, 0);
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.colorTexture1);
+        gl.uniform1i(gl.getUniformLocation(this.occupancyProgram, 'u_color_texture'), 0);
+        gl.uniform2f(gl.getUniformLocation(this.occupancyProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+        // Read back occupancy buffer (UNSIGNED_BYTE RGBA)
+        const w = this.occupancyWidth, h = this.occupancyHeight;
+        const pixels = new Uint8Array(w * h * 4);
+        gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+
+        // Sum R (inked) and G (inside) components
+        let sumInked = 0, sumInside = 0;
+        for (let i = 0; i < pixels.length; i += 4) {
+            sumInked += pixels[i];      // R
+            sumInside += pixels[i + 1]; // G
+        }
+        // Normalize (bytes 0..255)
+        const inkedNorm = sumInked / 255.0;
+        const insideNorm = Math.max(1e-6, sumInside / 255.0);
+        this.occupancyPercent = Math.max(0.0, Math.min(1.0, inkedNorm / insideNorm));
+        // Debug (occasionally)
+        if ((this._frameCounter % (this.occupancyEveryN * 8)) === 0) {
+            console.log(`🧪 Occupancy: ${(this.occupancyPercent * 100).toFixed(1)}%`);
+        }
+        // Unbind
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
+
+    applyOverflow(strength) {
+        const gl = this.gl;
+        if (strength <= 0.0) return;
+        // Fullscreen pass: read colorTexture1, write damped result to colorTexture2
+        gl.useProgram(this.overflowProgram);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.colorFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.colorTexture2, 0);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.renderer.quadBuffer);
+        const positionAttrib = gl.getAttribLocation(this.overflowProgram, 'a_position');
+        gl.enableVertexAttribArray(positionAttrib);
+        gl.vertexAttribPointer(positionAttrib, 2, gl.FLOAT, false, 0, 0);
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.colorTexture1);
+        gl.uniform1i(gl.getUniformLocation(this.overflowProgram, 'u_color_texture'), 0);
+        gl.uniform2f(gl.getUniformLocation(this.overflowProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+        gl.uniform1f(gl.getUniformLocation(this.overflowProgram, 'u_strength'), strength);
+
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        this.swapColorTextures();
+
+        // Optional: log one-shot
+        console.log(`🚰 Overflow valve engaged: strength=${strength.toFixed(2)} → target ${(this.overflowLower*100)|0}-${(this.overflowUpper*100)|0}%`);
     }
 
     async init() {
@@ -97,6 +171,18 @@ export default class Simulation {
             await loadShader('src/shaders/vorticity-confinement.frag.glsl')
         );
 
+        // Occupancy (percent pixels inked) program
+        this.occupancyProgram = this.renderer.createProgram(
+            fullscreenVert,
+            await loadShader('src/shaders/occupancy.frag.glsl')
+        );
+
+        // Overflow valve program (gently damps color when overfilled)
+        this.overflowProgram = this.renderer.createProgram(
+            fullscreenVert,
+            await loadShader('src/shaders/overflow.frag.glsl')
+        );
+
         const width = gl.canvas.width;
         const height = gl.canvas.height;
 
@@ -119,6 +205,21 @@ export default class Simulation {
         this.pressureTexture1 = this.createTexture(width, height, gl.R16F, gl.RED, gl.HALF_FLOAT);
         this.pressureTexture2 = this.createTexture(width, height, gl.R16F, gl.RED, gl.HALF_FLOAT);
         this.pressureFBO = this.createFBO(this.pressureTexture1);
+
+        // Occupancy texture/FBO at low resolution (UNSIGNED_BYTE for easy readback)
+        this.occupancyWidth = 128;
+        this.occupancyHeight = 128;
+        this.occupancyTexture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, this.occupancyTexture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.occupancyWidth, this.occupancyHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        this.occupancyFBO = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.occupancyFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.occupancyTexture, 0);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
         this.ready = true;
         console.log('✓ Simulation initialized');
@@ -298,7 +399,26 @@ export default class Simulation {
 
         // 7. Diffuse color (only if diffusion rate > 0)
         if (this.diffusionRate > 0) {
-            this.diffuseColor(dt);
+            this.applyDiffusion(dt);
+        }
+
+        // 8. Overflow control: compute occupancy every N frames, damp if above threshold
+        this._frameCounter = (this._frameCounter + 1) | 0;
+        if ((this._frameCounter % this.occupancyEveryN) === 0) {
+            const prevViewport = gl.getParameter(gl.VIEWPORT);
+            this.computeOccupancy();
+            // If above upper threshold, apply overflow damping toward lower target
+            if (this.occupancyPercent > this.overflowUpper) {
+                const excess = this.occupancyPercent - this.overflowLower; // e.g., 0.92 - 0.85 = 0.07
+                const range = Math.max(0.01, this.overflowUpper - this.overflowLower); // avoid div0
+                // Strength scaled with excess (clamped)
+                const strength = Math.min(1.0, Math.max(0.0, excess / range)) * 0.35; // gentle overall cap
+                this.applyOverflow(strength);
+                // After damping, recompute quickly (optional)
+                this.computeOccupancy();
+            }
+            // Restore viewport
+            gl.viewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
         }
         
         // 8. Check for corruption (NaN/Inf detection)
