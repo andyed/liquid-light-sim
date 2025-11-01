@@ -1,6 +1,8 @@
 ### Input parity and controls
 - **Keyboard on mobile emulator** works by making the canvas focusable (`tabindex=0`) and listening on both `document` and `window` for key events. Arrow keys/A‑D map to rotation.
 - **Two‑finger jet** on touch devices mirrors right‑click on desktop: one finger paints, two fingers inject a jet; transitions mid‑gesture are handled.
+- **Rotation model (base + delta):** UI button sets `rotationBase` (sticky); keys/gestures set `rotationDelta` (transient). `rotationAmount = base + delta` each frame.
+- **Interleaved inking & flow:** Controller injects first; the same frame runs forces/advection so new dye is immediately advected while rotation persists during painting.
 # Liquid Light Simulation – Technical Notes (for Future Us)
 
 This document is a snapshot of the current simulation architecture, the major improvements from the latest session, the known challenges, and a concrete plan for adding the Oil Layer next. It’s written as a love letter to our future selves so we don’t re‑learn the same lessons twice.
@@ -19,6 +21,7 @@ This document is a snapshot of the current simulation architecture, the major im
 - **Debug**: HSV velocity visualization (angle→hue, magnitude→value) + concentration debug mode.
 
 ## Core Architecture
+- **Layered ownership:** `Simulation` owns shader programs and orchestrates. `WaterLayer` (extending `FluidLayer`) owns its textures/FBOs, swaps, and overflow/occupancy passes; `Simulation` exposes aliases kept in sync.
 - Textures (half‑float):
   - Color: `RGBA16F`
   - Velocity: `RG16F`
@@ -141,9 +144,9 @@ This document is a snapshot of the current simulation architecture, the major im
    - Angular falloff: cosine lobe (focused directional push)
    - Dead zone offset: 90° behind emitter (rotates with force pattern)
  - **Overflow controller:**
-   - Target band: `overflowLower = 0.85`, `overflowUpper = 0.90` (fraction of inked pixels).
+   - Target band: `overflowLower = 0.80`, `overflowUpper = 0.90` (fraction of inked pixels).
    - Check cadence: `occupancyEveryN = 8` frames.
-   - Overflow strength cap: `0.35` (scaled by overfill amount).
+   - Overflow strength cap: `0.20` (scaled by overfill amount).
    - Occupancy per-pixel threshold: `0.001` in occupancy shader.
    - Mixed area boost: up to 30% extra damping on speckled regions (coherence-based detection).
  - **Pixel soup measurement:**

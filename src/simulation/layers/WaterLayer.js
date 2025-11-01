@@ -106,13 +106,13 @@ export default class WaterLayer extends FluidLayer {
     sim._frameCounter = (sim._frameCounter + 1) | 0;
     if ((sim._frameCounter % sim.occupancyEveryN) === 0) {
       const prevViewport = gl.getParameter(gl.VIEWPORT);
-      sim.computeOccupancy();
+      this.computeOccupancy();
       if (sim.occupancyPercent > sim.overflowUpper) {
         const excess = sim.occupancyPercent - sim.overflowLower;
         const range = Math.max(0.01, sim.overflowUpper - sim.overflowLower);
         const strength = Math.min(0.20, Math.max(0.0, excess / range));
-        sim.applyOverflow(strength);
-        sim.computeOccupancy();
+        this.applyOverflow(strength);
+        this.computeOccupancy();
       }
       gl.viewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
     }
@@ -165,8 +165,77 @@ export default class WaterLayer extends FluidLayer {
     this.swapVelocityTextures();
   }
 
-  computeOccupancy() { this.sim.computeOccupancy(); }
-  applyOverflow(strength) { this.sim.applyOverflow(strength); }
+  computeOccupancy() {
+    const sim = this.sim;
+    const gl = this.gl;
+    // Render occupancy mask (R=inked, G=inside) at low resolution
+    gl.useProgram(sim.occupancyProgram);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, sim.occupancyFBO);
+    gl.viewport(0, 0, sim.occupancyWidth, sim.occupancyHeight);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
+    const positionAttrib = gl.getAttribLocation(sim.occupancyProgram, 'a_position');
+    gl.enableVertexAttribArray(positionAttrib);
+    gl.vertexAttribPointer(positionAttrib, 2, gl.FLOAT, false, 0, 0);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.colorTexture1);
+    gl.uniform1i(gl.getUniformLocation(sim.occupancyProgram, 'u_color_texture'), 0);
+    gl.uniform2f(gl.getUniformLocation(sim.occupancyProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    // Read back occupancy buffer (UNSIGNED_BYTE RGBA)
+    const w = sim.occupancyWidth, h = sim.occupancyHeight;
+    const pixels = new Uint8Array(w * h * 4);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+
+    // Sum R (inked), G (inside), and B (pixel soup) components
+    let sumInked = 0, sumInside = 0, sumSoup = 0;
+    for (let i = 0; i < pixels.length; i += 4) {
+      sumInked += pixels[i];
+      sumInside += pixels[i + 1];
+      sumSoup += pixels[i + 2];
+    }
+    // Normalize (bytes 0..255)
+    const inkedNorm = sumInked / 255.0;
+    const insideNorm = Math.max(1e-6, sumInside / 255.0);
+    const soupNorm = sumSoup / 255.0;
+    sim.occupancyPercent = Math.max(0.0, Math.min(1.0, inkedNorm / insideNorm));
+    sim.pixelSoupPercent = inkedNorm > 1e-6 ? Math.max(0.0, Math.min(1.0, soupNorm / inkedNorm)) : 0.0;
+    console.log(`🧪 Occupancy: ${(sim.occupancyPercent * 100).toFixed(1)}% | Pixel Soup: ${(sim.pixelSoupPercent * 100).toFixed(1)}% (threshold: ${sim.overflowUpper * 100}%)`);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+
+  applyOverflow(strength) {
+    const sim = this.sim;
+    const gl = this.gl;
+    if (strength <= 0.0) return;
+    // Fullscreen pass: read colorTexture1, write damped result to colorTexture2
+    const prevViewport = gl.getParameter(gl.VIEWPORT);
+    gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+    gl.useProgram(sim.overflowProgram);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.colorFBO);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.colorTexture2, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
+    const positionAttrib = gl.getAttribLocation(sim.overflowProgram, 'a_position');
+    gl.enableVertexAttribArray(positionAttrib);
+    gl.vertexAttribPointer(positionAttrib, 2, gl.FLOAT, false, 0, 0);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.colorTexture1);
+    gl.uniform1i(gl.getUniformLocation(sim.overflowProgram, 'u_color_texture'), 0);
+    gl.uniform2f(gl.getUniformLocation(sim.overflowProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+    gl.uniform1f(gl.getUniformLocation(sim.overflowProgram, 'u_strength'), strength);
+
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    this.swapColorTextures();
+
+    console.log(`🚰 Overflow valve engaged: strength=${strength.toFixed(2)} → target ${(sim.overflowLower*100)|0}-${(sim.overflowUpper*100)|0}%`);
+    gl.viewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
+  }
 
   // Swaps owned textures
   swapColorTextures() {

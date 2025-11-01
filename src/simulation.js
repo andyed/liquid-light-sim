@@ -183,15 +183,27 @@ export default class Simulation {
     }
 
     swapColorTextures() {
-        [this.colorTexture1, this.colorTexture2] = [this.colorTexture2, this.colorTexture1];
+        if (this.water && this.water.swapColorTextures) {
+            this.water.swapColorTextures();
+        } else {
+            [this.colorTexture1, this.colorTexture2] = [this.colorTexture2, this.colorTexture1];
+        }
     }
 
     swapVelocityTextures() {
-        [this.velocityTexture1, this.velocityTexture2] = [this.velocityTexture2, this.velocityTexture1];
+        if (this.water && this.water.swapVelocityTextures) {
+            this.water.swapVelocityTextures();
+        } else {
+            [this.velocityTexture1, this.velocityTexture2] = [this.velocityTexture2, this.velocityTexture1];
+        }
     }
 
     swapPressureTextures() {
-        [this.pressureTexture1, this.pressureTexture2] = [this.pressureTexture2, this.pressureTexture1];
+        if (this.water && this.water.swapPressureTextures) {
+            this.water.swapPressureTextures();
+        } else {
+            [this.pressureTexture1, this.pressureTexture2] = [this.pressureTexture2, this.pressureTexture1];
+        }
     }
 
     setRotation(amount) {
@@ -307,80 +319,6 @@ export default class Simulation {
 
         // Delegate buffer recreation to layer
         if (this.water) this.water.resize();
-    }
-
-    computeOccupancy() {
-        const gl = this.gl;
-        // Render occupancy mask (R=inked, G=inside) at low resolution
-        gl.useProgram(this.occupancyProgram);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.occupancyFBO);
-        gl.viewport(0, 0, this.occupancyWidth, this.occupancyHeight);
-
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.renderer.quadBuffer);
-        const positionAttrib = gl.getAttribLocation(this.occupancyProgram, 'a_position');
-        gl.enableVertexAttribArray(positionAttrib);
-        gl.vertexAttribPointer(positionAttrib, 2, gl.FLOAT, false, 0, 0);
-
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this.colorTexture1);
-        gl.uniform1i(gl.getUniformLocation(this.occupancyProgram, 'u_color_texture'), 0);
-        gl.uniform2f(gl.getUniformLocation(this.occupancyProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
-
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
-
-        // Read back occupancy buffer (UNSIGNED_BYTE RGBA)
-        const w = this.occupancyWidth, h = this.occupancyHeight;
-        const pixels = new Uint8Array(w * h * 4);
-        gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-
-        // Sum R (inked), G (inside), and B (pixel soup) components
-        let sumInked = 0, sumInside = 0, sumSoup = 0;
-        for (let i = 0; i < pixels.length; i += 4) {
-            sumInked += pixels[i];      // R
-            sumInside += pixels[i + 1]; // G
-            sumSoup += pixels[i + 2];   // B
-        }
-        // Normalize (bytes 0..255)
-        const inkedNorm = sumInked / 255.0;
-        const insideNorm = Math.max(1e-6, sumInside / 255.0);
-        const soupNorm = sumSoup / 255.0;
-        this.occupancyPercent = Math.max(0.0, Math.min(1.0, inkedNorm / insideNorm));
-        this.pixelSoupPercent = inkedNorm > 1e-6 ? Math.max(0.0, Math.min(1.0, soupNorm / inkedNorm)) : 0.0;
-        // Debug every check (more verbose to diagnose issue)
-        console.log(`🧪 Occupancy: ${(this.occupancyPercent * 100).toFixed(1)}% | Pixel Soup: ${(this.pixelSoupPercent * 100).toFixed(1)}% (threshold: ${this.overflowUpper * 100}%)`);
-        // Unbind
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    }
-
-    applyOverflow(strength) {
-        const gl = this.gl;
-        if (strength <= 0.0) return;
-        // Fullscreen pass: read colorTexture1, write damped result to colorTexture2
-        // Make sure viewport covers full canvas (computeOccupancy sets a 128x128 viewport)
-        const prevViewport = gl.getParameter(gl.VIEWPORT);
-        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-        gl.useProgram(this.overflowProgram);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.colorFBO);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.colorTexture2, 0);
-
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.renderer.quadBuffer);
-        const positionAttrib = gl.getAttribLocation(this.overflowProgram, 'a_position');
-        gl.enableVertexAttribArray(positionAttrib);
-        gl.vertexAttribPointer(positionAttrib, 2, gl.FLOAT, false, 0, 0);
-
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this.colorTexture1);
-        gl.uniform1i(gl.getUniformLocation(this.overflowProgram, 'u_color_texture'), 0);
-        gl.uniform2f(gl.getUniformLocation(this.overflowProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
-        gl.uniform1f(gl.getUniformLocation(this.overflowProgram, 'u_strength'), strength);
-
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
-        this.swapColorTextures();
-
-        // Optional: log one-shot
-        console.log(`🚰 Overflow valve engaged: strength=${strength.toFixed(2)} → target ${(this.overflowLower*100)|0}-${(this.overflowUpper*100)|0}%`);
-        // Restore previous viewport
-        gl.viewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
     }
 
     applyConcentrationPressure() {
