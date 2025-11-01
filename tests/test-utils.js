@@ -176,11 +176,19 @@ export class SimulationTester {
         const forcesPass = this.testForcesKernel();
         console.log(`Test 4 - Forces Kernel: ${forcesPass ? '✅ PASS' : '❌ FAIL'}`);
 
+        const aliasOk = this.checkAliases();
+        console.log(`Test 5 - Layer Alias Sync: ${aliasOk ? '✅ PASS' : '❌ FAIL'}`);
+
+        const interleaveOk = this.testInterleavedInkingFlow();
+        console.log(`Test 6 - Interleaved Inking & Flow: ${interleaveOk ? '✅ PASS' : '❌ FAIL'}`);
+
         console.log('\n✅ Basic tests complete');
         return {
             noNaN,
             velocityStats,
-            forcesPass
+            forcesPass,
+            aliasOk,
+            interleaveOk
         };
     }
 
@@ -233,6 +241,42 @@ export class SimulationTester {
             console.error('❌ Forces Kernel: Velocity did NOT increase as expected.');
         }
 
+        return pass;
+    }
+
+    checkAliases() {
+        const sim = this.simulation;
+        const layer = sim.water;
+        if (!layer) return false;
+        const ok = (
+            sim.colorTexture1 === layer.colorTexture1 &&
+            sim.velocityTexture1 === layer.velocityTexture1 &&
+            sim.pressureTexture1 === layer.pressureTexture1 &&
+            sim.divergenceTexture === layer.divergenceTexture
+        );
+        return !!ok;
+    }
+
+    testInterleavedInkingFlow() {
+        const sim = this.simulation;
+        const gl = this.gl;
+        const originalBase = sim.rotationBase || 0;
+        const originalDelta = sim.rotationDelta || 0;
+
+        sim.setRotation(0.2);
+        sim.setRotationDelta(0.0);
+
+        const x = 0.5, y = 0.5;
+        for (let i = 0; i < 10; i++) {
+            sim.splat(x, y, { r: 0.5, g: 0.2, b: 0.9 }, 0.05);
+            sim.update(0.016);
+        }
+
+        const stats = this.analyzeVelocity();
+        const pass = stats.avgSpeed > 0.0015;
+
+        sim.setRotation(originalBase);
+        sim.setRotationDelta(originalDelta);
         return pass;
     }
 }

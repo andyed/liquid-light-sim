@@ -38,7 +38,7 @@ export default class Simulation {
         this.occupancyEveryN = 8; // compute occupancy every N frames
         this._frameCounter = 0;
         this.overflowLower = 0.80; // target lower bound
-        this.overflowUpper = 0.95; // trigger threshold
+        this.overflowUpper = 0.90; // trigger threshold
         
         // Central spiral force accumulation
         this.centralSpiralPower = 0.0; // 0..1, builds up with sustained rotation

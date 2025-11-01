@@ -1,4 +1,13 @@
 export async function loadShader(url) {
-    const response = await fetch(url);
+    // Allow calls like 'src/shaders/xyz.glsl' to work from both index.html (root)
+    // and tests/test-runner.html (in /tests). When under /tests/, prefix '../'.
+    let path = url;
+    try {
+        const inTests = typeof window !== 'undefined' && window.location && window.location.pathname.includes('/tests/');
+        if (!url.startsWith('/') && inTests && !url.startsWith('../')) {
+            path = '../' + url;
+        }
+    } catch (_) {}
+    const response = await fetch(path);
     return await response.text();
 }
