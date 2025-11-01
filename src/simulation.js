@@ -34,13 +34,18 @@ export default class Simulation {
         this.useMacCormack = true;  // High-fidelity advection (eliminates numerical diffusion)
         this.vorticityStrength = 0.4;  // Reduced to slow shredding/dilution for better conservation
         this.boundaryMode = 1;  // 0=bounce, 1=viscous drag, 2=repulsive force
-        // Occupancy / overflow control
+        // Occupancy / overflow control (water)
         this.occupancyPercent = 0.0; // 0..1 fraction of inked pixels inside plate
         this.pixelSoupPercent = 0.0; // 0..1 fraction of inked pixels that are mixed/speckled
         this.occupancyEveryN = 8; // compute occupancy every N frames
         this._frameCounter = 0;
         this.overflowLower = 0.80; // target lower bound
         this.overflowUpper = 0.90; // trigger threshold
+        
+        // Oil occupancy / overflow control (looser thresholds)
+        this.oilOccupancyPercent = 0.0; // 0..1 fraction of oil-covered pixels
+        this.oilOverflowLower = 0.70; // target lower bound (looser than ink)
+        this.oilOverflowUpper = 0.85; // trigger threshold (looser than ink)
         
         // Central spiral force accumulation
         this.centralSpiralPower = 0.0; // 0..1, builds up with sustained rotation

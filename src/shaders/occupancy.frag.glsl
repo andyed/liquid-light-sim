@@ -6,6 +6,7 @@ out vec4 outColor;
 
 uniform sampler2D u_color_texture;
 uniform vec2 u_resolution;
+uniform int u_isOil; // Optional: 1 for oil layer, 0 for ink layer
 
 const vec2 center = vec2(0.5, 0.5);
 const float containerRadius = 0.48;
@@ -21,10 +22,17 @@ void main() {
     vec3 c = texture(u_color_texture, v_texCoord).rgb;
     float conc = length(c);
 
-    // Density-weighted occupancy: softly ramp from 0 to 1 as concentration increases
-    // Low threshold t0 ignores faint haze; t1 marks fully-inked
-    float t0 = 0.02;
-    float t1 = 0.25;
+    // Density-weighted occupancy: different thresholds for oil vs ink
+    float t0, t1;
+    if (u_isOil == 1) {
+        // Oil: thickness-based, lower threshold (oil is more visible at low values)
+        t0 = 0.01;
+        t1 = 0.15;
+    } else {
+        // Ink: concentration-based, standard thresholds
+        t0 = 0.02;
+        t1 = 0.25;
+    }
     float inkWeight = smoothstep(t0, t1, conc); // 0..1
     float inked = inside * inkWeight;
     

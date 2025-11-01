@@ -180,6 +180,21 @@ export default class OilLayer extends FluidLayer {
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       this.swapOilTextures();
     }
+
+    // STEP 6: Oil overflow control (same cadence as water, independent thresholds)
+    // Use same frame counter as water (already incremented in WaterLayer.update)
+    if ((sim._frameCounter % sim.occupancyEveryN) === 0) {
+      const prevViewport = gl.getParameter(gl.VIEWPORT);
+      this.computeOccupancy();
+      if (sim.oilOccupancyPercent > sim.oilOverflowUpper) {
+        const excess = sim.oilOccupancyPercent - sim.oilOverflowLower;
+        const range = Math.max(0.01, sim.oilOverflowUpper - sim.oilOverflowLower);
+        const strength = Math.min(0.20, Math.max(0.0, excess / range));
+        this.applyOverflow(strength);
+        this.computeOccupancy(); // Re-measure after overflow
+      }
+      gl.viewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
+    }
   }
 
   splatColor(x, y, color, radius) {
@@ -229,8 +244,82 @@ export default class OilLayer extends FluidLayer {
     this.swapOilVelocityTextures();
   }
 
-  computeOccupancy() {}
-  applyOverflow(strength) {}
+  computeOccupancy() {
+    const sim = this.sim;
+    const gl = this.gl;
+    // Render occupancy mask (R=oil thickness, G=inside) at low resolution
+    gl.useProgram(sim.occupancyProgram);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, sim.occupancyFBO);
+    gl.viewport(0, 0, sim.occupancyWidth, sim.occupancyHeight);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
+    const positionAttrib = gl.getAttribLocation(sim.occupancyProgram, 'a_position');
+    gl.enableVertexAttribArray(positionAttrib);
+    gl.vertexAttribPointer(positionAttrib, 2, gl.FLOAT, false, 0, 0);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.oilTexture1);
+    gl.uniform1i(gl.getUniformLocation(sim.occupancyProgram, 'u_color_texture'), 0);
+    gl.uniform2f(gl.getUniformLocation(sim.occupancyProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+    // Flag to use different threshold for oil (thickness-based)
+    const isOilLoc = gl.getUniformLocation(sim.occupancyProgram, 'u_isOil');
+    if (isOilLoc) gl.uniform1i(isOilLoc, 1);
+
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    // Read back occupancy buffer (UNSIGNED_BYTE RGBA)
+    const w = sim.occupancyWidth, h = sim.occupancyHeight;
+    const pixels = new Uint8Array(w * h * 4);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+
+    // Sum R (oil thickness), G (inside) components
+    let sumOil = 0, sumInside = 0;
+    for (let i = 0; i < pixels.length; i += 4) {
+      sumOil += pixels[i];
+      sumInside += pixels[i + 1];
+    }
+    // Normalize (bytes 0..255)
+    const oilNorm = sumOil / 255.0;
+    const insideNorm = Math.max(1e-6, sumInside / 255.0);
+    sim.oilOccupancyPercent = Math.max(0.0, Math.min(1.0, oilNorm / insideNorm));
+    
+    if (sim.logVerbose) {
+      console.log(`🛢️ Oil Occupancy: ${(sim.oilOccupancyPercent * 100).toFixed(1)}% (threshold: ${sim.oilOverflowUpper * 100}%)`);
+    }
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+
+  applyOverflow(strength) {
+    const sim = this.sim;
+    const gl = this.gl;
+    if (strength <= 0.0) return;
+    // Fullscreen pass: read oilTexture1, write damped result to oilTexture2
+    const prevViewport = gl.getParameter(gl.VIEWPORT);
+    gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+    gl.useProgram(sim.overflowProgram);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
+    const positionAttrib = gl.getAttribLocation(sim.overflowProgram, 'a_position');
+    gl.enableVertexAttribArray(positionAttrib);
+    gl.vertexAttribPointer(positionAttrib, 2, gl.FLOAT, false, 0, 0);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.oilTexture1);
+    gl.uniform1i(gl.getUniformLocation(sim.overflowProgram, 'u_color_texture'), 0);
+    gl.uniform2f(gl.getUniformLocation(sim.overflowProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+    gl.uniform1f(gl.getUniformLocation(sim.overflowProgram, 'u_strength'), strength);
+
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    this.swapOilTextures();
+
+    if (sim.logVerbose) {
+      console.log(`🛢️ Oil overflow valve: strength=${strength.toFixed(2)} → target ${(sim.oilOverflowLower*100)|0}-${(sim.oilOverflowUpper*100)|0}%`);
+    }
+    gl.viewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
+  }
 
   swapOilTextures() {
     [this.oilTexture1, this.oilTexture2] = [this.oilTexture2, this.oilTexture1];

@@ -249,6 +249,9 @@ export default class WaterLayer extends FluidLayer {
     gl.bindTexture(gl.TEXTURE_2D, this.colorTexture1);
     gl.uniform1i(gl.getUniformLocation(sim.occupancyProgram, 'u_color_texture'), 0);
     gl.uniform2f(gl.getUniformLocation(sim.occupancyProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+    // Flag for ink (not oil)
+    const isOilLoc = gl.getUniformLocation(sim.occupancyProgram, 'u_isOil');
+    if (isOilLoc) gl.uniform1i(isOilLoc, 0);
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 
