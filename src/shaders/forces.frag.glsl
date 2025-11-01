@@ -44,15 +44,17 @@ void main() {
     
     // Viscous coupling: blend factor mimics friction transmission (not instant velocity replacement)
     // Higher = stronger coupling, longer persistence
-    const float viscousCoupling = 0.35; // modestly stronger coupling
-    const float rotationGain = 0.9; // stronger rotation gain for clearer advection
+    const float viscousCoupling = 0.35; // coupling unchanged
+    const float rotationGain = 0.225; // 25% of previous 0.9
     
-    // Apply uniform rotational drive across the interior; walls handled in boundary modes
-    force = v_uv * rotationGain * viscousCoupling;
+    // Rim-emphasized rotational drive across the interior (seam-free)
+    float rimWeight = smoothstep(0.0, containerRadius, dist);
+    float rimBoost = 0.6 + 0.4 * rimWeight; // more torque near rim, not zero at center
+    force = v_uv * rotationGain * viscousCoupling * rimBoost;
     
     // Add rotating force emitter near center to break up pooling (prevents dead zone)
     // Physics: spinning creates rotating outward flow at center (like a rotating sprinkler)
-    const float centralRadius = 0.22; // broadened central influence for interior motion
+    const float centralRadius = 0.20;
     float centralStrength = smoothstep(centralRadius, 0.0, dist); // 1 at center, 0 at edge of zone
     
     // Create a rotating directional force (not uniform radial)
@@ -62,7 +64,7 @@ void main() {
     float emitterAngle = u_central_spiral_angle + 1.5708; // +pi/2 to put dead zone opposite to push direction
     float angleDiff = mod(pixelAngle - emitterAngle + 3.14159, 6.28318) - 3.14159; // wrap to [-pi, pi]
     // Force is strongest in emitter direction, falls off to sides (cosine lobe)
-    float angularFalloff = max(0.0, cos(angleDiff * 1.0)); // broader lobe to spread forcing
+    float angularFalloff = max(0.0, cos(angleDiff * 2.0));
     
     // Force direction: radial outward with slight tangential component
     vec2 radialDir = dist > 1e-6 ? centered_aspect / dist : vec2(1.0, 0.0);
@@ -70,14 +72,12 @@ void main() {
     vec2 radialDir_uv = vec2(radialDir.x / max(aspect, 1e-6), radialDir.y);
     vec2 tangentDir_uv = vec2(tangentDir.x / max(aspect, 1e-6), tangentDir.y);
     
-    // Base strength scales with rotation, modulated by accumulated power
-    float baseStrength = abs(u_rotation_amount) * 0.40; // stronger base rotational drive
-    float powerMultiplier = max(0.3, u_central_spiral_power); // ensure some central forcing immediately
-    float outflowStrength = baseStrength * powerMultiplier * angularFalloff;
-    
-    // Mix radial and tangential (70/30 split)
+    // Tangential-only rotating jet to avoid radial plate-filling
+    float baseStrength = abs(u_rotation_amount) * 0.10;
+    float powerMultiplier = max(0.075, u_central_spiral_power);
+    float jetStrength = baseStrength * powerMultiplier * angularFalloff;
     float rotationSign = sign(u_rotation_amount + 1e-6);
-    vec2 centralOutflow = (radialDir_uv * 0.7 + tangentDir_uv * rotationSign * 0.3) * centralStrength * outflowStrength;
+    vec2 centralOutflow = tangentDir_uv * rotationSign * centralStrength * jetStrength;
     force += centralOutflow;
 
     // Apply rotation only inside the plate (aspect-correct mask)

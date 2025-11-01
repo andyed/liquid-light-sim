@@ -112,7 +112,7 @@ void main() {
         vec2 r_as = vec2(r.x * aspect, r.y);
         float d = length(r_as);
         float rimAbsorption = smoothstep(containerRadius - 0.03, containerRadius, d);
-        outColor.rgb *= (1.0 - rimAbsorption * 0.15); // 15% absorption in rim band
+        outColor.rgb *= (1.0 - rimAbsorption * 0.08); // 8% absorption in rim band
         
         outColor.a = 1.0;
     } else {

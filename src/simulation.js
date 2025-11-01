@@ -21,15 +21,15 @@ export default class Simulation {
         this.rotationAmount = 0.0;  // Current rotation force
         this.jetForce = {x: 0, y: 0, strength: 0};  // Jet impulse tool
         this.useMacCormack = true;  // High-fidelity advection (eliminates numerical diffusion)
-        this.vorticityStrength = 0.8;  // Stronger confinement for visible swirling at higher viscosity
+        this.vorticityStrength = 0.4;  // Reduced to slow shredding/dilution for better conservation
         this.boundaryMode = 1;  // 0=bounce, 1=viscous drag, 2=repulsive force
         // Occupancy / overflow control
         this.occupancyPercent = 0.0; // 0..1 fraction of inked pixels inside plate
         this.pixelSoupPercent = 0.0; // 0..1 fraction of inked pixels that are mixed/speckled
         this.occupancyEveryN = 8; // compute occupancy every N frames
         this._frameCounter = 0;
-        this.overflowLower = 0.85; // target lower bound
-        this.overflowUpper = 0.90; // trigger threshold
+        this.overflowLower = 0.80; // target lower bound
+        this.overflowUpper = 0.95; // trigger threshold
         
         // Central spiral force accumulation
         this.centralSpiralPower = 0.0; // 0..1, builds up with sustained rotation
@@ -407,6 +407,7 @@ export default class Simulation {
         gl.uniform2f(gl.getUniformLocation(this.splatProgram, 'u_point'), x, y);
         gl.uniform3f(gl.getUniformLocation(this.splatProgram, 'u_color'), color.r, color.g, color.b);
         gl.uniform1f(gl.getUniformLocation(this.splatProgram, 'u_radius'), radius);
+        gl.uniform2f(gl.getUniformLocation(this.splatProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
         gl.uniform1i(gl.getUniformLocation(this.splatProgram, 'u_isVelocity'), 0);
 
         gl.drawArrays(gl.TRIANGLES, 0, 6);
@@ -424,6 +425,7 @@ export default class Simulation {
         gl.uniform3f(gl.getUniformLocation(this.splatProgram, 'u_color'), 
             (Math.random() - 0.5) * 0.06, (Math.random() - 0.5) * 0.06, 0);
         gl.uniform1f(gl.getUniformLocation(this.splatProgram, 'u_radius'), radius * 2);
+        gl.uniform2f(gl.getUniformLocation(this.splatProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
         gl.uniform1i(gl.getUniformLocation(this.splatProgram, 'u_isVelocity'), 1);
         
         gl.drawArrays(gl.TRIANGLES, 0, 6);
@@ -473,10 +475,10 @@ export default class Simulation {
             this.computeOccupancy();
             // If above upper threshold, apply overflow damping toward lower target
             if (this.occupancyPercent > this.overflowUpper) {
-                const excess = this.occupancyPercent - this.overflowLower; // e.g., 0.92 - 0.85 = 0.07
+                const excess = this.occupancyPercent - this.overflowLower; // e.g., 0.96 - 0.80 = 0.16
                 const range = Math.max(0.01, this.overflowUpper - this.overflowLower); // avoid div0
-                // Strength scaled with excess (clamped)
-                const strength = Math.min(1.0, Math.max(0.0, excess / range)) * 0.35; // gentle overall cap
+                // Strength scaled with excess (clamped) and capped lower for conservation
+                const strength = Math.min(0.20, Math.max(0.0, excess / range));
                 this.applyOverflow(strength);
                 // After damping, recompute quickly (optional)
                 this.computeOccupancy();

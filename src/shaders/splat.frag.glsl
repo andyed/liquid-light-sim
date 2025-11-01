@@ -9,12 +9,18 @@ uniform vec2 u_point;
 uniform vec3 u_color;
 uniform float u_radius;
 uniform bool u_isVelocity; // true when splatting into velocity field
+uniform vec2 u_resolution;
 
 void main() {
-    float d = distance(v_texCoord, u_point);
+    // Aspect-correct distance so splats are circular in the plate space
+    float aspect = u_resolution.x / max(u_resolution.y, 1.0);
+    vec2 r = v_texCoord - u_point;
+    vec2 r_as = vec2(r.x * aspect, r.y);
+    float d = length(r_as);
     vec4 existing = texture(u_texture, v_texCoord);
     
     // Continuous source injection with Gaussian falloff
+    // Interpret u_radius in UV based on min dimension; aspect-corrected distance handles shape
     float gaussian = exp(-d * d / (u_radius * u_radius * 0.5));
     float sourceStrength = 0.03;
     

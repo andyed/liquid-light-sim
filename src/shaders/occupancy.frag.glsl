@@ -21,12 +21,15 @@ void main() {
     vec3 c = texture(u_color_texture, v_texCoord).rgb;
     float conc = length(c);
 
-    // Count as inked if concentration above small threshold
-    float threshold = 0.001; // very low to detect any ink
-    float inked = inside * step(threshold, conc);
+    // Density-weighted occupancy: softly ramp from 0 to 1 as concentration increases
+    // Low threshold t0 ignores faint haze; t1 marks fully-inked
+    float t0 = 0.02;
+    float t1 = 0.25;
+    float inkWeight = smoothstep(t0, t1, conc); // 0..1
+    float inked = inside * inkWeight;
     
     // Detect "pixel soup" - measure local color coherence
-    vec2 texel = 1.0 / u_resolution;
+    vec2 texel = 1.0 / vec2(textureSize(u_color_texture, 0));
     vec3 n0 = texture(u_color_texture, v_texCoord + texel * vec2(-1.0, 0.0)).rgb;
     vec3 n1 = texture(u_color_texture, v_texCoord + texel * vec2( 1.0, 0.0)).rgb;
     vec3 n2 = texture(u_color_texture, v_texCoord + texel * vec2( 0.0,-1.0)).rgb;
@@ -40,8 +43,8 @@ void main() {
     float coherence = max(0.0, dot(dir, dirAvg)); // 0..1, lower = more mixed
     float mixedness = 1.0 - coherence; // 0..1, higher = pixel soup
     float isMixed = step(0.3, mixedness); // threshold: mixedness > 30% = soup
-    float soupPixel = inked * isMixed; // only count inked mixed pixels
+    float soupPixel = (inkWeight > 0.2 ? 1.0 : 0.0) * isMixed; // count only sufficiently inked mixed pixels
 
-    // R = inked (0/1), G = inside mask (0/1), B = pixel soup (0/1)
+    // R = inked weight (0..1), G = inside mask (0/1), B = pixel soup (0/1)
     outColor = vec4(inked, inside, soupPixel, 1.0);
 }
