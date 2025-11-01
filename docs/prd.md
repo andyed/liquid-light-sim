@@ -51,6 +51,11 @@ The application must adhere to a strict **Model-View separation** to ensure perf
 * **The View (Rendering Pipeline):** Renders the Model's state using **Ray Tracing/Marching** for optical realism.  
 * **The Controller (UI/Input):** Pure JavaScript that only manages user input and sends small **Uniforms/Buffers** to the GPU.
 
+#### Layered Simulation Architecture (Alpha constraint)
+* The simulation uses a layered model: a `Simulation` orchestrator with `FluidLayer` base and `WaterLayer` implementation.  
+* Shader programs are owned at the `Simulation` level; per-layer GPU resources (textures/FBOs) are owned by the layer.  
+* Renderer and tests read Simulation field aliases that are kept in sync with the active layer.
+
 ### **2.2. Responsive Canvas & DPI (Rendering Mandate)**
 - The canvas shall be sized responsively:
   - Portrait: CSS canvas is square (short edge). Landscape: fills viewport.
@@ -94,6 +99,8 @@ The entire state of the fluid simulation is stored in high-precision **3D Textur
 | **F003.01** | **Injection Tool:** Primary input to inject **Color Dye** and a minor velocity impulse at the cursor location. | A click generates a localized bloom of color that is immediately advected (carried) by the fluid flow. |
 | **F003.02** | **Color Wheel Input:** Real-time control to change the **background light source color** (the light table). | Changing the color with a slider or picker results in an instantaneous ( $\\le 16$ms latency) change to the overall aesthetic tint of the fluids. |
 | **F003.03** | **Global Reset:** A dedicated button/hotkey to instantly wipe the Reservoir State to its initial, static configuration. | The entire simulation resets to a clean, still state, ready for a new composition. |
+
+| **F003.04** | **Interleaved Inking and Flow:** Continuous color injection must not pause or suppress forces; injection and flow proceed in the same frame. | During sustained painting, rotation/forces persist and newly injected dye is immediately advected. Verified by velocity debug that rotation remains active while inking. |
 
 ### **F004: Inspection and Testability (The Freeze Frame Model)**
 

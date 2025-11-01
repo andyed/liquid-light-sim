@@ -52,6 +52,7 @@ export default class Controller {
         this.didJetThisClick = false; // kept for initial state logging
         this.lastJetTime = 0;
         this.jetIntervalMs = 250; // safe sustained repeat cadence
+        this.injectEveryN = 2; // throttle paint injection to every N frames
         this.maxJetDurationMs = 2000; // hard cap per click
         this.jetHoldStart = 0;
         
@@ -193,7 +194,7 @@ export default class Controller {
         `;
         
         this.rotationButton.addEventListener('click', () => {
-            if (this.simulation.rotationAmount === 0) {
+            if (this.simulation.rotationBase === 0) {
                 this.simulation.setRotation(1.2);
                 this.rotationButton.style.background = 'rgba(0, 150, 255, 0.7)';
                 console.log('🔄 Rotation: ON');
@@ -484,7 +485,7 @@ export default class Controller {
             this.updateLightIndicator(0, 0, 0);
         }
         
-        // Handle continuous injection
+        // Handle continuous injection (throttled)
         if (this.isMouseDown && !this.isRightMouseDown) {
             const x = this.currentMouseX;
             const y = this.currentMouseY;
@@ -500,8 +501,11 @@ export default class Controller {
             }
             
             // Continuous source injection (source term in advection-diffusion equation)
-            // Larger radius creates smooth concentration gradient
-            this.simulation.splat(x, y, this.currentColor, 0.08);
+            // Throttle to every N frames to avoid overwhelming flow
+            if ((this._injectionFrameCount % this.injectEveryN) === 1) {
+                // Larger radius creates smooth concentration gradient
+                this.simulation.splat(x, y, this.currentColor, 0.08);
+            }
         } else {
             if (this._injectionFrameCount) {
                 console.log(`✅ Injection complete - ${this._injectionFrameCount} total frames`);
@@ -608,15 +612,15 @@ export default class Controller {
         }
         // Container rotation controls (increased to 0.2 for better visibility)
         if (e.key === 'ArrowLeft' || e.key === 'a') {
-            this.simulation.setRotation(0.2);
+            this.simulation.setRotationDelta(0.2);
             console.log('Rotating counter-clockwise: 0.2');
         } else if (e.key === 'ArrowRight' || e.key === 'd') {
-            this.simulation.setRotation(-0.2);
+            this.simulation.setRotationDelta(-0.2);
             console.log('Rotating clockwise: -0.2');
         } else if (e.key === 'ArrowUp') {
-            this.simulation.setRotation(0.2);
+            this.simulation.setRotationDelta(0.2);
         } else if (e.key === 'ArrowDown') {
-            this.simulation.setRotation(-0.2);
+            this.simulation.setRotationDelta(-0.2);
         }
         
         // Space + mouse for alternative jet mode
@@ -743,7 +747,7 @@ export default class Controller {
         if (e.key === 'ArrowLeft' || e.key === 'a' || 
             e.key === 'ArrowRight' || e.key === 'd' ||
             e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-            this.simulation.setRotation(0.0);
+            this.simulation.setRotationDelta(0.0);
         } else if (e.key === ' ') {
             this.isSpacePressed = false;
         }
@@ -827,15 +831,15 @@ export default class Controller {
     onKeyDown(e) {
     // Container rotation controls (increased to 0.2 for better visibility)
     if (e.key === 'ArrowLeft' || e.key === 'a') {
-        this.simulation.setRotation(0.2);
+        this.simulation.setRotationDelta(0.2);
         console.log('Rotating counter-clockwise: 0.2');
     } else if (e.key === 'ArrowRight' || e.key === 'd') {
-        this.simulation.setRotation(-0.2);
+        this.simulation.setRotationDelta(-0.2);
         console.log('Rotating clockwise: -0.2');
     } else if (e.key === 'ArrowUp') {
-        this.simulation.setRotation(0.2);
+        this.simulation.setRotationDelta(0.2);
     } else if (e.key === 'ArrowDown') {
-        this.simulation.setRotation(-0.2);
+        this.simulation.setRotationDelta(-0.2);
     }
         
     // Space + mouse for alternative jet mode

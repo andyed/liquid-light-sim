@@ -1,4 +1,5 @@
 import { loadShader } from './utils.js';
+import WaterLayer from './simulation/layers/WaterLayer.js';
 import { applyForces } from './simulation/kernels/forces.js';
 import { applyVorticityConfinement } from './simulation/kernels/vorticity.js';
 import { advectVelocity, advectColor } from './simulation/kernels/advection.js';
@@ -24,7 +25,9 @@ export default class Simulation {
         this.viscosity = 0.03;  // Lower viscosity so momentum lingers longer
         this.diffusionRate = 0.0;  // Disable diffusion (was causing fading)
         this.spreadStrength = 0.0;  // Concentration pressure (removed - not real physics)
-        this.rotationAmount = 0.0;  // Current rotation force
+        this.rotationAmount = 0.0;  // Effective rotation force (base + delta)
+        this.rotationBase = 0.0;    // Button/toggle driven rotation
+        this.rotationDelta = 0.0;   // Transient input (keys/gestures)
         this.jetForce = {x: 0, y: 0, strength: 0};  // Jet impulse tool
         this.useMacCormack = true;  // High-fidelity advection (eliminates numerical diffusion)
         this.vorticityStrength = 0.4;  // Reduced to slow shredding/dilution for better conservation
@@ -131,26 +134,6 @@ export default class Simulation {
         const width = gl.canvas.width;
         const height = gl.canvas.height;
 
-        // Create texture pairs for ping-pong rendering (WebGL2 half-float)
-        // Color: RGBA16F
-        this.colorTexture1 = this.createTexture(width, height, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
-        this.colorTexture2 = this.createTexture(width, height, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
-        this.colorFBO = this.createFBO(this.colorTexture1);
-
-        // Velocity: RG16F
-        this.velocityTexture1 = this.createTexture(width, height, gl.RG16F, gl.RG, gl.HALF_FLOAT);
-        this.velocityTexture2 = this.createTexture(width, height, gl.RG16F, gl.RG, gl.HALF_FLOAT);
-        this.velocityFBO = this.createFBO(this.velocityTexture1);
-
-        // Divergence: R16F
-        this.divergenceTexture = this.createTexture(width, height, gl.R16F, gl.RED, gl.HALF_FLOAT);
-        this.divergenceFBO = this.createFBO(this.divergenceTexture);
-
-        // Pressure: R16F
-        this.pressureTexture1 = this.createTexture(width, height, gl.R16F, gl.RED, gl.HALF_FLOAT);
-        this.pressureTexture2 = this.createTexture(width, height, gl.R16F, gl.RED, gl.HALF_FLOAT);
-        this.pressureFBO = this.createFBO(this.pressureTexture1);
-
         // Occupancy texture/FBO at low resolution (UNSIGNED_BYTE for easy readback)
         this.occupancyWidth = 128;
         this.occupancyHeight = 128;
@@ -166,6 +149,8 @@ export default class Simulation {
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.occupancyTexture, 0);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
+        this.water = new WaterLayer(this);
+        await this.water.init();
         this.ready = true;
         console.log('✓ Simulation initialized');
     }
@@ -210,7 +195,11 @@ export default class Simulation {
     }
 
     setRotation(amount) {
-        this.rotationAmount = amount;
+        this.rotationBase = amount;
+    }
+
+    setRotationDelta(amount) {
+        this.rotationDelta = amount;
     }
 
     setJetForce(x, y, strength) {
@@ -219,30 +208,7 @@ export default class Simulation {
 
     splatVelocity(x, y, vx, vy, radius = 0.05) {
         if (!this.ready || !this.renderer.ready) return;
-
-        const gl = this.gl;
-        
-        gl.useProgram(this.splatProgram);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.velocityFBO);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.velocityTexture2, 0);
-        
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.renderer.quadBuffer);
-        const positionAttrib = gl.getAttribLocation(this.splatProgram, 'a_position');
-        gl.enableVertexAttribArray(positionAttrib);
-        gl.vertexAttribPointer(positionAttrib, 2, gl.FLOAT, false, 0, 0);
-        
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this.velocityTexture1);
-        gl.uniform1i(gl.getUniformLocation(this.splatProgram, 'u_texture'), 0);
-        gl.uniform2f(gl.getUniformLocation(this.splatProgram, 'u_point'), x, y);
-        gl.uniform3f(gl.getUniformLocation(this.splatProgram, 'u_color'), vx, vy, 0);
-        gl.uniform1f(gl.getUniformLocation(this.splatProgram, 'u_radius'), radius);
-        gl.uniform1i(gl.getUniformLocation(this.splatProgram, 'u_isVelocity'), 1);
-        
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
-        this.swapVelocityTextures();
-        
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        if (this.water) this.water.splatVelocity(x, y, vx, vy, radius);
     }
 
     clearColor() {
@@ -268,50 +234,59 @@ export default class Simulation {
             console.warn('⚠️ Splat called but not ready:', {ready: this.ready, rendererReady: this.renderer.ready});
             return;
         }
+        if (this.water) {
+            this.water.splatColor(x, y, color, radius);
+            // small stirring impulse to match previous behavior
+            const cx = 0.5, cy = 0.5;
+            const dx = x - cx;
+            const dy = y - cy;
+            const len = Math.max(1e-4, Math.hypot(dx, dy));
+            const tx = -dy / len;
+            const ty = dx / len;
+            const dir = this.rotationAmount >= 0 ? 1 : -1;
+            const strength = 0.04 * (0.5 + Math.min(1.0, Math.abs(this.rotationAmount)));
+            const vx = tx * strength * dir;
+            const vy = ty * strength * dir;
+            this.water.splatVelocity(x, y, vx, vy, radius * 2);
+        }
+    }
 
+    // Kernel wrappers (used by WaterLayer)
+    applyForces(dt) {
+        applyForces(this.gl, this.renderer, this.forcesProgram, this, dt);
+    }
+    applyVorticityConfinement() {
+        applyVorticityConfinement(this.gl, this.renderer, this.vorticityConfinementProgram, this);
+    }
+    advectVelocity(dt) {
+        advectVelocity(this.gl, this.renderer, this.advectionProgram, this, dt);
+    }
+    applyViscosity(dt) {
+        applyViscosity(this.gl, this.renderer, this.viscosityProgram, this, dt);
+    }
+    projectVelocity() {
+        projectVelocity(this.gl, this.renderer, this.divergenceProgram, this.pressureProgram, this.gradientProgram, this);
+    }
+    advectColor(dt) {
+        advectColor(this.gl, this.renderer, this.advectionProgram, this, dt);
+    }
+    applyDiffusion(dt) {
+        diffuseColor(this.gl, this.renderer, this.diffusionProgram, this, dt);
+    }
+
+    update(deltaTime) {
+        if (!this.ready || !this.renderer.ready || this.paused) return;
         const gl = this.gl;
-
-        // Splat color - use proper ping-pong to avoid feedback loop
-        // Read from texture1, write to texture2, then swap
-        gl.useProgram(this.splatProgram);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.colorFBO);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.colorTexture2, 0);
-
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.renderer.quadBuffer);
-        const positionAttrib = gl.getAttribLocation(this.splatProgram, 'a_position');
-        gl.enableVertexAttribArray(positionAttrib);
-        gl.vertexAttribPointer(positionAttrib, 2, gl.FLOAT, false, 0, 0);
-
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this.colorTexture1);
-        gl.uniform1i(gl.getUniformLocation(this.splatProgram, 'u_texture'), 0);
-        gl.uniform2f(gl.getUniformLocation(this.splatProgram, 'u_point'), x, y);
-        gl.uniform3f(gl.getUniformLocation(this.splatProgram, 'u_color'), color.r, color.g, color.b);
-        gl.uniform1f(gl.getUniformLocation(this.splatProgram, 'u_radius'), radius);
-        gl.uniform2f(gl.getUniformLocation(this.splatProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
-        gl.uniform1i(gl.getUniformLocation(this.splatProgram, 'u_isVelocity'), 0);
-
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
-        this.swapColorTextures(); // Swap so texture2 becomes the current state
-
-        // Also inject velocity for stirring effect
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.velocityFBO);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.velocityTexture2, 0);
-        
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this.velocityTexture1);
-        gl.uniform1i(gl.getUniformLocation(this.splatProgram, 'u_texture'), 0);
-        gl.uniform2f(gl.getUniformLocation(this.splatProgram, 'u_point'), x, y);
-        // Small velocity splat
-        gl.uniform3f(gl.getUniformLocation(this.splatProgram, 'u_color'), 
-            (Math.random() - 0.5) * 0.06, (Math.random() - 0.5) * 0.06, 0);
-        gl.uniform1f(gl.getUniformLocation(this.splatProgram, 'u_radius'), radius * 2);
-        gl.uniform2f(gl.getUniformLocation(this.splatProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
-        gl.uniform1i(gl.getUniformLocation(this.splatProgram, 'u_isVelocity'), 1);
-        
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
-        this.swapVelocityTextures();
-
+        const dt = Math.min(deltaTime, 0.016);
+        // Defensive viewport for all passes this frame
+        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+        // Combine rotation sources
+        this.rotationAmount = this.rotationBase + this.rotationDelta;
+        if (this.water) this.water.update(dt);
+        // Keep corruption check centralized here
+        if (this.checkForCorruption()) {
+            console.error('❌ Simulation paused due to corruption');
+        }
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
 
@@ -330,37 +305,8 @@ export default class Simulation {
         this.viscosityIterations = Math.max(10, Math.round(20 * iterScale));
         this.pressureIterations = Math.max(30, Math.round(50 * iterScale));
 
-        // Delete old textures/FBOs if they exist
-        if (this.colorTexture1) gl.deleteTexture(this.colorTexture1);
-        if (this.colorTexture2) gl.deleteTexture(this.colorTexture2);
-        if (this.colorFBO) gl.deleteFramebuffer(this.colorFBO);
-
-        if (this.velocityTexture1) gl.deleteTexture(this.velocityTexture1);
-        if (this.velocityTexture2) gl.deleteTexture(this.velocityTexture2);
-        if (this.velocityFBO) gl.deleteFramebuffer(this.velocityFBO);
-
-        if (this.divergenceTexture) gl.deleteTexture(this.divergenceTexture);
-        if (this.divergenceFBO) gl.deleteFramebuffer(this.divergenceFBO);
-
-        if (this.pressureTexture1) gl.deleteTexture(this.pressureTexture1);
-        if (this.pressureTexture2) gl.deleteTexture(this.pressureTexture2);
-        if (this.pressureFBO) gl.deleteFramebuffer(this.pressureFBO);
-
-        // Recreate at new size
-        this.colorTexture1 = this.createTexture(width, height, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
-        this.colorTexture2 = this.createTexture(width, height, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
-        this.colorFBO = this.createFBO(this.colorTexture1);
-
-        this.velocityTexture1 = this.createTexture(width, height, gl.RG16F, gl.RG, gl.HALF_FLOAT);
-        this.velocityTexture2 = this.createTexture(width, height, gl.RG16F, gl.RG, gl.HALF_FLOAT);
-        this.velocityFBO = this.createFBO(this.velocityTexture1);
-
-        this.divergenceTexture = this.createTexture(width, height, gl.R16F, gl.RED, gl.HALF_FLOAT);
-        this.divergenceFBO = this.createFBO(this.divergenceTexture);
-
-        this.pressureTexture1 = this.createTexture(width, height, gl.R16F, gl.RED, gl.HALF_FLOAT);
-        this.pressureTexture2 = this.createTexture(width, height, gl.R16F, gl.RED, gl.HALF_FLOAT);
-        this.pressureFBO = this.createFBO(this.pressureTexture1);
+        // Delegate buffer recreation to layer
+        if (this.water) this.water.resize();
     }
 
     computeOccupancy() {
@@ -475,78 +421,12 @@ export default class Simulation {
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         this.swapVelocityTextures();
     }
-
-    update(deltaTime) {
-        if (!this.ready || !this.renderer.ready || this.paused) return;
-
-        const gl = this.gl;
-        const dt = Math.min(deltaTime, 0.016);  // Cap dt for stability
-
-        // Defensive: ensure full-canvas viewport for all simulation passes
-        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-
-        this.applyForces(dt);
-
-        if (this.vorticityStrength > 0) {
-            this.applyVorticityConfinement();
-        }
-
-        this.advectVelocity(dt);
-        this.applyViscosity(dt);
-        this.projectVelocity();
-        this.advectColor(dt);
-
-        if (this.diffusionRate > 0) {
-            this.applyDiffusion(dt);
-        }
-
-        // ... rest of the update logic
-        
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    }
-
-    applyForces(dt) {
-        applyForces(this.gl, this.renderer, this.forcesProgram, this, dt);
-    }
-
-    applyVorticityConfinement() {
-        applyVorticityConfinement(this.gl, this.renderer, this.vorticityConfinementProgram, this);
-    }
-
-    advectVelocity(dt) {
-        advectVelocity(this.gl, this.renderer, this.advectionProgram, this, dt);
-    }
-
-    applyViscosity(dt) {
-        applyViscosity(this.gl, this.renderer, this.viscosityProgram, this, dt);
-    }
-
-    projectVelocity() {
-        projectVelocity(this.gl, this.renderer, this.divergenceProgram, this.pressureProgram, this.gradientProgram, this);
-    }
-
-    advectColor(dt) {
-        advectColor(this.gl, this.renderer, this.advectionProgram, this, dt);
-    }
-
-    applyDiffusion(dt) {
-        diffuseColor(this.gl, this.renderer, this.diffusionProgram, this, dt);
-    }
     
     /**
      * Check velocity field for NaN or Inf values
      * Auto-pauses simulation if corruption detected
      */
     checkForCorruption() {
-        if (!this._corruptionCheckInterval) {
-            this._corruptionCheckInterval = 0;
-        }
-        
-        // Check every 10 frames for performance
-        if (++this._corruptionCheckInterval % 10 !== 0) {
-            return false;
-        }
-        
         const gl = this.gl;
         // Match velocity texture format (RG16F) for readback: use HALF_FLOAT and Uint16Array
         const pixels = new Uint16Array(2 * 10); // 10 pixels * 2 channels (RG)
