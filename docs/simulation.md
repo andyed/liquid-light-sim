@@ -1,3 +1,28 @@
+###
+## FluidLayer interface (contract)
+
+Each layer must implement the following, using Simulation-provided programs and helpers:
+
+- Resources (owned by layer)
+  - `colorTexture1/2`, `colorFBO`
+  - `velocityTexture1/2`, `velocityFBO`
+  - `divergenceTexture/FBO`, `pressureTexture1/2`, `pressureFBO`
+- Lifecycle
+  - `init()` – create textures/FBOs via `sim.createTexture/FBO` and call `_syncAliases()`
+  - `resize()` – delete/recreate textures/FBOs and `_syncAliases()`
+  - `update(dt)` – run the per-frame pipeline (forces → vorticity → advect v → viscosity → project → advect color → diffusion) and occupancy/overflow cadence
+- IO
+  - `splatColor(x, y, color, radius)`
+  - `splatVelocity(x, y, vx, vy, radius)`
+- Conservation control
+  - `computeOccupancy()` – render occupancy to `sim.occupancyFBO` using `sim.occupancyProgram`, read back and set `sim.occupancyPercent`/`sim.pixelSoupPercent`
+  - `applyOverflow(strength)` – run damp pass using `sim.overflowProgram` and layer color textures, then swap
+- Swaps (must update aliases)
+  - `swapColorTextures()`, `swapVelocityTextures()`, `swapPressureTextures()` → call `_syncAliases()`
+- Simulation responsibilities (provided by `Simulation`)
+  - Shader programs (`forces`, `vorticity`, `advection`, `viscosity`, `divergence`, `pressure`, `gradient`, `splat`, `overflow`, `occupancy`)
+  - Helpers: `createTexture`, `createFBO`, global uniforms (resolution), iteration scaling, corruption check, occupancy FBO/size
+
 ### Input parity and controls
 - **Keyboard on mobile emulator** works by making the canvas focusable (`tabindex=0`) and listening on both `document` and `window` for key events. Arrow keys/A‑D map to rotation.
 - **Two‑finger jet** on touch devices mirrors right‑click on desktop: one finger paints, two fingers inject a jet; transitions mid‑gesture are handled.
@@ -157,21 +182,28 @@ This document is a snapshot of the current simulation architecture, the major im
 Goal: Two‑layer system – water (ink carrier) + oil (lens/viscosity layer) with distinct advection/viscosity and coupling at the interface.
 
 - **Data layout:**
-  - Add an `oil` RGBA16F texture (or two if ping‑pong needed) to store scalar height/thickness and visual tints.
-  - Optional: separate `oilVelocity` RG16F if oil dynamics need independent motion.
+  - `oil` field: start with RGBA16F (thickness, tint) ping‑pong pair and `oilFBO`.
+  - Optional: `oilVelocity` RG16F ping‑pong for decoupled motion if needed.
 - **Physics:**
-  - Oil advection can be slower (higher viscosity) and weakly coupled to the water velocity (e.g., `v_oil = mix(v_water, v_oil, alpha)` per step).
-  - Add a surface tension or smoothing step on oil to produce lensy, rounded shapes.
-  - Consider buoyancy‑like coupling: gradients in oil thickness apply gentle forces on water velocity.
+  - Higher viscosity: lower vorticity strength and add smoothing (few Jacobi or curvature blur) on oil.
+  - Coupling: advect oil by a mix of water velocity and oil velocity (`v_mix = mix(v_oil, v_water, k)`), with k tuned by thickness.
+  - Buoyancy-like coupling: thickness gradients add a mild force into water velocity near the interface.
+  - Boundary: oil responds less to rim drag; consider reduced rim absorption in oil advection.
 - **Rendering:**
-  - Use oil thickness to modulate refractive index or soft refraction in post.
-  - Combine Beer‑Lambert absorption with a simple Fresnel‑ish highlight for the oil sheen.
+  - Use thickness as a lens map for soft refraction and a Fresnel-ish highlight; absorption differs from dye (lower scattering, higher gloss).
 - **Order of operations:**
   1. Advect water velocity → viscosity → projection (as now).
-  2. Advect oil (by water or own velocity) → oil viscosity/smoothing.
+  2. Advect oil (by mixed velocity) → oil viscosity/smoothing.
   3. Apply coupling forces (oil→water and/or water→oil).
   4. Advect color by water velocity.
   5. Composite: oil optical effects over color.
+
+- **Conservation & overflow:**
+  - Oil layer should have its own occupancy/overflow pass keyed to perceived coverage (thickness-weighted), configured with looser thresholds than ink.
+  - Keep passes per-layer so future multi-layer control is independent.
+
+- **Testing:**
+  - Unit tests: alias sync for oil, interleaved inking/flow remains true with oil active, occupancy control thresholds, coupling does not introduce NaNs under sustained rotation.
 
 ## Testing / Debugging Checklist
 - Toggle post/volumetric off when validating physics (O, L).
