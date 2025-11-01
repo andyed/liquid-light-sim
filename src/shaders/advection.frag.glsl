@@ -9,6 +9,7 @@ uniform sampler2D u_velocity_texture;
 uniform float u_dt;
 uniform vec2 u_resolution;
 uniform int u_isVelocity; // 1 when advecting velocity, 0 when advecting color
+uniform bool u_isOil;     // true when advecting oil RGBA (preserve alpha thickness)
 
 // Circular container boundary (aspect-correct)
 const vec2 center = vec2(0.5, 0.5);
@@ -60,7 +61,13 @@ void main() {
     vec2 coord_backward = clampToCircle(coord_forward + vel_forward * u_dt);
     vec4 backward = texture(u_color_texture, coord_backward);
     
-    // Step 3: Error correction
+    // For oil, favor stable semi-Lagrangian to preserve alpha thickness; skip MacCormack and post-fixes
+    if (u_isOil) {
+        outColor = forward;
+        return;
+    }
+
+    // Step 3: Error correction (non-oil)
     vec4 current = texture(u_color_texture, v_texCoord);
     vec4 corrected = forward + 0.5 * (current - backward);
     

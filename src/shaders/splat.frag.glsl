@@ -9,6 +9,8 @@ uniform vec2 u_point;
 uniform vec3 u_color;
 uniform float u_radius;
 uniform bool u_isVelocity; // true when splatting into velocity field
+uniform bool u_isOil;      // true when splatting into oil field (RGBA)
+uniform float u_oilStrength; // scale for oil thickness/tint
 uniform vec2 u_resolution;
 
 void main() {
@@ -32,6 +34,16 @@ void main() {
         result = existing.rgb + velToAdd;
         // Clamp for safety (matches force shaders)
         result = clamp(result, vec3(-50000.0), vec3(50000.0));
+    } else if (u_isOil) {
+        // Oil splat: no spaceAvailable gating, write thickness to alpha
+        float thAdd = gaussian * max(0.0, u_oilStrength);
+        vec3 oilAdd = u_color * thAdd;
+        vec3 rgb = existing.rgb + oilAdd;
+        float a = existing.a + thAdd;
+        rgb = clamp(rgb, vec3(0.0), vec3(1.0));
+        a = clamp(a, 0.0, 1.0);
+        outColor = vec4(rgb, a);
+        return;
     } else {
         // Color splat: respect available space to avoid mixing
         vec3 newInk = u_color * gaussian * sourceStrength;

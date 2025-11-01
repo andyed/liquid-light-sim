@@ -16,7 +16,7 @@ export default class Renderer {
         console.log('✓ Float texture extension enabled');
 
         this.backgroundColor = { r: 0.0, g: 0.0, b: 0.0 };
-        this.debugMode = 0; // 0=color, 1=velocity, 2=concentration gradient
+        this.debugMode = 0; // 0=color, 1=velocity, 2=concentration gradient, 3=oil thickness, 4=oil gradient, 5=occ split
         this.useVolumetric = true; // Beer-Lambert volumetric rendering
         this.absorptionCoefficient = 3.0; // Higher = more saturated glow
         this.usePostProcessing = true; // Organic flow distortion (O key to toggle)
@@ -29,6 +29,7 @@ export default class Renderer {
         this.oilFresnelPower = 3.0;
         this.oilOcclusion = 0.35; // 0..1
         this.oilAlphaGamma = 1.0; // gamma for thickness→alpha
+        this.oilTintStrength = 0.4; // 0..1, how much oil color tints scene
 
         this.resize();
         window.addEventListener('resize', () => this.resize());
@@ -65,6 +66,14 @@ export default class Renderer {
         // Load post-processing shader (organic flow distortion)
         const postProcessFrag = await loadShader('src/shaders/post-process.frag.glsl');
         this.postProcessProgram = this.createProgram(passThroughVert, postProcessFrag);
+
+        // Oil debug shaders
+        const debugOilThickFrag = await loadShader('src/shaders/debug-oil-thickness.frag.glsl');
+        this.debugOilThicknessProgram = this.createProgram(passThroughVert, debugOilThickFrag);
+        const debugOilGradFrag = await loadShader('src/shaders/debug-oil-gradient.frag.glsl');
+        this.debugOilGradientProgram = this.createProgram(passThroughVert, debugOilGradFrag);
+        const debugOccSplitFrag = await loadShader('src/shaders/debug-occupancy-split.frag.glsl');
+        this.debugOccupancySplitProgram = this.createProgram(passThroughVert, debugOccSplitFrag);
 
         // Load oil composite shader (adds lensy oil contribution over scene)
         const oilCompositeFrag = await loadShader('src/shaders/oil-composite.frag.glsl');
@@ -215,8 +224,8 @@ export default class Renderer {
     }
     
     toggleDebugMode() {
-        this.debugMode = (this.debugMode + 1) % 3;
-        const modes = ['🎨 COLOR', '🔍 VELOCITY', '🌊 CONCENTRATION GRADIENT'];
+        this.debugMode = (this.debugMode + 1) % 6;
+        const modes = ['🎨 COLOR', '🔍 VELOCITY', '🌊 CONCENTRATION GRADIENT', '🛢️ OIL THICKNESS', '🧭 OIL GRADIENT', '📊 OCCUPANCY SPLIT'];
         console.log(`Debug mode: ${modes[this.debugMode]}`);
     }
 
@@ -260,6 +269,43 @@ export default class Renderer {
             gl.bindTexture(gl.TEXTURE_2D, simulation.velocityTexture1);
             gl.uniform1i(gl.getUniformLocation(this.debugVelocityProgram, 'u_velocity_texture'), 0);
             gl.uniform1f(gl.getUniformLocation(this.debugVelocityProgram, 'u_scale'), 3.0);
+        } else if (this.debugMode === 3 && this.simulation.useOil && this.simulation.oil) {
+            // Oil thickness view
+            gl.useProgram(this.debugOilThicknessProgram);
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
+            positionAttrib = gl.getAttribLocation(this.debugOilThicknessProgram, 'a_position');
+            gl.enableVertexAttribArray(positionAttrib);
+            gl.vertexAttribPointer(positionAttrib, 2, gl.FLOAT, false, 0, 0);
+
+            gl.bindTexture(gl.TEXTURE_2D, this.simulation.oil.oilTexture1);
+            gl.uniform1i(gl.getUniformLocation(this.debugOilThicknessProgram, 'u_oil_texture'), 0);
+        } else if (this.debugMode === 4 && this.simulation.useOil && this.simulation.oil) {
+            // Oil gradient magnitude view
+            gl.useProgram(this.debugOilGradientProgram);
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
+            positionAttrib = gl.getAttribLocation(this.debugOilGradientProgram, 'a_position');
+            gl.enableVertexAttribArray(positionAttrib);
+            gl.vertexAttribPointer(positionAttrib, 2, gl.FLOAT, false, 0, 0);
+
+            gl.bindTexture(gl.TEXTURE_2D, this.simulation.oil.oilTexture1);
+            gl.uniform1i(gl.getUniformLocation(this.debugOilGradientProgram, 'u_oil_texture'), 0);
+            gl.uniform2f(gl.getUniformLocation(this.debugOilGradientProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+        } else if (this.debugMode === 5 && this.simulation.useOil && this.simulation.oil) {
+            // Split occupancy: left water ink occupancy (thresholded), right oil thickness
+            gl.useProgram(this.debugOccupancySplitProgram);
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
+            positionAttrib = gl.getAttribLocation(this.debugOccupancySplitProgram, 'a_position');
+            gl.enableVertexAttribArray(positionAttrib);
+            gl.vertexAttribPointer(positionAttrib, 2, gl.FLOAT, false, 0, 0);
+
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, simulation.colorTexture1);
+            gl.uniform1i(gl.getUniformLocation(this.debugOccupancySplitProgram, 'u_water_color'), 0);
+
+            gl.activeTexture(gl.TEXTURE1);
+            gl.bindTexture(gl.TEXTURE_2D, this.simulation.oil.oilTexture1);
+            gl.uniform1i(gl.getUniformLocation(this.debugOccupancySplitProgram, 'u_oil_texture'), 1);
+            gl.uniform1f(gl.getUniformLocation(this.debugOccupancySplitProgram, 'u_thresh'), 0.02);
         } else if (this.debugMode === 0 && this.useVolumetric) {
             // Volumetric rendering mode (Beer-Lambert absorption)
             gl.useProgram(this.volumetricProgram);
@@ -340,6 +386,7 @@ export default class Renderer {
             gl.uniform1f(gl.getUniformLocation(this.oilCompositeProgram, 'u_fresnel_power'), this.oilFresnelPower);
             gl.uniform1f(gl.getUniformLocation(this.oilCompositeProgram, 'u_occlusion'), this.oilOcclusion);
             gl.uniform1f(gl.getUniformLocation(this.oilCompositeProgram, 'u_oil_gamma'), this.oilAlphaGamma);
+            gl.uniform1f(gl.getUniformLocation(this.oilCompositeProgram, 'u_tint_strength'), this.oilTintStrength);
 
             gl.drawArrays(gl.TRIANGLES, 0, 6);
 

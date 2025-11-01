@@ -10,6 +10,48 @@ export class SimulationTester {
         this.capturedStates = [];
     }
 
+    testMarangoniInterface() {
+        const sim = this.simulation;
+        const gl = this.gl;
+        if (!sim) return false;
+
+        // Baseline avg speed
+        let base = this.analyzeVelocity();
+        const baseAvg = base.avgSpeed;
+
+        // Ensure oil is enabled and present
+        try { if (!sim.useOil && typeof sim.enableOil === 'function') sim.enableOil(); } catch (_) {}
+        if (!sim.oil) return false;
+
+        // Stronger Marangoni for test visibility
+        const oldStrength = sim.marangoniStrength;
+        const oldK = sim.marangoniKth;
+        const oldBand = sim.marangoniEdgeBand;
+        sim.marangoniStrength = Math.max(0.6, oldStrength || 0.6);
+        sim.marangoniKth = Math.max(0.8, oldK || 0.8);
+        sim.marangoniEdgeBand = Math.max(2.0, oldBand || 2.0);
+
+        // Paint a horizontal oil stripe across the center
+        const cx = 0.5, cy = 0.5;
+        sim.oil.splatColor(cx, cy, { r: 1.0, g: 1.0, b: 1.0 }, 0.25);
+
+        // Advance a few frames
+        for (let i = 0; i < 8; i++) {
+            sim.update(0.016);
+        }
+
+        const after = this.analyzeVelocity();
+        const delta = after.avgSpeed - baseAvg;
+
+        // Restore parameters
+        sim.marangoniStrength = oldStrength;
+        sim.marangoniKth = oldK;
+        sim.marangoniEdgeBand = oldBand;
+
+        // Expect a measurable increase in avg speed
+        return delta > 0.0008;
+    }
+
     /**
      * Pause/freeze the simulation
      * Critical for debugging (v0 lesson: debugging without freeze is hell)
@@ -182,13 +224,17 @@ export class SimulationTester {
         const interleaveOk = this.testInterleavedInkingFlow();
         console.log(`Test 6 - Interleaved Inking & Flow: ${interleaveOk ? '✅ PASS' : '❌ FAIL'}`);
 
+        const marangoniOk = this.testMarangoniInterface();
+        console.log(`Test 7 - Marangoni Interface Response: ${marangoniOk ? '✅ PASS' : '❌ FAIL'}`);
+
         console.log('\n✅ Basic tests complete');
         return {
             noNaN,
             velocityStats,
             forcesPass,
             aliasOk,
-            interleaveOk
+            interleaveOk,
+            marangoniOk
         };
     }
 
@@ -288,6 +334,8 @@ export class PerformanceMonitor {
     constructor() {
         this.frameTimes = [];
         this.maxSamples = 60;
+        this._logCounter = 0;
+        this._logEvery = 120; // only log every N frames
     }
 
     recordFrame(deltaTime) {
@@ -315,9 +363,10 @@ export class PerformanceMonitor {
     }
 
     logStats() {
+        this._logCounter = (this._logCounter + 1) | 0;
+        if (this._logCounter % this._logEvery !== 0) return;
         const stats = this.getStats();
         if (!stats) return;
-
         console.log('📊 Performance:');
         console.log(`  FPS: ${stats.fps} ${stats.isSmooth ? '✅' : '⚠️'}`);
         console.log(`  Frame time: ${stats.avgFrameTime}ms (min: ${stats.minFrameTime}, max: ${stats.maxFrameTime})`);

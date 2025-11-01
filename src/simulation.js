@@ -66,6 +66,9 @@ export default class Simulation {
         this.marangoniEdgeBand = 2.0; // pixels
         this.marangoniKth = 0.8;      // thickness→sigma gain
 
+        // Logging verbosity (set true to see detailed telemetry)
+        this.logVerbose = false;
+
         this.ready = false;
     }
 

@@ -59,6 +59,9 @@ export default class OilLayer extends FluidLayer {
     gl.uniform1f(gl.getUniformLocation(sim.advectionProgram, 'u_dt'), dt);
     gl.uniform2f(gl.getUniformLocation(sim.advectionProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
     gl.uniform1i(gl.getUniformLocation(sim.advectionProgram, 'u_isVelocity'), 0);
+    // Mark advection as oil so shader preserves alpha
+    const isOilAdvLoc = gl.getUniformLocation(sim.advectionProgram, 'u_isOil');
+    if (isOilAdvLoc) gl.uniform1i(isOilAdvLoc, 1);
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     this.swapOilTextures();
@@ -100,6 +103,11 @@ export default class OilLayer extends FluidLayer {
     gl.uniform1f(gl.getUniformLocation(sim.splatProgram, 'u_radius'), radius);
     gl.uniform2f(gl.getUniformLocation(sim.splatProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
     gl.uniform1i(gl.getUniformLocation(sim.splatProgram, 'u_isVelocity'), 0);
+    // Oil-specific flags
+    const isOilLoc = gl.getUniformLocation(sim.splatProgram, 'u_isOil');
+    if (isOilLoc) gl.uniform1i(isOilLoc, 1);
+    const oilStrengthLoc = gl.getUniformLocation(sim.splatProgram, 'u_oilStrength');
+    if (oilStrengthLoc) gl.uniform1f(oilStrengthLoc, 1.0);
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     this.swapOilTextures();

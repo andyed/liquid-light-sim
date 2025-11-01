@@ -176,3 +176,33 @@ What we implemented in V1:
 Possible visual boosters (still shader‑based, real‑time):
 - Add low‑frequency fractal noise as a small perturbation to σ before taking ∇ to mimic thermal convection shimmer.
 - Add a light evaporation mask near edges (precompute from |∇th|) to slowly strengthen σ at rims.
+
+## 13) PRD: Heat Lamp (Critical Component)
+
+Goal: Make a projector/heat‑lamp a first‑class control that affects both brightness and motion.
+
+- Levels: Low, Medium, High.
+- Brightness: multiplicative gain applied post‑composite. Suggested: Low 1.0, Med 1.25, High 1.6.
+- Motion/Agitation: adds a small background perturbation scaled by level. Two dials:
+  - Base agitation to velocity (white‑noise curl or low‑freq swirl): Low 0.0, Med 0.01, High 0.03.
+  - Thermal coupling to Marangoni: effective k_th *= (1 + k_T·T) with k_T < 0 if dσ/dT < 0. For V1, use a global scalar T ∈ {0.0, 0.5, 1.0}.
+- UI: hamburger toggle with three buttons; shows current level in status HUD.
+
+V2 thermal field plan:
+- Add T(x,y) centered at the light indicator with slow diffusion and advection.
+- Coupling: σ(th,T) = σ0 + k_th·th + k_T·T, dσ/dT < 0.
+- Debug: heat map overlay and ∇T arrows.
+
+## 14) Rendering: Color Wheel as Tint‑Only
+
+Rationale: Light intensity should come from the heat lamp. The color wheel selects dye tint only.
+
+- Change: color wheel sets only the tint of injected ink/oil; it does not boost brightness.
+- Brightness pipeline: apply heat‑lamp gain after volumetric + oil composite.
+- Materials may still define absorption; lamp gain multiplies final color.
+
+Implementation checklist:
+- Add `heatLampLevel` with three presets and expose in hamburger.
+- Renderer: add `brightnessGain` uniform fed by heat lamp.
+- Add small base agitation term gated by lamp level.
+- Update HUD to show lamp level along with Marangoni params and current view.

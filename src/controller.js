@@ -79,6 +79,8 @@ export default class Controller {
         
         // Create color wheel
         this.createColorWheel();
+
+        this.createMarangoniHUD();
     }
 
     setMaterial(index, autoPick = true) {
@@ -139,6 +141,7 @@ export default class Controller {
         }
         // Menu reflects changes
         if (this.menuPanel) this.updateMenuStates();
+        this.updateMarangoniHUD();
     }
 
     autoPickColorForMaterial() {
@@ -277,6 +280,32 @@ export default class Controller {
         `;
         this.updateMaterialReadout();
         document.body.appendChild(this.materialReadout);
+    }
+    
+    createMarangoniHUD() {
+        this.marangoniHUD = document.createElement('div');
+        this.marangoniHUD.style.cssText = `
+            position: fixed;
+            bottom: 90px;
+            left: 20px;
+            padding: 6px 8px;
+            background: rgba(0,0,0,0.5);
+            color: white;
+            font-size: 12px;
+            border-radius: 6px;
+            z-index: 1000;
+            user-select: none;
+        `;
+        document.body.appendChild(this.marangoniHUD);
+        this.updateMarangoniHUD();
+    }
+
+    updateMarangoniHUD() {
+        if (!this.marangoniHUD) return;
+        const modeNames = ['COLOR', 'VELOCITY', 'CONC GRAD', 'OIL THICK', 'OIL GRAD'];
+        const dm = this.renderer?.debugMode ?? 0;
+        const view = dm !== 0 ? ` | View: ${modeNames[dm]}` : '';
+        this.marangoniHUD.textContent = `Marangoni  S:${this.simulation.marangoniStrength.toFixed(2)}  k:${this.simulation.marangoniKth.toFixed(2)}  band:${this.simulation.marangoniEdgeBand.toFixed(2)}px${view}`;
     }
     
     createLightIndicator() {
@@ -429,6 +458,32 @@ export default class Controller {
                     <span>Boundary (B)</span>
                     <span class="boundary-value" style="opacity: 0.7; font-size: 12px;">Viscous Drag</span>
                 </div>
+                <div style="margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.04); border-radius: 6px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <span>Marangoni Strength</span>
+                        <div>
+                            <button class="menu-action" data-action="marangoni-strength-dec" style="padding:4px 8px; margin-right:4px;">−</button>
+                            <span class="marangoni-strength-value" style="opacity:0.8; font-size:12px; min-width:40px; display:inline-block; text-align:center;">0.00</span>
+                            <button class="menu-action" data-action="marangoni-strength-inc" style="padding:4px 8px; margin-left:4px;">+</button>
+                        </div>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <span>k_th</span>
+                        <div>
+                            <button class="menu-action" data-action="marangoni-kth-dec" style="padding:4px 8px; margin-right:4px;">−</button>
+                            <span class="marangoni-kth-value" style="opacity:0.8; font-size:12px; min-width:40px; display:inline-block; text-align:center;">0.00</span>
+                            <button class="menu-action" data-action="marangoni-kth-inc" style="padding:4px 8px; margin-left:4px;">+</button>
+                        </div>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span>Edge Band (px)</span>
+                        <div>
+                            <button class="menu-action" data-action="marangoni-band-dec" style="padding:4px 8px; margin-right:4px;">−</button>
+                            <span class="marangoni-band-value" style="opacity:0.8; font-size:12px; min-width:40px; display:inline-block; text-align:center;">0.00</span>
+                            <button class="menu-action" data-action="marangoni-band-inc" style="padding:4px 8px; margin-left:4px;">+</button>
+                        </div>
+                    </div>
+                </div>
                 <div style="margin-top: 14px;">
                     <h3 style="font-size: 16px; opacity: 0.7; margin: 0 0 10px 0;">Materials (1‑5)</h3>
                     <div class="materials-row" style="display:flex; gap:8px; flex-wrap:wrap;">
@@ -543,6 +598,24 @@ export default class Controller {
                 } else if (action.dataset.action === 'absorption') {
                     this.cycleAbsorption();
                     this.updateMenuStates();
+                } else if (action.dataset.action === 'marangoni-strength-dec') {
+                    this.simulation.marangoniStrength = Math.max(0.0, this.simulation.marangoniStrength - 0.05);
+                    this.updateMenuStates(); this.updateMarangoniHUD();
+                } else if (action.dataset.action === 'marangoni-strength-inc') {
+                    this.simulation.marangoniStrength = Math.min(2.0, this.simulation.marangoniStrength + 0.05);
+                    this.updateMenuStates(); this.updateMarangoniHUD();
+                } else if (action.dataset.action === 'marangoni-kth-dec') {
+                    this.simulation.marangoniKth = Math.max(-2.0, this.simulation.marangoniKth - 0.05);
+                    this.updateMenuStates(); this.updateMarangoniHUD();
+                } else if (action.dataset.action === 'marangoni-kth-inc') {
+                    this.simulation.marangoniKth = Math.min(3.0, this.simulation.marangoniKth + 0.05);
+                    this.updateMenuStates(); this.updateMarangoniHUD();
+                } else if (action.dataset.action === 'marangoni-band-dec') {
+                    this.simulation.marangoniEdgeBand = Math.max(0.0, this.simulation.marangoniEdgeBand - 0.25);
+                    this.updateMenuStates(); this.updateMarangoniHUD();
+                } else if (action.dataset.action === 'marangoni-band-inc') {
+                    this.simulation.marangoniEdgeBand = Math.min(10.0, this.simulation.marangoniEdgeBand + 0.25);
+                    this.updateMenuStates(); this.updateMarangoniHUD();
                 } else if (action.dataset.action === 'palette') {
                     this.cyclePaletteDominance();
                     this.updateMenuStates();
@@ -596,6 +669,14 @@ export default class Controller {
         if (paletteValue) {
             paletteValue.textContent = this.renderer.paletteDominance.toFixed(2);
         }
+
+        // Update Marangoni values
+        const sEl = this.menuPanel.querySelector('.marangoni-strength-value');
+        if (sEl) sEl.textContent = this.simulation.marangoniStrength.toFixed(2);
+        const kEl = this.menuPanel.querySelector('.marangoni-kth-value');
+        if (kEl) kEl.textContent = this.simulation.marangoniKth.toFixed(2);
+        const bEl = this.menuPanel.querySelector('.marangoni-band-value');
+        if (bEl) bEl.textContent = this.simulation.marangoniEdgeBand.toFixed(2);
 
         // Highlight selected material
         const matButtons = this.menuPanel.querySelectorAll('.material-option');
@@ -686,10 +767,12 @@ export default class Controller {
             // Continuous source injection (source term in advection-diffusion equation)
             // Throttle to every N frames to avoid overwhelming flow
             if ((this._injectionFrameCount % this.injectEveryN) === 1) {
-                // Larger radius creates smooth concentration gradient
-                this.simulation.splat(x, y, this.currentColor, 0.08);
-                // If oil layer is active, also deposit oil so composite is visible
-                if (this.simulation.useOil && this.simulation.oil) {
+                const isInk = this.currentMaterialIndex === 0;
+                if (isInk) {
+                    // Paint ink into water layer
+                    this.simulation.splat(x, y, this.currentColor, 0.08);
+                } else if (this.simulation.useOil && this.simulation.oil) {
+                    // Paint oil only (no additional ink), using current color as oil tint
                     const oilRadius = 0.06;
                     this.simulation.oil.splatColor(x, y, this.currentColor, oilRadius);
                 }
@@ -920,6 +1003,38 @@ export default class Controller {
             // Ctrl+Q: Run quality tests
             e.preventDefault();
             this.qualityTester.runTests();
+        }
+
+        // Marangoni live tuning
+        else if (e.key === '[') {
+            this.simulation.marangoniStrength = Math.max(0.0, this.simulation.marangoniStrength - 0.05);
+            console.log(`Marangoni Strength: ${this.simulation.marangoniStrength.toFixed(2)}`);
+            this.updateMarangoniHUD();
+        }
+        else if (e.key === ']') {
+            this.simulation.marangoniStrength = Math.min(2.0, this.simulation.marangoniStrength + 0.05);
+            console.log(`Marangoni Strength: ${this.simulation.marangoniStrength.toFixed(2)}`);
+            this.updateMarangoniHUD();
+        }
+        else if (e.key === ';') {
+            this.simulation.marangoniKth = Math.max(-2.0, this.simulation.marangoniKth - 0.05);
+            console.log(`Marangoni k_th: ${this.simulation.marangoniKth.toFixed(2)}`);
+            this.updateMarangoniHUD();
+        }
+        else if (e.key === "'") {
+            this.simulation.marangoniKth = Math.min(3.0, this.simulation.marangoniKth + 0.05);
+            console.log(`Marangoni k_th: ${this.simulation.marangoniKth.toFixed(2)}`);
+            this.updateMarangoniHUD();
+        }
+        else if (e.key === ',') {
+            this.simulation.marangoniEdgeBand = Math.max(0.0, this.simulation.marangoniEdgeBand - 0.25);
+            console.log(`Marangoni Edge Band: ${this.simulation.marangoniEdgeBand.toFixed(2)} px`);
+            this.updateMarangoniHUD();
+        }
+        else if (e.key === '.') {
+            this.simulation.marangoniEdgeBand = Math.min(10.0, this.simulation.marangoniEdgeBand + 0.25);
+            console.log(`Marangoni Edge Band: ${this.simulation.marangoniEdgeBand.toFixed(2)} px`);
+            this.updateMarangoniHUD();
         }
         
         // Testing shortcuts
