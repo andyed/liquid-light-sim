@@ -96,6 +96,7 @@
         <button onclick="testRotation()">🔄 Test Rotation</button>
         <button onclick="testViscosity()">💧 Test Viscosity</button>
         <button onclick="testPressureSolve()">⚙️ Test Pressure</button>
+        <button onclick="testForcesKernel()">💪 Test Forces Kernel</button>
         <button onclick="checkForNaN()">🔍 Check for NaN</button>
     </div>
 
@@ -175,6 +176,11 @@
             }
             
             log(`📊 Velocity - Max: ${results.velocityStats.maxSpeed.toFixed(6)}, Avg: ${results.velocityStats.avgSpeed.toFixed(6)}`, 'log');
+            if (results.forcesPass) {
+                log('✅ Forces Kernel Test Passed', 'success');
+            } else {
+                log('❌ Forces Kernel Test Failed', 'error');
+            }
         };
 
         window.runPerformanceTests = () => {
@@ -266,6 +272,10 @@
             } else {
                 log('❌ NaN/Infinity found! Simulation may be unstable', 'error');
             }
+        };
+
+        window.testForcesKernel = () => {
+            tester.testForcesKernel();
         };
 
         window.captureState = () => {

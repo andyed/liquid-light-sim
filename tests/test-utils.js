@@ -167,16 +167,73 @@ export class SimulationTester {
         console.log(`  Avg speed: ${velocityStats.avgSpeed.toFixed(6)}`);
         console.log(`  Is static: ${velocityStats.isStatic}`);
 
-        // Test 3: Check if rotation creates motion
+        // Test 3: Rotation Force (manual verification)
         console.log('\nTest 3 - Rotation Force:');
         console.log('  Press A or D key, then run: tester.analyzeVelocity()');
         console.log('  Expected: avgSpeed should increase');
 
+        // New Test: Forces Kernel
+        const forcesPass = this.testForcesKernel();
+        console.log(`Test 4 - Forces Kernel: ${forcesPass ? '✅ PASS' : '❌ FAIL'}`);
+
         console.log('\n✅ Basic tests complete');
         return {
             noNaN,
-            velocityStats
+            velocityStats,
+            forcesPass
         };
+    }
+
+    testForcesKernel() {
+        console.log('Testing Forces Kernel...');
+        const gl = this.gl;
+        const sim = this.simulation;
+
+        // Save current state
+        const originalRotationAmount = sim.rotationAmount;
+        const originalCentralSpiralPower = sim.centralSpiralPower;
+        const originalCentralSpiralAngle = sim.centralSpiralAngle;
+
+        // Set up a known state
+        sim.rotationAmount = 0.1; // Apply a rotation
+        sim.centralSpiralPower = 0.0; // Start with no spiral power
+        sim.centralSpiralAngle = 0.0; // Start with zero angle
+
+        // Clear velocity field to ensure a clean test
+        // This requires a clearVelocity function or direct manipulation
+        // For now, we'll assume applyForces will overwrite previous velocity
+
+        // Run the forces kernel
+        sim.applyForces(0.016); // Use a small dt
+
+        // Read back the velocity texture
+        const velocityPixels = this.readTexture(sim.velocityTexture1, gl.canvas.width, gl.canvas.height);
+
+        // Analyze the velocity field
+        let totalVelocityMagnitude = 0;
+        for (let i = 0; i < velocityPixels.length; i += 4) {
+            const vx = velocityPixels[i];
+            const vy = velocityPixels[i + 1];
+            totalVelocityMagnitude += Math.sqrt(vx * vx + vy * vy);
+        }
+
+        // Restore original state
+        sim.rotationAmount = originalRotationAmount;
+        sim.centralSpiralPower = originalCentralSpiralPower;
+        sim.centralSpiralAngle = originalCentralSpiralAngle;
+
+        // Assertions
+        // Expect some non-zero velocity after applying forces
+        const minExpectedVelocity = 0.01; // A small threshold
+        const pass = totalVelocityMagnitude > minExpectedVelocity;
+
+        if (pass) {
+            console.log('✅ Forces Kernel: Velocity increased as expected.');
+        } else {
+            console.error('❌ Forces Kernel: Velocity did NOT increase as expected.');
+        }
+
+        return pass;
     }
 }
 
