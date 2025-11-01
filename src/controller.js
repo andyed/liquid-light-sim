@@ -13,11 +13,11 @@ export default class Controller {
         this.isSpacePressed = false;
         this.currentColor = { r: 0.3, g: 0.898, b: 1.0 };  // Default: cyan (#4de5ff)
         this.materials = [
-            { name: 'Ink', palette: ['#4DE5FF', '#FF3B3B', '#FFD93B', '#9B59B6', '#2ECC71'], preset: { useOil: false, oilSmoothingRate: 0.0, absorption: 3.0, paletteDom: 0.15 } },
-            { name: 'Mineral Oil', palette: ['#FFF3C4', '#FFD166', '#F6BD60', '#F7EDE2', '#F28482'], preset: { useOil: true, oilSmoothingRate: 0.0035, absorption: 3.5, paletteDom: 0.12 } },
-            { name: 'Alcohol', palette: ['#BDE0FE', '#A2D2FF', '#CDB4DB', '#FFC8DD', '#FFAFCC'], preset: { useOil: true, oilSmoothingRate: 0.0010, absorption: 2.5, paletteDom: 0.20 } },
-            { name: 'Syrup', palette: ['#8B4513', '#D2691E', '#C97A36', '#F4A261', '#E76F51'], preset: { useOil: true, oilSmoothingRate: 0.0050, absorption: 4.0, paletteDom: 0.12 } },
-            { name: 'Glycerine', palette: ['#E0FBFC', '#98C1D9', '#3D5A80', '#EE6C4D', '#293241'], preset: { useOil: true, oilSmoothingRate: 0.0060, absorption: 4.5, paletteDom: 0.10 } }
+            { name: 'Ink', palette: ['#4DE5FF', '#FF3B3B', '#FFD93B', '#9B59B6', '#2ECC71'], preset: { useOil: false, oilSmoothingRate: 0.0, absorption: 3.0, paletteDom: 0.15, refractStrength: 0.0, fresnelPower: 3.0 } },
+            { name: 'Mineral Oil', palette: ['#FFF3C4', '#FFD166', '#F6BD60', '#F7EDE2', '#F28482'], preset: { useOil: true, oilSmoothingRate: 0.0035, absorption: 3.5, paletteDom: 0.12, refractStrength: 0.010, fresnelPower: 3.0 } },
+            { name: 'Alcohol', palette: ['#BDE0FE', '#A2D2FF', '#CDB4DB', '#FFC8DD', '#FFAFCC'], preset: { useOil: true, oilSmoothingRate: 0.0010, absorption: 2.5, paletteDom: 0.20, refractStrength: 0.007, fresnelPower: 2.8 } },
+            { name: 'Syrup', palette: ['#8B4513', '#D2691E', '#C97A36', '#F4A261', '#E76F51'], preset: { useOil: true, oilSmoothingRate: 0.0050, absorption: 4.0, paletteDom: 0.12, refractStrength: 0.012, fresnelPower: 3.2 } },
+            { name: 'Glycerine', palette: ['#E0FBFC', '#98C1D9', '#3D5A80', '#EE6C4D', '#293241'], preset: { useOil: true, oilSmoothingRate: 0.0060, absorption: 4.5, paletteDom: 0.10, refractStrength: 0.015, fresnelPower: 3.5 } }
         ];
         this.currentMaterialIndex = 0;
         
@@ -115,6 +115,12 @@ export default class Controller {
         if (typeof p.paletteDom === 'number') {
             this.renderer.paletteDominance = p.paletteDom;
         }
+        if (typeof p.refractStrength === 'number') {
+            this.renderer.oilRefractStrength = p.refractStrength;
+        }
+        if (typeof p.fresnelPower === 'number') {
+            this.renderer.oilFresnelPower = p.fresnelPower;
+        }
         // Menu reflects changes
         if (this.menuPanel) this.updateMenuStates();
     }
@@ -124,7 +130,7 @@ export default class Controller {
         if (!mat || !mat.palette || mat.palette.length === 0) return;
         const hex = mat.palette[Math.floor(Math.random() * mat.palette.length)];
         const rgb = this.hexToRgb01(hex);
-        this.currentColor = rgb;
+        this.currentColor = this.toneColor(rgb);
         this.updateMaterialReadout();
         console.log(`🎨 Auto color for ${mat.name}: ${hex}`);
     }
@@ -152,6 +158,25 @@ export default class Controller {
         const gg = to(g).toString(16).padStart(2,'0');
         const bb = to(b).toString(16).padStart(2,'0');
         return `#${rr}${gg}${bb}`;
+    }
+
+    toneColor({ r, g, b }) {
+        // Reduce value (brightness)
+        const vFactor = 0.85;
+        let rr = r * vFactor;
+        let gg = g * vFactor;
+        let bb = b * vFactor;
+        // Reduce saturation by lerping toward luminance
+        const satFactor = 0.85;
+        const avg = (rr + gg + bb) / 3.0;
+        rr = avg + (rr - avg) * satFactor;
+        gg = avg + (gg - avg) * satFactor;
+        bb = avg + (bb - avg) * satFactor;
+        // Clamp
+        rr = Math.max(0, Math.min(1, rr));
+        gg = Math.max(0, Math.min(1, gg));
+        bb = Math.max(0, Math.min(1, bb));
+        return { r: rr, g: gg, b: bb };
     }
     
     createColorWheel() {
@@ -211,7 +236,9 @@ export default class Controller {
                 case 5: r = 1; g = 0; b = q; break;
             }
             
-            this.currentColor = { r, g, b };
+            // Tone down saturation/value to avoid canvas washout
+            const toned = this.toneColor({ r, g, b });
+            this.currentColor = toned;
             this.updateMaterialReadout();
             console.log(`🎨 Color: hue ${Math.round(h)}°`);
         });
@@ -338,7 +365,9 @@ export default class Controller {
             color: white;
             z-index: 1000;
             transition: right 0.3s;
-            overflow: hidden;
+            overflow-y: auto;
+            overflow-x: hidden;
+            -webkit-overflow-scrolling: touch;
             padding: 80px 20px 20px 20px;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
         `;

@@ -24,6 +24,9 @@ export default class Renderer {
         this.smoothingStrength = 0.5; // 0.0-1.0, bilateral blur strength
         this.paletteDominance = 0.15; // 0.0-1.0, winner-takes-all strength
         this.paletteSoftPower = 3.0; // softmax power; lower = softer, higher = snappier
+        // Oil composite defaults
+        this.oilRefractStrength = 0.010; // screen-UV scale
+        this.oilFresnelPower = 3.0;
 
         this.resize();
         window.addEventListener('resize', () => this.resize());
@@ -328,6 +331,11 @@ export default class Renderer {
             gl.activeTexture(gl.TEXTURE1);
             gl.bindTexture(gl.TEXTURE_2D, this.simulation.oil.oilTexture1);
             gl.uniform1i(gl.getUniformLocation(this.oilCompositeProgram, 'u_oil_texture'), 1);
+
+            // Set composite uniforms
+            gl.uniform2f(gl.getUniformLocation(this.oilCompositeProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+            gl.uniform1f(gl.getUniformLocation(this.oilCompositeProgram, 'u_refract_strength'), this.oilRefractStrength);
+            gl.uniform1f(gl.getUniformLocation(this.oilCompositeProgram, 'u_fresnel_power'), this.oilFresnelPower);
 
             gl.drawArrays(gl.TRIANGLES, 0, 6);
 
