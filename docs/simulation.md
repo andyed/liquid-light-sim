@@ -60,6 +60,7 @@ This document is a snapshot of the current simulation architecture, the major im
   - `divergence.frag.glsl`, `pressure.frag.glsl`, `gradient.frag.glsl` – incompressible projection
   - `boundary.frag.glsl` – aspect‑correct visual rim overlay
   - `debug-velocity.frag.glsl` – HSV velocity view
+  - `oil-composite.frag.glsl` – Oil soft refraction + Fresnel highlight composite over scene
 - All physics shaders are `highp`, which improved symmetry and reduced quadrant artifacts.
 
 ## Aspect‑Correct Domain (Key Idea)
@@ -180,6 +181,14 @@ This document is a snapshot of the current simulation architecture, the major im
 
 ## Adding the Oil Layer (Next)
 Goal: Two‑layer system – water (ink carrier) + oil (lens/viscosity layer) with distinct advection/viscosity and coupling at the interface.
+
+### Oil Layer (alpha) – current state
+- Data: `oilTexture1/2` RGBA16F (thickness + tint) with `oilFBO`.
+- Advection: oil advects by water velocity (no separate oil velocity yet).
+- Smoothing: controlled by `simulation.oilSmoothingRate` (separate from ink `diffusionRate`).
+- Rendering: `oil-composite.frag.glsl` adds soft refraction (thickness gradient based) and a Fresnel‑ish highlight. Renderer uniforms: `oilRefractStrength`, `oilFresnelPower`.
+- UI: materials 1–5, non‑Ink enables Oil; hamburger includes an Oil toggle. Color wheel toned (value/saturation attenuation) to avoid washout.
+- Presets (controller): per‑material `oilSmoothingRate`, `absorptionCoefficient`, `paletteDominance`, `oilRefractStrength`, `oilFresnelPower`.
 
 - **Data layout:**
   - `oil` field: start with RGBA16F (thickness, tint) ping‑pong pair and `oilFBO`.

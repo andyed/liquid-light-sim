@@ -4,9 +4,9 @@ Try it: https://andyed.github.io/liquid-light-sim/
 
 ![Screenshot](https://raw.githubusercontent.com/andyed/liquid-light-sim/main/images/v01.png)
 
-**Status:** Milestone 2 - Water Layer Complete ✅
+**Status:** Milestone 3 - Layered core + Oil (alpha) ✅
 
-A GPU-accelerated fluid simulation for VJ performance and digital art, built with WebGL2. Currently implementing single-fluid (water) dynamics as foundation for dual-fluid oil/water system.
+A GPU-accelerated fluid simulation for VJ performance and digital art, built with WebGL2. The core now uses a layered architecture (FluidLayer interface) with a WaterLayer and an alpha OilLayer (visual refraction, smoothing, presets).
 
 ![Circular Container](https://img.shields.io/badge/Container-Circular_Boundary-blue)
 ![Physics](https://img.shields.io/badge/Physics-Navier--Stokes-green)
@@ -14,6 +14,14 @@ A GPU-accelerated fluid simulation for VJ performance and digital art, built wit
 ![Testing](https://img.shields.io/badge/Tests-Automated-yellow)
 
 ---
+
+## What's New (Milestone 3)
+
+- Layered architecture with `FluidLayer` interface.
+- `WaterLayer` owns its buffers, occupancy/overflow logic.
+- `OilLayer` (alpha): advects by water, applies smoothing, and renders with soft refraction + Fresnel.
+- Materials UI: 1–5 to switch materials, auto color pick, Oil auto-on for non‑Ink, hamburger menu toggle.
+- Color wheel toned to prevent washout; hamburger becomes scrollable on small screens.
 
 ## Features Implemented (Milestone 2)
 
@@ -68,6 +76,8 @@ http://localhost:8001
 - **Left-click + drag** - Paint colors
 - **Right-click + drag** - Create powerful jets
 - **A/D or Arrows** - Rotate container
+- **1–5** - Select material (Ink, Mineral Oil, Alcohol, Syrup, Glycerine). Non‑Ink enables Oil.
+- **Hamburger → Oil Layer** - Toggle Oil on/off
 - **C** - Cycle RGB light rotation speed
 - **Click light indicator** - Toggle light rotation
 - **V** - Cycle viscosity
@@ -142,6 +152,7 @@ See [CONTROLS.md](CONTROLS.md) for full reference.
 - `divergence.frag.glsl` - Compute velocity divergence
 - `splat.frag.glsl` - Inject color/velocity (no mixing)
 - `volumetric.frag.glsl` - Beer-Lambert absorption rendering
+- `oil-composite.frag.glsl` - Oil soft refraction + Fresnel highlight composite
 - `boundary.frag.glsl` - Circular container visualization
 
 ---

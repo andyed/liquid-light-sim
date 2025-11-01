@@ -1,161 +1,138 @@
-# Marangoni Flow Implementation (Oct 27, 2025)
+# Marangoni Flow Implementation (Design)
 
-## What is Marangoni Flow?
+This document specifies how to implement Marangoni flow in the current layered architecture (Simulation, WaterLayer, OilLayer, Renderer). It replaces earlier generic notes and aligns with the codebase as of the OilLayer/refraction milestone.
 
-Marangoni flow is **lateral fluid motion driven by surface tension gradients**. When two fluids with different surface tensions meet, flow occurs FROM low surface tension TO high surface tension regions. This is the physical mechanism behind the famous **"peacock displays"** in liquid light shows.
+## 1) Concept
 
-## Physical Mechanism
+Marangoni flow is lateral motion along an interface driven by gradients of effective surface tension σ. In our 2D setup, we approximate σ as a function of oil thickness and optionally a surfactant/temperature proxy. Flow direction is toward higher σ along the interface.
 
-### Surface Tension Values (from materials)
-- **Heavy Syrup**: ST = 6.5 (highest)
-- **Glycerine**: ST = 5.0
-- **Mineral Oil**: ST = 3.5
-- **Light Oil**: ST = 2.5
-- **Alcohol Mix**: ST = 1.5 (lowest)
+## 2) Signals and fields
 
-### When Different Oils Meet
+- Oil thickness/tint field: `O(x,y)` lives in `OilLayer.oilTexture1` (RGBA16F). We use luminance of RGB as thickness proxy: `th = dot(oil.rgb, vec3(1/3))`.
+- Optional scalar S(x,y): future extension (surfactant/temperature). For V1 use thickness-only.
+- Water velocity: `velocityTexture1` in WaterLayer/Simulation.
 
-**Example**: Heavy Syrup (ST=6.5) meets Light Oil (ST=2.5)
+## 3) Surface tension model
 
-1. **Surface tension gradient** exists at boundary: ΔST = 4.0
-2. **Marangoni force** pushes Light Oil AWAY from Heavy Syrup
-3. **Result**: Fluids repel, creating feather-like "peacock" patterns
-4. **Oil types remain separate** (enhanced by immiscibility system)
+V1 thickness-only model:
 
-## Implementation Details
+σ(th) = σ0 + k_th * th
 
-### Force Calculation (FluidSolver.js lines 485-504)
+where σ0 is a constant per material and k_th is a gain. Gradients of σ reduce to k_th * ∇th. This keeps the shader simple and stable.
+
+Per-material parameters (examples):
+- Mineral Oil: k_th = 0.8
+- Alcohol: k_th = 0.4
+- Syrup: k_th = 1.0
+- Glycerine: k_th = 1.2
+
+## 4) GPU kernel (marangoni.frag.glsl)
+
+Inputs:
+- `u_velocity` (water velocity, RG16F or RGBA16F)
+- `u_oil` (oil field RGBA16F)
+- `u_dt`, `u_resolution`, `u_strength`, `u_edgeBand` (pixels), `u_k_th`
+
+Output:
+- Updated velocity (additive) written to a ping‑pong FBO (same format as velocity)
+
+Algorithm (pseudo‑GLSL):
 
 ```glsl
-// Sample surface tension from neighbors
-vec3 mat_n = texture(u_materialTexture, v_uv + vec2(0.0, u_texelSize.y)).rgb;
-vec3 mat_s = texture(u_materialTexture, v_uv - vec2(0.0, u_texelSize.y)).rgb;
-vec3 mat_e = texture(u_materialTexture, v_uv + vec2(u_texelSize.x, 0.0)).rgb;
-vec3 mat_w = texture(u_materialTexture, v_uv - vec2(u_texelSize.x, 0.0)).rgb;
+#version 300 es
+precision highp float;
+in vec2 v_uv; out vec2 fragVel; // or vec4 if velocity RGBA
+uniform sampler2D u_velocity;
+uniform sampler2D u_oil;
+uniform vec2 u_texel;          // 1.0 / resolution
+uniform float u_dt;
+uniform float u_strength;      // global scale (material)
+uniform float u_edgeBand;      // pixels in screen space (convert to uv)
+uniform float u_k_th;          // thickness-to-sigma gain
 
-// Surface tension gradient (G channel = surface tension)
-vec2 st_grad = 0.5 * vec2(mat_e.g - mat_w.g, mat_n.g - mat_s.g);
+float thickness(vec3 c){ return dot(c, vec3(0.3333)); }
 
-// Marangoni force: flow FROM low ST TO high ST
-float st_grad_mag = length(st_grad);
-float marangoni_strength = smoothstep(0.01, 0.15, st_grad_mag);
-vec2 marangoni_force = normalize(st_grad + 1e-6) * marangoni_strength * phase * 0.35;
+void main(){
+  // Read velocity
+  vec2 v = texture(u_velocity, v_uv).xy;
 
-// Boost at oil-oil interfaces (where different types meet)
-float interface_boost = smoothstep(0.3, 0.7, phase) * smoothstep(0.7, 0.3, phase);
-marangoni_force *= (1.0 + interface_boost * 2.0);
+  // Thickness and gradient (central differences)
+  float thC = thickness(texture(u_oil, v_uv).rgb);
+  float thL = thickness(texture(u_oil, v_uv - vec2(u_texel.x, 0.0)).rgb);
+  float thR = thickness(texture(u_oil, v_uv + vec2(u_texel.x, 0.0)).rgb);
+  float thD = thickness(texture(u_oil, v_uv - vec2(0.0, u_texel.y)).rgb);
+  float thU = thickness(texture(u_oil, v_uv + vec2(0.0, u_texel.y)).rgb);
+  vec2 gradTh = vec2(thR - thL, thU - thD) * 0.5;
+
+  // Edge mask: activate near interface (|gradTh| band)
+  float g = length(gradTh);
+  float px = max(u_texel.x, u_texel.y);
+  float edge = smoothstep(0.0, (u_edgeBand*px), g);
+
+  // Marangoni force along interface toward higher sigma
+  vec2 Ft = normalize(gradTh + 1e-6) * (u_k_th);
+  // Scale and clamp for stability
+  float clampMag = 0.05; // tuned
+  vec2 deltaV = clamp(Ft * (u_strength * u_dt) * edge, vec2(-clampMag), vec2(clampMag));
+
+  fragVel = v + deltaV;
+}
 ```
 
-### Key Parameters
+Notes:
+- We act tangentially with the gradient direction; for thickness‑only σ this is adequate. If we add explicit normals, we can project to along‑interface directions, but in practice the above yields the desired rim flows.
+- `edge` gates force to interface regions to avoid bulk acceleration.
 
-- **Base strength**: 0.35 (moderate repulsion)
-- **Activation threshold**: 0.01 ST difference (very sensitive)
-- **Full strength**: 0.15 ST difference
-- **Interface boost**: 3x stronger at oil-oil boundaries (phase 0.3-0.7)
-- **Phase gating**: Only active in oil regions
+## 5) Integration points
 
-## Expected Behavior
+Where: `WaterLayer.update(dt)` after `applyForces(dt)` and before viscosity/pressure projection:
 
-### Same Material Type
-**Example**: Pour Mineral Oil twice
-- **Surface tension**: Both have ST = 3.5
-- **ST gradient**: ~0.0 (negligible)
-- **Marangoni force**: ~0.0 (no repulsion)
-- **Result**: Blobs merge, colors gently mix (colorMixing = 0.3)
+1. Bind velocity ping‑pong FBO, attach write target.
+2. Use `marangoniProgram` with inputs: current `velocityTexture1`, `oil.oilTexture1`, uniforms as above.
+3. Draw fullscreen quad, then swap velocity textures.
+4. Continue with viscosity and pressure passes as-is.
 
-### Different Material Types
-**Example**: Pour Heavy Syrup, then Light Oil on top
+Rationale: adding force before projection lets the solver remove any divergence introduced by the Marangoni kick.
 
-**At boundary:**
-- **ST gradient**: 4.0 (6.5 - 2.5)
-- **Marangoni strength**: 1.0 (maxed out, way above 0.15 threshold)
-- **Force direction**: Pushes Light Oil away from Heavy Syrup
-- **Interface boost**: 3x (at phase interface)
-- **Total force**: 0.35 × 3.0 = 1.05 (strong repulsion)
+## 6) Parameters and presets
 
-**Result**: 
-- Light Oil **spreads around** Heavy Syrup like water on a waxed surface
-- Creates **feather patterns** as Light Oil seeks escape paths
-- **Colors stay separate** (immiscibility prevents mixing)
-- **Peacock display** - feathery, organic repulsion patterns
+Add to material presets (controller):
+- `marangoniStrength` (maps to `u_strength`)
+- Optional: `k_th` per material
+- Suggested defaults:
+  - Mineral Oil: strength 0.45, k_th 0.8, edgeBand 2.0
+  - Alcohol: strength 0.25, k_th 0.4, edgeBand 1.5
+  - Syrup: strength 0.60, k_th 1.0, edgeBand 2.5
+  - Glycerine: strength 0.70, k_th 1.2, edgeBand 3.0
 
-## Synergy with Other Systems
+Global safeguards:
+- Clamp force magnitude per‑pixel (see `clampMag`).
+- Optionally low‑pass the oil field once before gradient (we already have oil smoothing; reuse that).
 
-### 1. Immiscibility System
-- Prevents color mixing between different oil types
-- Marangoni pushes them apart physically
-- Colors stay pure and sharp
+## 7) API additions
 
-### 2. Blob Cohesion
-- High blobStrength (0.85-0.98) keeps blobs tight
-- Marangoni creates repulsion at boundaries
-- Result: Distinct blobs that push each other
+- Simulation loads `marangoni.frag.glsl` into `this.marangoniProgram`.
+- WaterLayer gets a method `applyMarangoni(dt)` invoked inside `update(dt)`.
+- Controller passes per‑material parameters into `simulation` on selection.
 
-### 3. Surface Tension Force
-- Normal ST force pulls oil inward (blob formation)
-- Marangoni force pushes different types apart (segregation)
-- Balance creates stable, separated structures
+## 8) Testing
 
-## Testing Marangoni Flow
+- Unit style (test runner):
+  - Ensure program links and uniforms resolve.
+  - Zero oil → no velocity change.
+  - Single oil edge stripe → velocity increases along gradient and is finite.
+- Visual:
+  - Deposit two blobs of different materials; observe outward spreading of low‑σ oil around high‑σ oil (peacock/feather edges).
+  - Same material twice → minimal effect.
 
-### Test 1: Weak Gradient
-**Action**: Pour two Mineral Oil blobs (same material)
-**Expected**: Minimal Marangoni (ST difference = 0), blobs merge normally
+## 9) Future extensions
 
-### Test 2: Moderate Gradient  
-**Action**: Pour Mineral Oil (ST=3.5), then Glycerine (ST=5.0)
-**Expected**: ΔST = 1.5, Marangoni creates gentle repulsion, feathery edges
+- Introduce a surfactant/temperature scalar `S(x,y)` with advection/diffusion and use σ(th,S) = σ0 + k_th th + k_s S.
+- Couple Marangoni only to the oil layer velocity when we add a dedicated `oilVelocity` field, then mix with water via a coupling factor.
 
-### Test 3: Strong Gradient
-**Action**: Pour Heavy Syrup (ST=6.5), then Alcohol Mix (ST=1.5)
-**Expected**: ΔST = 5.0, strong Marangoni repulsion, dramatic peacock patterns
+---
 
-### Test 4: Multiple Materials
-**Action**: Pour all five materials in overlapping pattern
-**Expected**: Complex peacock display with multiple repulsion zones
-
-## Tuning Parameters
-
-If Marangoni is too weak:
-```glsl
-vec2 marangoni_force = normalize(st_grad + 1e-6) * marangoni_strength * phase * 0.50; // Increase from 0.35
-```
-
-If Marangoni is too strong (blobs explode apart):
-```glsl
-vec2 marangoni_force = normalize(st_grad + 1e-6) * marangoni_strength * phase * 0.20; // Decrease from 0.35
-```
-
-If interface patterns are too subtle:
-```glsl
-interface_boost *= (1.0 + interface_boost * 4.0); // Increase from 2.0
-```
-
-## Historical Accuracy
-
-From research documentation:
-> "Heavier, more viscous oils would tend to 'stay' in place, while lighter, less viscous oils would flow around them, creating intricate, feather-like patterns often described as 'peacock displays'."
-
-Our implementation achieves this through:
-1. **Per-pixel surface tension** (materialFBO G channel)
-2. **ST gradient calculation** (samples neighbors)
-3. **Directed repulsion force** (gradient-driven flow)
-4. **Interface amplification** (3x boost at boundaries)
-
-## Current Status
-
-✅ **Marangoni force implemented** and active
-✅ **Per-pixel surface tension** from materialFBO
-✅ **Gradient calculation** with neighbor sampling
-✅ **Interface boost** at oil-oil boundaries
-✅ **Phase gating** (only active in oil)
-✅ **Integrated** into total force summation (line 664)
-
-## Next: Visual Verification
-
-Pour different materials and observe:
-- Do blobs with high ST difference repel?
-- Do feather patterns form at boundaries?
-- Do peacock displays emerge naturally?
-
-The physics is implemented - now let's see it in action! 🦚
+Implementation order:
+1) Add shader + program load, integrate `applyMarangoni(dt)` in WaterLayer.
+2) Wire per‑material params (strength, k_th, edgeBand) in controller presets.
+3) Tune `clampMag`, `edgeBand`, and strengths to avoid ringing and ensure stable, organic rim flows.
