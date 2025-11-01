@@ -27,6 +27,8 @@ export default class Renderer {
         // Oil composite defaults
         this.oilRefractStrength = 0.010; // screen-UV scale
         this.oilFresnelPower = 3.0;
+        this.oilOcclusion = 0.35; // 0..1
+        this.oilAlphaGamma = 1.0; // gamma for thickness→alpha
 
         this.resize();
         window.addEventListener('resize', () => this.resize());
@@ -336,6 +338,8 @@ export default class Renderer {
             gl.uniform2f(gl.getUniformLocation(this.oilCompositeProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
             gl.uniform1f(gl.getUniformLocation(this.oilCompositeProgram, 'u_refract_strength'), this.oilRefractStrength);
             gl.uniform1f(gl.getUniformLocation(this.oilCompositeProgram, 'u_fresnel_power'), this.oilFresnelPower);
+            gl.uniform1f(gl.getUniformLocation(this.oilCompositeProgram, 'u_occlusion'), this.oilOcclusion);
+            gl.uniform1f(gl.getUniformLocation(this.oilCompositeProgram, 'u_oil_gamma'), this.oilAlphaGamma);
 
             gl.drawArrays(gl.TRIANGLES, 0, 6);
 

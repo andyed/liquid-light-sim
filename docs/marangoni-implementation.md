@@ -136,3 +136,43 @@ Implementation order:
 1) Add shader + program load, integrate `applyMarangoni(dt)` in WaterLayer.
 2) Wire per‑material params (strength, k_th, edgeBand) in controller presets.
 3) Tune `clampMag`, `edgeBand`, and strengths to avoid ringing and ensure stable, organic rim flows.
+
+## 10) Marangoni bursting and beading (phenomenology)
+
+In classic light shows, slow fragmentation and beading arise from "Marangoni bursting" involving three liquids:
+
+- Base liquid (high σ): the oil layer (e.g., mineral oil).
+- Droplet mixture (variable σ): water + lower‑σ alcohol (IPA/ethanol) + dye.
+
+Mechanism sketch for visuals we aim to emulate:
+- Alcohol evaporates fastest at droplet edges, increasing σ at the rim relative to the center.
+- The resulting σ gradient drives outward Marangoni flow from center to rim.
+- Radial fingers form and become unstable, fragmenting into beads/secondary droplets.
+
+Practical V1 in this codebase:
+- We approximate σ(th) from oil thickness and inject interface forces into water (Section 4/5), which produces outward shear and feathering along oil–ink boundaries. A dedicated volatile field C(x,y) could later reproduce rim‑biased σ changes and time‑varying bursts.
+
+Future extension for bursting:
+- Add a scalar `C` (alcohol/surfactant) with advection/diffusion/evaporation. Use σ(th,C) = σ0 + k_th th + k_c C and add an edge‑biased evaporation term to increase σ at rims over time, promoting fingering and bead breakup.
+
+## 11) Peacock visuals and thermal option
+
+The slow, dendritic "peacock" patterns can be modeled as a continuous σ disturbance rather than discrete droplets:
+- Continuous injection: introduce a local σ change (via color tool or a hidden surfactant tap) to seed spreading flow that shears colored regions.
+- Thermal Marangoni (optional): projector heat creates ∇T with dσ/dT < 0, causing flow away from hot spots.
+
+How to add later:
+- Add a simple temperature field T(x,y) with a heat source at light indicator; define σ(th,T) with dσ/dT < 0 and couple ∇σ(T) into the same Marangoni pass (extra gradient term).
+
+## 12) VJ implementation paths (and what we chose)
+
+Two practical routes:
+- Physics‑based (heavier): full Navier‑Stokes with explicit surfactant/temperature PDEs and interfacial stress. Highest fidelity, higher cost.
+- Texture/shader‑based (real‑time): derive forces and displacement from available fields and procedural noise.
+
+What we implemented in V1:
+- A shader‑based Marangoni pass that uses the oil thickness gradient to add an interface force to water velocity (cheap and stable) and an oil composite pass for soft refraction/occlusion.
+
+Possible visual boosters (still shader‑based, real‑time):
+- Add low‑frequency fractal noise as a small perturbation to σ before taking ∇ to mimic thermal convection shimmer.
+- Add a light evaporation mask near edges (precompute from |∇th|) to slowly strengthen σ at rims.

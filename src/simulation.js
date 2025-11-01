@@ -61,6 +61,11 @@ export default class Simulation {
         this.oil = null;      // optional, off by default
         this.useOil = false;
 
+        // Marangoni (V1 thickness-driven)
+        this.marangoniStrength = 0.0; // per-material; 0 disables
+        this.marangoniEdgeBand = 2.0; // pixels
+        this.marangoniKth = 0.8;      // thickness→sigma gain
+
         this.ready = false;
     }
 

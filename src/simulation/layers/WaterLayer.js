@@ -16,6 +16,36 @@ export default class WaterLayer extends FluidLayer {
     this.pressureFBO = null;
   }
 
+  applyMarangoni(dt) {
+    const sim = this.sim;
+    const gl = this.gl;
+    gl.useProgram(sim.marangoniProgram);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.velocityFBO);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.velocityTexture2, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
+    const positionAttrib = gl.getAttribLocation(sim.marangoniProgram, 'a_position');
+    gl.enableVertexAttribArray(positionAttrib);
+    gl.vertexAttribPointer(positionAttrib, 2, gl.FLOAT, false, 0, 0);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.velocityTexture1);
+    gl.uniform1i(gl.getUniformLocation(sim.marangoniProgram, 'u_velocity'), 0);
+
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, sim.oil.oilTexture1);
+    gl.uniform1i(gl.getUniformLocation(sim.marangoniProgram, 'u_oil'), 1);
+
+    gl.uniform2f(gl.getUniformLocation(sim.marangoniProgram, 'u_texel'), 1.0 / gl.canvas.width, 1.0 / gl.canvas.height);
+    gl.uniform1f(gl.getUniformLocation(sim.marangoniProgram, 'u_dt'), dt);
+    gl.uniform1f(gl.getUniformLocation(sim.marangoniProgram, 'u_strength'), sim.marangoniStrength);
+    gl.uniform1f(gl.getUniformLocation(sim.marangoniProgram, 'u_edgeBand'), sim.marangoniEdgeBand);
+    gl.uniform1f(gl.getUniformLocation(sim.marangoniProgram, 'u_k_th'), sim.marangoniKth);
+
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    this.swapVelocityTextures();
+  }
+
   async init() {
     const gl = this.gl;
     const w = gl.canvas.width;
@@ -94,6 +124,10 @@ export default class WaterLayer extends FluidLayer {
     }
 
     sim.advectVelocity(dt);
+    // Marangoni: add interface-driven force from oil thickness gradient
+    if (sim.useOil && sim.oil && sim.marangoniProgram && sim.marangoniStrength > 0.0) {
+      this.applyMarangoni(dt);
+    }
     sim.applyViscosity(dt);
     sim.projectVelocity();
     sim.advectColor(dt);

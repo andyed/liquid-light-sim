@@ -13,11 +13,11 @@ export default class Controller {
         this.isSpacePressed = false;
         this.currentColor = { r: 0.3, g: 0.898, b: 1.0 };  // Default: cyan (#4de5ff)
         this.materials = [
-            { name: 'Ink', palette: ['#4DE5FF', '#FF3B3B', '#FFD93B', '#9B59B6', '#2ECC71'], preset: { useOil: false, oilSmoothingRate: 0.0, absorption: 3.0, paletteDom: 0.15, refractStrength: 0.0, fresnelPower: 3.0 } },
-            { name: 'Mineral Oil', palette: ['#FFF3C4', '#FFD166', '#F6BD60', '#F7EDE2', '#F28482'], preset: { useOil: true, oilSmoothingRate: 0.0035, absorption: 3.5, paletteDom: 0.12, refractStrength: 0.010, fresnelPower: 3.0 } },
-            { name: 'Alcohol', palette: ['#BDE0FE', '#A2D2FF', '#CDB4DB', '#FFC8DD', '#FFAFCC'], preset: { useOil: true, oilSmoothingRate: 0.0010, absorption: 2.5, paletteDom: 0.20, refractStrength: 0.007, fresnelPower: 2.8 } },
-            { name: 'Syrup', palette: ['#8B4513', '#D2691E', '#C97A36', '#F4A261', '#E76F51'], preset: { useOil: true, oilSmoothingRate: 0.0050, absorption: 4.0, paletteDom: 0.12, refractStrength: 0.012, fresnelPower: 3.2 } },
-            { name: 'Glycerine', palette: ['#E0FBFC', '#98C1D9', '#3D5A80', '#EE6C4D', '#293241'], preset: { useOil: true, oilSmoothingRate: 0.0060, absorption: 4.5, paletteDom: 0.10, refractStrength: 0.015, fresnelPower: 3.5 } }
+            { name: 'Ink', palette: ['#4DE5FF', '#FF3B3B', '#FFD93B', '#9B59B6', '#2ECC71'], preset: { useOil: false, oilSmoothingRate: 0.0, absorption: 3.0, paletteDom: 0.15, refractStrength: 0.0, fresnelPower: 3.0, oilOcclusion: 0.0, oilAlphaGamma: 1.0, marangoniStrength: 0.0, marangoniKth: 0.8, marangoniEdgeBand: 2.0 } },
+            { name: 'Mineral Oil', palette: ['#FFF3C4', '#FFD166', '#F6BD60', '#F7EDE2', '#F28482'], preset: { useOil: true, oilSmoothingRate: 0.0035, absorption: 3.5, paletteDom: 0.12, refractStrength: 0.010, fresnelPower: 3.0, oilOcclusion: 0.45, oilAlphaGamma: 1.10, marangoniStrength: 0.45, marangoniKth: 0.8, marangoniEdgeBand: 2.0 } },
+            { name: 'Alcohol', palette: ['#BDE0FE', '#A2D2FF', '#CDB4DB', '#FFC8DD', '#FFAFCC'], preset: { useOil: true, oilSmoothingRate: 0.0010, absorption: 2.5, paletteDom: 0.20, refractStrength: 0.007, fresnelPower: 2.8, oilOcclusion: 0.30, oilAlphaGamma: 0.90, marangoniStrength: 0.25, marangoniKth: 0.4, marangoniEdgeBand: 1.5 } },
+            { name: 'Syrup', palette: ['#8B4513', '#D2691E', '#C97A36', '#F4A261', '#E76F51'], preset: { useOil: true, oilSmoothingRate: 0.0050, absorption: 4.0, paletteDom: 0.12, refractStrength: 0.012, fresnelPower: 3.2, oilOcclusion: 0.60, oilAlphaGamma: 1.20, marangoniStrength: 0.60, marangoniKth: 1.0, marangoniEdgeBand: 2.5 } },
+            { name: 'Glycerine', palette: ['#E0FBFC', '#98C1D9', '#3D5A80', '#EE6C4D', '#293241'], preset: { useOil: true, oilSmoothingRate: 0.0060, absorption: 4.5, paletteDom: 0.10, refractStrength: 0.015, fresnelPower: 3.5, oilOcclusion: 0.70, oilAlphaGamma: 1.30, marangoniStrength: 0.70, marangoniKth: 1.2, marangoniEdgeBand: 3.0 } }
         ];
         this.currentMaterialIndex = 0;
         
@@ -120,6 +120,22 @@ export default class Controller {
         }
         if (typeof p.fresnelPower === 'number') {
             this.renderer.oilFresnelPower = p.fresnelPower;
+        }
+        if (typeof p.oilOcclusion === 'number') {
+            this.renderer.oilOcclusion = p.oilOcclusion;
+        }
+        if (typeof p.oilAlphaGamma === 'number') {
+            this.renderer.oilAlphaGamma = p.oilAlphaGamma;
+        }
+        // Marangoni
+        if (typeof p.marangoniStrength === 'number') {
+            this.simulation.marangoniStrength = p.marangoniStrength;
+        }
+        if (typeof p.marangoniKth === 'number') {
+            this.simulation.marangoniKth = p.marangoniKth;
+        }
+        if (typeof p.marangoniEdgeBand === 'number') {
+            this.simulation.marangoniEdgeBand = p.marangoniEdgeBand;
         }
         // Menu reflects changes
         if (this.menuPanel) this.updateMenuStates();
