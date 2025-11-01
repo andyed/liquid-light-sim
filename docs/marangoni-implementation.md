@@ -2,6 +2,124 @@
 
 This document specifies how to implement Marangoni flow in the current layered architecture (Simulation, WaterLayer, OilLayer, Renderer). It replaces earlier generic notes and aligns with the codebase as of the OilLayer/refraction milestone.
 
+## PREREQUISITES (Complete Before Marangoni)
+
+**Critical infrastructure required for Marangoni to work properly:**
+
+### Prerequisite 1: Separate Oil Velocity Field
+
+**Current state:** Oil advects by water velocity only (no independent oil motion).
+
+**Why needed:** Marangoni forces need to act on oil velocity, not just water. Without separate velocity, oil can't exhibit its characteristic slow, viscous flow.
+
+**Implementation:**
+- Add `oilVelocityTexture1/2` (RG16F ping-pong pair) to `OilLayer`
+- Add `oilVelocityFBO` for writes
+- Mixed advection: `v_effective = mix(v_oil, v_water, coupling_factor)`
+  - `coupling_factor` based on thickness: thin oil → more water-driven, thick oil → more independent
+  - Suggested: `coupling = 0.3 + 0.5 * smoothstep(0.0, 0.3, thickness)`
+- Update `OilLayer.update(dt)`:
+  1. Advect oil velocity by itself (semi-Lagrangian)
+  2. Apply coupling from water velocity as additive force
+  3. Advect oil thickness by mixed velocity
+
+**Shaders needed:**
+- `advection.frag.glsl` (reuse existing, works for RG16F)
+- `oil-coupling.frag.glsl` (new - adds water influence to oil velocity)
+
+---
+
+### Prerequisite 2: Oil-Specific Viscosity
+
+**Current state:** Oil uses same viscosity as water (or none).
+
+**Why needed:** Materials have 25-120× water viscosity. This fundamentally changes dynamics and is essential for proper Marangoni flow shaping.
+
+**Implementation:**
+- Add viscosity pass to `OilLayer.update(dt)` acting on `oilVelocity`
+- Per-material iteration counts:
+  - Mineral Oil (25×): 80-100 iterations
+  - Glycerine (80×): 150-180 iterations
+  - Light Oil (12×): 40-60 iterations
+  - Alcohol (5×): 20-30 iterations
+  - Heavy Syrup (120×): 200-250 iterations
+- Lower or disable vorticity confinement for oil (high viscosity naturally damps vortices)
+
+**Shaders needed:**
+- `viscosity.frag.glsl` (reuse existing Jacobi solver)
+
+---
+
+### Prerequisite 3: Basic Coupling Forces
+
+**Current state:** No momentum exchange between layers.
+
+**Why needed:** Prevents layers from acting completely independently. Oil thickness gradients should influence water, and vice versa.
+
+**Implementation:**
+- **Oil → Water coupling (buoyancy-like):**
+  - Compute thickness gradient `∇thickness` in oil field
+  - Add force to water velocity: `F_coupling = k_buoy * ∇thickness`
+  - Apply in `WaterLayer.update(dt)` after external forces, before projection
+  - Strength: `k_buoy = 0.002 - 0.008` (tuned per material)
+
+- **Water → Oil coupling:**
+  - Already handled in mixed advection (Prerequisite 1)
+  - Optional: add drag force proportional to velocity difference
+
+**Shaders needed:**
+- `coupling-force.frag.glsl` (new - thickness gradient → force)
+
+---
+
+### Prerequisite 4: Oil Conservation & Overflow
+
+**Current state:** No overflow control for oil layer.
+
+**Why needed:** Prevents unrealistic oil accumulation. Ink has sophisticated overflow; oil needs similar.
+
+**Implementation:**
+- Add `computeOccupancy()` to `OilLayer`:
+  - Thickness-weighted measurement (not just binary presence)
+  - Threshold: sum of RGB luminance > 0.01
+  - Target band: 70-85% (looser than ink's 80-90%)
+- Add `applyOverflow(strength)` to `OilLayer`:
+  - Damp oil thickness when coverage exceeds threshold
+  - Preferentially target thin/speckled regions
+  - Preserve thick, coherent blobs
+- Call from `Controller` with same cadence as ink overflow (every 8 frames)
+
+**Shaders needed:**
+- `occupancy.frag.glsl` (reuse/adapt from WaterLayer)
+- `overflow.frag.glsl` (reuse/adapt from WaterLayer)
+
+---
+
+### Implementation Sequence
+
+**Session 1:** Separate oil velocity + mixed advection (Prereq 1)
+- ✅ Most critical - enables independent oil motion
+- ✅ Foundation for all other improvements
+
+**Session 2:** Oil viscosity tuning (Prereq 2)
+- ✅ Gives oil its characteristic slow, smooth flow
+- ✅ Required for Marangoni forces to shape properly
+
+**Session 3:** Basic coupling forces (Prereq 3)
+- ✅ Creates interaction between layers
+- ✅ Oil influences water and vice versa
+
+**Session 4:** Oil conservation (Prereq 4)
+- ✅ Prevents runaway accumulation
+- ✅ Maintains visual quality
+
+**Session 5:** Marangoni implementation (this document)
+- Only after above infrastructure is solid
+- Will add peacock feathering, dendritic spreading
+- Final 10% visual polish on top of 90% foundation
+
+---
+
 ## 1) Concept
 
 Marangoni flow is lateral motion along an interface driven by gradients of effective surface tension σ. In our 2D setup, we approximate σ as a function of oil thickness and optionally a surfactant/temperature proxy. Flow direction is toward higher σ along the interface.

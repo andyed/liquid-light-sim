@@ -48,10 +48,18 @@ export default class Simulation {
         this.centralSpiralDecayRate = 0.05; // how fast it decays when not rotating
         this.centralSpiralAngle = 0.0; // rotation angle of the force emitter
         
-        // Iteration counts
+        // Iteration counts (water)
         this.viscosityIterations = 20;  // Jacobi iterations for viscosity
         this.pressureIterations = 50;  // Jacobi iterations for pressure
         this.diffusionIterations = 20;  // Jacobi iterations for color diffusion
+        
+        // Oil-specific viscosity parameters
+        this.oilViscosity = 0.8;  // Much higher than water (will be material-specific)
+        this.oilViscosityIterations = 100;  // Higher iterations for thicker oil
+        this.oilVorticityStrength = 0.0;  // Disable vorticity for oil (high viscosity damps swirls)
+        
+        // Oil → Water coupling (thickness gradient → force)
+        this.couplingStrength = 0.005;  // Strength of oil pushing water (material-specific)
         
         // Testing/debugging
         this.paused = false;  // F004 requirement: pause/freeze state
@@ -146,6 +154,18 @@ export default class Simulation {
             await loadShader('src/shaders/overflow.frag.glsl')
         );
 
+        // Oil-coupling program (blends water velocity into oil velocity)
+        this.oilCouplingProgram = this.renderer.createProgram(
+            fullscreenVert,
+            await loadShader('src/shaders/oil-coupling.frag.glsl')
+        );
+
+        // Coupling-force program (oil thickness gradient pushes water)
+        this.couplingForceProgram = this.renderer.createProgram(
+            fullscreenVert,
+            await loadShader('src/shaders/coupling-force.frag.glsl')
+        );
+
         const width = gl.canvas.width;
         const height = gl.canvas.height;
 
@@ -166,8 +186,14 @@ export default class Simulation {
 
         this.water = new WaterLayer(this);
         await this.water.init();
+        
+        // Initialize oil layer (always enabled now since all materials use it)
+        this.oil = new OilLayer(this);
+        await this.oil.init();
+        this.useOil = true;
+        
         this.ready = true;
-        console.log('✓ Simulation initialized');
+        console.log('✓ Simulation initialized (water + oil layers)');
     }
 
     async enableOil() {

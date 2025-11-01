@@ -16,6 +16,34 @@ export default class WaterLayer extends FluidLayer {
     this.pressureFBO = null;
   }
 
+  applyCouplingForce(dt) {
+    const sim = this.sim;
+    const gl = this.gl;
+    gl.useProgram(sim.couplingForceProgram);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.velocityFBO);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.velocityTexture2, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
+    const positionAttrib = gl.getAttribLocation(sim.couplingForceProgram, 'a_position');
+    gl.enableVertexAttribArray(positionAttrib);
+    gl.vertexAttribPointer(positionAttrib, 2, gl.FLOAT, false, 0, 0);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.velocityTexture1);
+    gl.uniform1i(gl.getUniformLocation(sim.couplingForceProgram, 'u_velocity'), 0);
+
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, sim.oil.oilTexture1);
+    gl.uniform1i(gl.getUniformLocation(sim.couplingForceProgram, 'u_oil'), 1);
+
+    gl.uniform2f(gl.getUniformLocation(sim.couplingForceProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+    gl.uniform1f(gl.getUniformLocation(sim.couplingForceProgram, 'u_dt'), dt);
+    gl.uniform1f(gl.getUniformLocation(sim.couplingForceProgram, 'u_couplingStrength'), sim.couplingStrength);
+
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    this.swapVelocityTextures();
+  }
+
   applyMarangoni(dt) {
     const sim = this.sim;
     const gl = this.gl;
@@ -118,6 +146,11 @@ export default class WaterLayer extends FluidLayer {
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
 
     sim.applyForces(dt);
+
+    // Apply coupling force from oil thickness gradients (if oil layer present)
+    if (sim.useOil && sim.oil && sim.couplingForceProgram && sim.couplingStrength > 0.0) {
+      this.applyCouplingForce(dt);
+    }
 
     if (sim.vorticityStrength > 0) {
       sim.applyVorticityConfinement();
