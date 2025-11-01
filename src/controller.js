@@ -26,6 +26,9 @@ export default class Controller {
         const canvas = this.gl.canvas;
         // Disable native gesture handling so touches map to paint/jets
         canvas.style.touchAction = 'none';
+        // Ensure canvas can receive focus for keyboard events in mobile emulators
+        canvas.setAttribute('tabindex', '0');
+        try { canvas.focus(); } catch (e) {}
         
         // Bind event listeners
         this.canvas = canvas;
@@ -41,6 +44,9 @@ export default class Controller {
         
         document.addEventListener('keydown', (e) => this.onKeyDown(e));
         document.addEventListener('keyup', (e) => this.onKeyUp(e));
+        // Also listen on window to catch keys when focus is not on document/canvas (mobile emulator)
+        window.addEventListener('keydown', (e) => this.onKeyDown(e));
+        window.addEventListener('keyup', (e) => this.onKeyUp(e));
 
         // Jet control: repeat while held
         this.didJetThisClick = false; // kept for initial state logging
@@ -188,7 +194,7 @@ export default class Controller {
         
         this.rotationButton.addEventListener('click', () => {
             if (this.simulation.rotationAmount === 0) {
-                this.simulation.setRotation(0.2);
+                this.simulation.setRotation(1.2);
                 this.rotationButton.style.background = 'rgba(0, 150, 255, 0.7)';
                 console.log('🔄 Rotation: ON');
             } else {
@@ -597,6 +603,9 @@ export default class Controller {
     }
 
     onKeyDown(e) {
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === ' ') {
+            if (e.preventDefault) e.preventDefault();
+        }
         // Container rotation controls (increased to 0.2 for better visibility)
         if (e.key === 'ArrowLeft' || e.key === 'a') {
             this.simulation.setRotation(0.2);
@@ -782,15 +791,36 @@ export default class Controller {
         this.mouseVelocityY = dy;
         this.lastMouseX = x;
         this.lastMouseY = y;
+
+        // If second finger is down, engage jet mode (right-click equivalent)
+        if (e.touches.length === 2) {
+            if (!this.isRightMouseDown) {
+                this.isRightMouseDown = true;
+                this.didJetThisClick = false;
+                this.lastJetTime = 0;
+                this.jetHoldStart = performance.now();
+            }
+        } else if (e.touches.length === 1) {
+            // Single touch = paint mode
+            this.isRightMouseDown = false;
+            this.isMouseDown = true;
+        }
     }
 
     onTouchEnd(e) {
         e.preventDefault();
-        if (e.touches.length === 0) {
+        const remaining = e.touches.length;
+        if (remaining === 0) {
             this.isMouseDown = false;
             this.isRightMouseDown = false;
-        } else if (e.touches.length === 1) {
+        } else if (remaining === 1) {
+            // Revert to paint mode with remaining finger
             this.isRightMouseDown = false;
+            this.isMouseDown = true;
+            const t = e.touches[0];
+            const rect = this.gl.canvas.getBoundingClientRect();
+            this.currentMouseX = (t.clientX - rect.left) / rect.width;
+            this.currentMouseY = 1.0 - (t.clientY - rect.top) / rect.height;
         }
     }
 

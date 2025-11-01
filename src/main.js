@@ -9,6 +9,7 @@ class App {
     constructor() {
         this.renderer = new Renderer();
         this.simulation = new Simulation(this.renderer);
+        this.renderer.setSimulation(this.simulation);
         this.controller = new Controller(this.simulation, this.renderer);
         this.perfMonitor = new PerformanceMonitor();
 

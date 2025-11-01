@@ -48,6 +48,54 @@ export default class Simulation {
         this.ready = false;
     }
 
+    recreateTextures() {
+        const gl = this.gl;
+        const width = gl.canvas.width;
+        const height = gl.canvas.height;
+        // Scale solver iterations based on resolution (reference min-dim = 1080)
+        const _minDimInit = Math.max(1, Math.min(width, height));
+        const _iterScaleInit = Math.min(1.75, Math.max(0.75, 1080.0 / _minDimInit));
+        this.viscosityIterations = Math.max(10, Math.round(20 * _iterScaleInit));
+        this.pressureIterations = Math.max(30, Math.round(50 * _iterScaleInit));
+        // Scale solver iterations based on resolution (reference min-dim = 1080)
+        const minDim = Math.max(1, Math.min(width, height));
+        const iterScale = Math.min(1.75, Math.max(0.75, 1080.0 / minDim));
+        this.viscosityIterations = Math.max(10, Math.round(20 * iterScale));
+        this.pressureIterations = Math.max(30, Math.round(50 * iterScale));
+
+        // Delete old textures/FBOs if they exist
+        if (this.colorTexture1) gl.deleteTexture(this.colorTexture1);
+        if (this.colorTexture2) gl.deleteTexture(this.colorTexture2);
+        if (this.colorFBO) gl.deleteFramebuffer(this.colorFBO);
+
+        if (this.velocityTexture1) gl.deleteTexture(this.velocityTexture1);
+        if (this.velocityTexture2) gl.deleteTexture(this.velocityTexture2);
+        if (this.velocityFBO) gl.deleteFramebuffer(this.velocityFBO);
+
+        if (this.divergenceTexture) gl.deleteTexture(this.divergenceTexture);
+        if (this.divergenceFBO) gl.deleteFramebuffer(this.divergenceFBO);
+
+        if (this.pressureTexture1) gl.deleteTexture(this.pressureTexture1);
+        if (this.pressureTexture2) gl.deleteTexture(this.pressureTexture2);
+        if (this.pressureFBO) gl.deleteFramebuffer(this.pressureFBO);
+
+        // Recreate at new size
+        this.colorTexture1 = this.createTexture(width, height, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
+        this.colorTexture2 = this.createTexture(width, height, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
+        this.colorFBO = this.createFBO(this.colorTexture1);
+
+        this.velocityTexture1 = this.createTexture(width, height, gl.RG16F, gl.RG, gl.HALF_FLOAT);
+        this.velocityTexture2 = this.createTexture(width, height, gl.RG16F, gl.RG, gl.HALF_FLOAT);
+        this.velocityFBO = this.createFBO(this.velocityTexture1);
+
+        this.divergenceTexture = this.createTexture(width, height, gl.R16F, gl.RED, gl.HALF_FLOAT);
+        this.divergenceFBO = this.createFBO(this.divergenceTexture);
+
+        this.pressureTexture1 = this.createTexture(width, height, gl.R16F, gl.RED, gl.HALF_FLOAT);
+        this.pressureTexture2 = this.createTexture(width, height, gl.R16F, gl.RED, gl.HALF_FLOAT);
+        this.pressureFBO = this.createFBO(this.pressureTexture1);
+    }
+
     computeOccupancy() {
         const gl = this.gl;
         // Render occupancy mask (R=inked, G=inside) at low resolution
@@ -95,6 +143,9 @@ export default class Simulation {
         const gl = this.gl;
         if (strength <= 0.0) return;
         // Fullscreen pass: read colorTexture1, write damped result to colorTexture2
+        // Make sure viewport covers full canvas (computeOccupancy sets a 128x128 viewport)
+        const prevViewport = gl.getParameter(gl.VIEWPORT);
+        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
         gl.useProgram(this.overflowProgram);
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.colorFBO);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.colorTexture2, 0);
@@ -115,6 +166,8 @@ export default class Simulation {
 
         // Optional: log one-shot
         console.log(`🚰 Overflow valve engaged: strength=${strength.toFixed(2)} → target ${(this.overflowLower*100)|0}-${(this.overflowUpper*100)|0}%`);
+        // Restore previous viewport
+        gl.viewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
     }
 
     async init() {
@@ -384,6 +437,9 @@ export default class Simulation {
 
         const gl = this.gl;
         const dt = Math.min(deltaTime, 0.016);  // Cap dt for stability
+
+        // Defensive: ensure full-canvas viewport for all simulation passes
+        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
 
         // 1. Apply external forces (rotation, jet)
         this.applyForces(dt);

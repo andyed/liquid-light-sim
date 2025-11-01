@@ -32,6 +32,10 @@ export default class Renderer {
         this.init();
     }
 
+    setSimulation(simulation) {
+        this.simulation = simulation;
+    }
+
     async init() {
         const passThroughVert = await loadShader('src/shaders/fullscreen.vert.glsl');
         const passThroughFrag = await loadShader('src/shaders/passThrough.frag.glsl');
@@ -103,13 +107,53 @@ export default class Renderer {
     }
 
     resize() {
-        this.gl.canvas.width = window.innerWidth;
-        this.gl.canvas.height = window.innerHeight;
+        const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+        const viewportWidth = Math.max(1, window.innerWidth);
+        const viewportHeight = Math.max(1, window.innerHeight);
+        const viewportAspect = viewportWidth / viewportHeight;
+
+        // CSS size in CSS pixels
+        let cssW, cssH;
+        if (viewportAspect < 1.0) {
+            // Portrait: square CSS canvas to ensure full circle fits
+            cssW = viewportWidth;
+            cssH = viewportWidth;
+        } else {
+            // Landscape: fill viewport
+            cssW = viewportWidth;
+            cssH = viewportHeight;
+        }
+
+        // Apply CSS size
+        const canvasEl = this.gl.canvas;
+        canvasEl.style.width = cssW + 'px';
+        canvasEl.style.height = cssH + 'px';
+
+        // Compute drawing buffer size in device pixels, cap by MAX_TEXTURE_SIZE
+        const maxTex = this._maxTextureSize || (this._maxTextureSize = this.gl.getParameter(this.gl.MAX_TEXTURE_SIZE));
+        const targetW = Math.min(maxTex, Math.max(1, Math.floor(cssW * dpr)));
+        const targetH = Math.min(maxTex, Math.max(1, Math.floor(cssH * dpr)));
+
+        // Set drawing buffer
+        this.gl.canvas.width = targetW;
+        this.gl.canvas.height = targetH;
+
         this.gl.viewport(0, 0, this.gl.canvas.width, this.gl.canvas.height);
-        
-        // Recreate boundary texture with new size
-        if (this.ready) {
-            this.createBoundaryTexture();
+
+        // Recreate intermediate textures only if size changed
+        const w = this.gl.canvas.width;
+        const h = this.gl.canvas.height;
+        const changed = (this._lastCanvasW !== w) || (this._lastCanvasH !== h);
+        if (changed) {
+            this._lastCanvasW = w;
+            this._lastCanvasH = h;
+            if (this.ready) {
+                this.createBoundaryTexture();
+                this.createPostProcessTexture();
+                if (this.simulation && this.simulation.ready) {
+                    this.simulation.recreateTextures();
+                }
+            }
         }
     }
 

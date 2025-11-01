@@ -23,8 +23,10 @@ void main() {
     // Inside mask
     float inside = step(d, containerRadius);
 
-    // Rim weighting: stronger damping near rim
-    float rim = smoothstep(containerRadius - 0.08, containerRadius, d);
+    // Rim weighting: stronger damping near rim (normalize band to pixel scale)
+    float scale = 1080.0 / max(min(u_resolution.x, u_resolution.y), 1.0);
+    float w08 = 0.08 * scale;
+    float rim = smoothstep(containerRadius - w08, containerRadius, d);
 
     // Apply damping to color magnitude (preserve hue)
     float strength = clamp(u_strength, 0.0, 1.0);

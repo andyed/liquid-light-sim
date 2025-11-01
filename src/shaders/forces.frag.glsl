@@ -31,22 +31,28 @@ void main() {
     float distSafe = max(dist, 0.002); // tiny epsilon to avoid singularity at exact center
     vec2 v_as = vec2(-centered_aspect.y, centered_aspect.x) * u_rotation_amount;
     
-    // Rim feathering only (smooth at wall to avoid boundary artifacts)
-    float rimFeather = 1.0 - smoothstep(containerRadius - 0.03, containerRadius, dist);
+    // Rim feathering (used only for boundary interactions now)
+    float scale = 1080.0 / max(min(u_resolution.x, u_resolution.y), 1.0);
+    float w03 = 0.03 * scale;
+    float w08 = 0.08 * scale;
+    float w04 = 0.04 * scale;
+    float w02 = 0.02 * scale;
+    float rimFeather = 1.0 - smoothstep(containerRadius - w03, containerRadius, dist);
     
     // Map back to UV space
     vec2 v_uv = vec2(v_as.x / max(aspect, 1e-6), v_as.y);
     
     // Viscous coupling: blend factor mimics friction transmission (not instant velocity replacement)
     // Higher = stronger coupling, longer persistence
-    const float viscousCoupling = 0.25; // 25% blend per frame for lingering rotation
-    const float rotationGain = 0.4; // drastically reduced to prevent over-energizing (was 16.0)
+    const float viscousCoupling = 0.35; // modestly stronger coupling
+    const float rotationGain = 0.9; // stronger rotation gain for clearer advection
     
-    force = v_uv * rotationGain * viscousCoupling * rimFeather;
+    // Apply uniform rotational drive across the interior; walls handled in boundary modes
+    force = v_uv * rotationGain * viscousCoupling;
     
     // Add rotating force emitter near center to break up pooling (prevents dead zone)
     // Physics: spinning creates rotating outward flow at center (like a rotating sprinkler)
-    const float centralRadius = 0.15; // active in central 15% of plate (increased from 0.08)
+    const float centralRadius = 0.22; // broadened central influence for interior motion
     float centralStrength = smoothstep(centralRadius, 0.0, dist); // 1 at center, 0 at edge of zone
     
     // Create a rotating directional force (not uniform radial)
@@ -56,7 +62,7 @@ void main() {
     float emitterAngle = u_central_spiral_angle + 1.5708; // +pi/2 to put dead zone opposite to push direction
     float angleDiff = mod(pixelAngle - emitterAngle + 3.14159, 6.28318) - 3.14159; // wrap to [-pi, pi]
     // Force is strongest in emitter direction, falls off to sides (cosine lobe)
-    float angularFalloff = max(0.0, cos(angleDiff * 1.5)); // 1.5 makes it more focused
+    float angularFalloff = max(0.0, cos(angleDiff * 1.0)); // broader lobe to spread forcing
     
     // Force direction: radial outward with slight tangential component
     vec2 radialDir = dist > 1e-6 ? centered_aspect / dist : vec2(1.0, 0.0);
@@ -65,8 +71,8 @@ void main() {
     vec2 tangentDir_uv = vec2(tangentDir.x / max(aspect, 1e-6), tangentDir.y);
     
     // Base strength scales with rotation, modulated by accumulated power
-    float baseStrength = abs(u_rotation_amount) * 0.25; // increased from 0.08 for stronger push
-    float powerMultiplier = u_central_spiral_power; // 0 at start, 1.0 at full power (no minimum)
+    float baseStrength = abs(u_rotation_amount) * 0.40; // stronger base rotational drive
+    float powerMultiplier = max(0.3, u_central_spiral_power); // ensure some central forcing immediately
     float outflowStrength = baseStrength * powerMultiplier * angularFalloff;
     
     // Mix radial and tangential (70/30 split)
@@ -111,11 +117,11 @@ void main() {
             // Mode 1: Viscous drag (squeeze film effect)
             // Model: ink between moving ink and wall creates velocity-dependent resistance
             // Drag increases exponentially as distance to wall decreases
-            float rimBand = smoothstep(containerRadius - 0.08, containerRadius, dist);
+            float rimBand = smoothstep(containerRadius - w08, containerRadius, dist);
             
             // Drag coefficient increases near wall (squeeze film effect)
             // At wall: very high drag; further away: minimal drag
-            float dragCoeff = rimBand * rimBand * 0.85; // quadratic increase, max 85% damping
+            float dragCoeff = rimBand * rimBand * 0.50; // reduce max damping to 50%
             
             // Apply drag to velocity component perpendicular to radius (tangential)
             // and stronger drag to radial outward component
@@ -123,15 +129,15 @@ void main() {
             vec2 vTangent = newVelocity - vN * normal;
             
             // Damp tangential velocity (friction from wall)
-            vTangent *= (1.0 - dragCoeff * 0.6);
+            vTangent *= (1.0 - dragCoeff * 0.4);
             
             // Strongly resist outward motion (squeeze film pressure)
             float outward = max(0.0, vN);
-            vN = vN - outward * dragCoeff * 1.2;
+            vN = vN - outward * dragCoeff * 0.7;
             
             // Gentle bounce for strong inward motion
             float inward = max(0.0, -vN);
-            float bounceStrength = smoothstep(containerRadius - 0.02, containerRadius, dist);
+            float bounceStrength = smoothstep(containerRadius - w02, containerRadius, dist);
             vN += inward * 0.7 * bounceStrength;
             
             newVelocity = vTangent + vN * normal;
@@ -139,7 +145,7 @@ void main() {
         } else {
             // Mode 2: Repulsive force (increases near edge)
             // Soft potential wall that pushes ink away before collision
-            float repulsionBand = smoothstep(containerRadius - 0.12, containerRadius, dist);
+            float repulsionBand = smoothstep(containerRadius - (0.12 * scale), containerRadius, dist);
             
             // Exponential repulsion: gentle far away, strong near wall
             float repulsionStrength = repulsionBand * repulsionBand * repulsionBand * 0.008;
@@ -149,7 +155,7 @@ void main() {
             newVelocity += repulsionForce;
             
             // Still need gentle bounce for any remaining inward velocity
-            float rimBand = smoothstep(containerRadius - 0.02, containerRadius, dist);
+            float rimBand = smoothstep(containerRadius - w02, containerRadius, dist);
             float vN = dot(newVelocity, normal);
             float inward = max(0.0, -vN);
             newVelocity += normal * (inward * 0.8 * rimBand);

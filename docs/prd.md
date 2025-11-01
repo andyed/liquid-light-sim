@@ -51,7 +51,14 @@ The application must adhere to a strict **Model-View separation** to ensure perf
 * **The View (Rendering Pipeline):** Renders the Model's state using **Ray Tracing/Marching** for optical realism.  
 * **The Controller (UI/Input):** Pure JavaScript that only manages user input and sends small **Uniforms/Buffers** to the GPU.
 
-### **2.2. Core Data Structure: The Reservoir State (F001.03)**
+### **2.2. Responsive Canvas & DPI (Rendering Mandate)**
+- The canvas shall be sized responsively:
+  - Portrait: CSS canvas is square (short edge). Landscape: fills viewport.
+  - Drawing buffer = `cssSize × devicePixelRatio` (clamped to `MAX_TEXTURE_SIZE`). CSS size is preserved.
+- The renderer must only recreate GPU textures when the drawing-buffer size actually changes.
+- Physics stay in UV space; container radius remains fixed at `0.48`.
+
+### **2.3. Core Data Structure: The Reservoir State (F001.03)**
 
 The entire state of the fluid simulation is stored in high-precision **3D Textures** on the GPU.
 
@@ -103,6 +110,13 @@ The entire state of the fluid simulation is stored in high-precision **3D Textur
 | **F005.01** | **Container Rotation (Global Shear):** A control (e.g., keyboard input) that applies a constant **rotational force** to the entire fluid volume. | Fluids accelerate into a stable, uniform rotation, and slowly decelerate back to rest upon release. |
 | **F005.02** | **Jet/Force Impulse Tool:** A secondary input (e.g., right-click or key-combo) that injects a strong, **local linear velocity** to simulate rapid stirring. | The jet creates turbulent, highly-localized vortices that dissipate organically into the larger fluid movement. |
 
+### **F006: Input Parity**
+
+| ID | Requirement | Acceptance Criteria |
+| :---- | :---- | :---- |
+| **F006.01** | **Keyboard Parity (Emulator/Mobile):** Canvas must be focusable and key handlers must work in mobile emulators (Arrow keys and A/D for rotation). | Pressing Arrow keys or A/D on desktop and in mobile emulator produces identical rotation behavior and latency. |
+| **F006.02** | **Two-Finger Jet Parity (Touch = Right-Click):** Two-finger touch must map to jet injection, with mid-gesture transitions supported. | On touch devices, one finger paints, two fingers jet; on desktop, right-click produces identical effect. |
+
 ---
 
 ## **4\. Construction Sequence and Milestones**
@@ -152,4 +166,4 @@ The project will use a phased approach to validate the user experience before es
 | **Stability** | The simulation must be mathematically stable, preventing numerical divergence (e.g., exploding velocities) under all input conditions. | High | Zero crashes or visual artifacts (NaNs, sudden flashes) during stress testing. |
 | **Testability** | Strict **Model-View separation** must be maintained for independent testing of physics logic and rendering aesthetics. | High | Physics calculations must be testable via numerical comparison of frozen states. |
 | **Data Integrity** | The **Reservoir State** data structure must use **high-precision floating-point formats** (e.g., $32\\text{-bit}$ floats) for all field variables. | High | Visual inspection confirms no obvious quantization errors or banding in color or velocity. |
-
+| **Responsive Parity** | Rotation and advection behavior must be visually and physically consistent across desktop and mobile resolutions/DPI. | High | With post-processing off, the dye motion under sustained rotation appears equivalent on desktop and mobile portrait; occupancy/velocity diagnostics agree within tolerance. |

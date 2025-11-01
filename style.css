@@ -5,13 +5,31 @@ body {
     touch-action: none; /* Prevent scroll on mobile */
     -webkit-user-select: none; /* Prevent text selection on mobile */
     user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
 }
 
 canvas {
     display: block;
-    width: 100vw;
-    height: 100vh;
     touch-action: none; /* Critical for touch events */
+}
+
+/* Desktop/landscape: fill viewport */
+@media (min-aspect-ratio: 1/1) {
+    canvas {
+        width: 100vw;
+        height: 100vh;
+    }
+}
+
+/* Mobile portrait: square canvas, centered vertically */
+@media (max-aspect-ratio: 1/1) {
+    canvas {
+        width: 100vw;
+        height: 100vw; /* Square */
+    }
 }
 
 .controls {

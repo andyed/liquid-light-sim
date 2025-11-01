@@ -1,3 +1,6 @@
+### Input parity and controls
+- **Keyboard on mobile emulator** works by making the canvas focusable (`tabindex=0`) and listening on both `document` and `window` for key events. Arrow keys/A‑D map to rotation.
+- **Two‑finger jet** on touch devices mirrors right‑click on desktop: one finger paints, two fingers inject a jet; transitions mid‑gesture are handled.
 # Liquid Light Simulation – Technical Notes (for Future Us)
 
 This document is a snapshot of the current simulation architecture, the major improvements from the latest session, the known challenges, and a concrete plan for adding the Oil Layer next. It’s written as a love letter to our future selves so we don’t re‑learn the same lessons twice.
@@ -36,6 +39,19 @@ This document is a snapshot of the current simulation architecture, the major im
   - `aspect = u_resolution.x / u_resolution.y`
   - Map `uv → aspect space` for distances and masks, then map back.
 - We use a strict inside mask for solver passes and an aspect‑correct clamp for advection/backtraces.
+
+## Resolution & Responsiveness (Parity)
+- **Canvas sizing**
+  - Portrait: CSS canvas is square (short edge), landscape: fills viewport. Physics radius remains fixed at `0.48` in UV space.
+  - On resize we only recreate textures when the drawing‑buffer size actually changes to avoid needless resets.
+- **Device Pixel Ratio (DPR)**
+  - Drawing buffer uses `cssSize × devicePixelRatio` (clamped to `MAX_TEXTURE_SIZE`) to align mobile with desktop visual fidelity.
+  - CSS size is preserved; only the backing buffer scales.
+- **Resolution parity fixes**
+  - All rim bands (feather/bounce/drag/repulsion/overflow) are normalized to pixel scale using `min(u_resolution)` so visual and physical width are consistent across resolutions.
+  - Solver effort scales with resolution: `pressureIterations` and `viscosityIterations` increase as the drawing‑buffer gets smaller, maintaining similar damping and spin‑up behavior across devices.
+- **Viewport safety**
+  - Each frame begins with a full‑canvas `gl.viewport(...)` and passes that temporarily change viewport restore it, preventing stale viewports from clipping work on some mobile GPUs.
 
 ## What We Changed This Session
 - **Aspect‑correct physics (restored):**
