@@ -1,5 +1,6 @@
 import { loadShader } from './utils.js';
 import WaterLayer from './simulation/layers/WaterLayer.js';
+import OilLayer from './simulation/layers/OilLayer.js';
 import { applyForces } from './simulation/kernels/forces.js';
 import { applyVorticityConfinement } from './simulation/kernels/vorticity.js';
 import { advectVelocity, advectColor } from './simulation/kernels/advection.js';
@@ -24,6 +25,7 @@ export default class Simulation {
         // Physics parameters - based on real fluid properties
         this.viscosity = 0.03;  // Lower viscosity so momentum lingers longer
         this.diffusionRate = 0.0;  // Disable diffusion (was causing fading)
+        this.oilSmoothingRate = 0.0015; // Oil-only smoothing (independent of ink diffusion)
         this.spreadStrength = 0.0;  // Concentration pressure (removed - not real physics)
         this.rotationAmount = 0.0;  // Effective rotation force (base + delta)
         this.rotationBase = 0.0;    // Button/toggle driven rotation
@@ -54,6 +56,11 @@ export default class Simulation {
         // Testing/debugging
         this.paused = false;  // F004 requirement: pause/freeze state
         
+        // Layers
+        this.water = null;
+        this.oil = null;      // optional, off by default
+        this.useOil = false;
+
         this.ready = false;
     }
 
@@ -153,6 +160,23 @@ export default class Simulation {
         await this.water.init();
         this.ready = true;
         console.log('✓ Simulation initialized');
+    }
+
+    async enableOil() {
+        if (this.oil) return; // already enabled
+        this.oil = new OilLayer(this);
+        await this.oil.init();
+        this.useOil = true;
+        console.log('🛢️ Oil layer enabled (scaffold)');
+    }
+
+    async disableOil() {
+        this.useOil = false;
+        if (this.oil && typeof this.oil.destroy === 'function') {
+            try { this.oil.destroy(); } catch (_) {}
+        }
+        this.oil = null;
+        console.log('🛢️ Oil layer disabled');
     }
 
     createTexture(width, height, internalFormat, format, type) {
@@ -256,10 +280,10 @@ export default class Simulation {
             const tx = -dy / len;
             const ty = dx / len;
             const dir = this.rotationAmount >= 0 ? 1 : -1;
-            const strength = 0.04 * (0.5 + Math.min(1.0, Math.abs(this.rotationAmount)));
+            const strength = 0.02 * (0.5 + Math.min(1.0, Math.abs(this.rotationAmount)));
             const vx = tx * strength * dir;
             const vy = ty * strength * dir;
-            this.water.splatVelocity(x, y, vx, vy, radius * 2);
+            this.water.splatVelocity(x, y, vx, vy, radius * 1.25);
         }
     }
 
@@ -295,6 +319,8 @@ export default class Simulation {
         // Combine rotation sources
         this.rotationAmount = this.rotationBase + this.rotationDelta;
         if (this.water) this.water.update(dt);
+        // Run oil after water velocity update (no coupling yet)
+        if (this.useOil && this.oil) this.oil.update(dt);
         // Keep corruption check centralized here
         if (this.checkForCorruption()) {
             console.error('❌ Simulation paused due to corruption');
@@ -317,8 +343,9 @@ export default class Simulation {
         this.viscosityIterations = Math.max(10, Math.round(20 * iterScale));
         this.pressureIterations = Math.max(30, Math.round(50 * iterScale));
 
-        // Delegate buffer recreation to layer
+        // Delegate buffer recreation to layers
         if (this.water) this.water.resize();
+        if (this.useOil && this.oil) this.oil.resize();
     }
 
     applyConcentrationPressure() {

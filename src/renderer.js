@@ -60,6 +60,10 @@ export default class Renderer {
         // Load post-processing shader (organic flow distortion)
         const postProcessFrag = await loadShader('src/shaders/post-process.frag.glsl');
         this.postProcessProgram = this.createProgram(passThroughVert, postProcessFrag);
+
+        // Load oil composite shader (adds lensy oil contribution over scene)
+        const oilCompositeFrag = await loadShader('src/shaders/oil-composite.frag.glsl');
+        this.oilCompositeProgram = this.createProgram(passThroughVert, oilCompositeFrag);
         
         // Create intermediate texture for boundary rendering
         this.createBoundaryTexture();
@@ -302,6 +306,33 @@ export default class Renderer {
             gl.drawArrays(gl.TRIANGLES, 0, 6);
             
             sourceTexture = this.postProcessTexture;
+        }
+        
+        // Step 2.5: Oil composite (if enabled)
+        if (this.simulation.useOil && this.simulation.oil && this.oilCompositeProgram) {
+            gl.bindFramebuffer(gl.FRAMEBUFFER, this.boundaryFBO);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.boundaryTexture, 0);
+            gl.clearColor(0.0, 0.0, 0.0, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+
+            gl.useProgram(this.oilCompositeProgram);
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
+            positionAttrib = gl.getAttribLocation(this.oilCompositeProgram, 'a_position');
+            gl.enableVertexAttribArray(positionAttrib);
+            gl.vertexAttribPointer(positionAttrib, 2, gl.FLOAT, false, 0, 0);
+
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, sourceTexture);
+            gl.uniform1i(gl.getUniformLocation(this.oilCompositeProgram, 'u_scene'), 0);
+
+            gl.activeTexture(gl.TEXTURE1);
+            gl.bindTexture(gl.TEXTURE_2D, this.simulation.oil.oilTexture1);
+            gl.uniform1i(gl.getUniformLocation(this.oilCompositeProgram, 'u_oil_texture'), 1);
+
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+            // After compositing, the source becomes boundaryTexture
+            sourceTexture = this.boundaryTexture;
         }
         
         // Step 3: Render with circular boundary overlay to screen

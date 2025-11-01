@@ -12,6 +12,14 @@ export default class Controller {
         this.isRightMouseDown = false;
         this.isSpacePressed = false;
         this.currentColor = { r: 0.3, g: 0.898, b: 1.0 };  // Default: cyan (#4de5ff)
+        this.materials = [
+            { name: 'Ink', palette: ['#4DE5FF', '#FF3B3B', '#FFD93B', '#9B59B6', '#2ECC71'], preset: { useOil: false, oilSmoothingRate: 0.0, absorption: 3.0, paletteDom: 0.15 } },
+            { name: 'Mineral Oil', palette: ['#FFF3C4', '#FFD166', '#F6BD60', '#F7EDE2', '#F28482'], preset: { useOil: true, oilSmoothingRate: 0.0035, absorption: 3.5, paletteDom: 0.12 } },
+            { name: 'Alcohol', palette: ['#BDE0FE', '#A2D2FF', '#CDB4DB', '#FFC8DD', '#FFAFCC'], preset: { useOil: true, oilSmoothingRate: 0.0010, absorption: 2.5, paletteDom: 0.20 } },
+            { name: 'Syrup', palette: ['#8B4513', '#D2691E', '#C97A36', '#F4A261', '#E76F51'], preset: { useOil: true, oilSmoothingRate: 0.0050, absorption: 4.0, paletteDom: 0.12 } },
+            { name: 'Glycerine', palette: ['#E0FBFC', '#98C1D9', '#3D5A80', '#EE6C4D', '#293241'], preset: { useOil: true, oilSmoothingRate: 0.0060, absorption: 4.5, paletteDom: 0.10 } }
+        ];
+        this.currentMaterialIndex = 0;
         
         // Track mouse position for velocity calculation
         this.lastMouseX = 0;
@@ -72,6 +80,79 @@ export default class Controller {
         // Create color wheel
         this.createColorWheel();
     }
+
+    setMaterial(index, autoPick = true) {
+        const clamped = Math.max(0, Math.min(this.materials.length - 1, index));
+        this.currentMaterialIndex = clamped;
+        if (autoPick) {
+            this.autoPickColorForMaterial();
+        }
+        // Enable oil for non-Ink materials (index > 0)
+        if (this.currentMaterialIndex > 0) {
+            this.simulation.enableOil();
+            this.simulation.useOil = true;
+        } else {
+            this.simulation.disableOil();
+        }
+        // Apply material preset (oil smoothing, renderer aesthetics)
+        this.applyMaterialPreset();
+        this.updateMaterialReadout();
+        console.log(`🧪 Material: ${this.materials[this.currentMaterialIndex].name}`);
+    }
+
+    applyMaterialPreset() {
+        const mat = this.materials[this.currentMaterialIndex];
+        if (!mat || !mat.preset) return;
+        const p = mat.preset;
+        // Oil enable/disable handled above; set smoothing rate
+        if (typeof p.oilSmoothingRate === 'number') {
+            this.simulation.oilSmoothingRate = p.oilSmoothingRate;
+        }
+        // Renderer knobs
+        if (typeof p.absorption === 'number') {
+            this.renderer.absorptionCoefficient = p.absorption;
+        }
+        if (typeof p.paletteDom === 'number') {
+            this.renderer.paletteDominance = p.paletteDom;
+        }
+        // Menu reflects changes
+        if (this.menuPanel) this.updateMenuStates();
+    }
+
+    autoPickColorForMaterial() {
+        const mat = this.materials[this.currentMaterialIndex];
+        if (!mat || !mat.palette || mat.palette.length === 0) return;
+        const hex = mat.palette[Math.floor(Math.random() * mat.palette.length)];
+        const rgb = this.hexToRgb01(hex);
+        this.currentColor = rgb;
+        this.updateMaterialReadout();
+        console.log(`🎨 Auto color for ${mat.name}: ${hex}`);
+    }
+
+    updateMaterialReadout() {
+        if (!this.materialReadout) return;
+        const matName = this.materials[this.currentMaterialIndex]?.name || 'Ink';
+        const hex = this.rgb01ToHex(this.currentColor);
+        this.materialReadout.innerHTML = `
+            <span style="color:${hex}; font-weight:600; text-shadow: 0 0 6px rgba(0,0,0,0.6)">${matName}</span>
+        `;
+    }
+
+    hexToRgb01(hex) {
+        const m = hex.replace('#','');
+        const r = parseInt(m.substring(0,2), 16) / 255;
+        const g = parseInt(m.substring(2,4), 16) / 255;
+        const b = parseInt(m.substring(4,6), 16) / 255;
+        return { r, g, b };
+    }
+
+    rgb01ToHex({r,g,b}) {
+        const to = (v) => Math.max(0, Math.min(255, Math.round(v * 255)));
+        const rr = to(r).toString(16).padStart(2,'0');
+        const gg = to(g).toString(16).padStart(2,'0');
+        const bb = to(b).toString(16).padStart(2,'0');
+        return `#${rr}${gg}${bb}`;
+    }
     
     createColorWheel() {
         this.colorWheel = document.createElement('div');
@@ -131,10 +212,28 @@ export default class Controller {
             }
             
             this.currentColor = { r, g, b };
+            this.updateMaterialReadout();
             console.log(`🎨 Color: hue ${Math.round(h)}°`);
         });
         
         document.body.appendChild(this.colorWheel);
+
+        // Material readout below the color wheel
+        this.materialReadout = document.createElement('div');
+        this.materialReadout.style.cssText = `
+            position: fixed;
+            top: ${top + size + 8}px;
+            left: ${left}px;
+            font-size: ${isMobile ? 11 : 12}px;
+            color: rgba(255,255,255,0.85);
+            background: rgba(0,0,0,0.4);
+            padding: 6px 8px;
+            border-radius: 6px;
+            user-select: none;
+            z-index: 1000;
+        `;
+        this.updateMaterialReadout();
+        document.body.appendChild(this.materialReadout);
     }
     
     createLightIndicator() {
@@ -273,6 +372,10 @@ export default class Controller {
                     <span>Paused (P)</span>
                     <span class="toggle-state">OFF</span>
                 </div>
+                <div class="menu-toggle" data-key="useOil" data-obj="simulation">
+                    <span>Oil Layer</span>
+                    <span class="toggle-state">OFF</span>
+                </div>
                 <div class="menu-action" data-action="viscosity" style="display: flex; justify-content: space-between; align-items: center; padding: 12px; margin-bottom: 8px; background: rgba(255,255,255,0.05); border-radius: 4px; cursor: pointer;">
                     <span>Viscosity (V)</span>
                     <span class="viscosity-value" style="opacity: 0.7; font-size: 12px;">0.02</span>
@@ -280,6 +383,14 @@ export default class Controller {
                 <div class="menu-action" data-action="boundary" style="display: flex; justify-content: space-between; align-items: center; padding: 12px; margin-bottom: 8px; background: rgba(255,255,255,0.05); border-radius: 4px; cursor: pointer;">
                     <span>Boundary (B)</span>
                     <span class="boundary-value" style="opacity: 0.7; font-size: 12px;">Viscous Drag</span>
+                </div>
+                <div style="margin-top: 14px;">
+                    <h3 style="font-size: 16px; opacity: 0.7; margin: 0 0 10px 0;">Materials (1‑5)</h3>
+                    <div class="materials-row" style="display:flex; gap:8px; flex-wrap:wrap;">
+                        ${this.materials.map((m, i) => `
+                            <button class="material-option" data-material-index="${i}" style="padding:8px 10px; border-radius:6px; border:1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.08); color:white; cursor:pointer; font-size:12px;">${m.name}</button>
+                        `).join('')}
+                    </div>
                 </div>
             </div>
             
@@ -355,7 +466,18 @@ export default class Controller {
             if (toggle) {
                 const key = toggle.dataset.key;
                 const obj = toggle.dataset.obj === 'renderer' ? this.renderer : this.simulation;
-                obj[key] = !obj[key];
+                if (key === 'useOil') {
+                    const willEnable = !this.simulation.useOil;
+                    if (willEnable) {
+                        this.simulation.enableOil();
+                        obj[key] = true;
+                    } else {
+                        this.simulation.disableOil();
+                        obj[key] = false;
+                    }
+                } else {
+                    obj[key] = !obj[key];
+                }
                 this.updateMenuStates();
                 console.log(`${key}: ${obj[key] ? 'ON' : 'OFF'}`);
             }
@@ -380,6 +502,13 @@ export default class Controller {
                     this.cyclePaletteDominance();
                     this.updateMenuStates();
                 }
+            }
+
+            const matBtn = e.target.closest('.material-option');
+            if (matBtn) {
+                const idx = parseInt(matBtn.dataset.materialIndex, 10) || 0;
+                this.setMaterial(idx, true);
+                this.updateMenuStates();
             }
         });
         
@@ -422,6 +551,15 @@ export default class Controller {
         if (paletteValue) {
             paletteValue.textContent = this.renderer.paletteDominance.toFixed(2);
         }
+
+        // Highlight selected material
+        const matButtons = this.menuPanel.querySelectorAll('.material-option');
+        matButtons.forEach((btn) => {
+            const idx = parseInt(btn.dataset.materialIndex, 10) || 0;
+            const selected = idx === this.currentMaterialIndex;
+            btn.style.background = selected ? 'rgba(77,229,255,0.9)' : 'rgba(255,255,255,0.08)';
+            btn.style.color = selected ? '#000' : '#fff';
+        });
     }
     
     cycleViscosity() {
@@ -505,6 +643,11 @@ export default class Controller {
             if ((this._injectionFrameCount % this.injectEveryN) === 1) {
                 // Larger radius creates smooth concentration gradient
                 this.simulation.splat(x, y, this.currentColor, 0.08);
+                // If oil layer is active, also deposit oil so composite is visible
+                if (this.simulation.useOil && this.simulation.oil) {
+                    const oilRadius = 0.06;
+                    this.simulation.oil.splatColor(x, y, this.currentColor, oilRadius);
+                }
             }
         } else {
             if (this._injectionFrameCount) {
@@ -697,6 +840,13 @@ export default class Controller {
             this.renderer.usePostProcessing = !this.renderer.usePostProcessing;
             console.log(`🌊 Organic flow: ${this.renderer.usePostProcessing ? 'ON' : 'OFF'} (${this.renderer.distortionStrength})`);
         }
+
+        // Materials via number keys 1-5
+        else if (['1','2','3','4','5'].includes(e.key)) {
+            const idx = parseInt(e.key, 10) - 1;
+            this.setMaterial(idx, true);
+            this.updateMenuStates();
+        }
         
         else if (e.key === 'k') {
             // K key: Cycle absorption coefficient
@@ -828,137 +978,13 @@ export default class Controller {
         }
     }
 
-    onKeyDown(e) {
-    // Container rotation controls (increased to 0.2 for better visibility)
-    if (e.key === 'ArrowLeft' || e.key === 'a') {
-        this.simulation.setRotationDelta(0.2);
-        console.log('Rotating counter-clockwise: 0.2');
-    } else if (e.key === 'ArrowRight' || e.key === 'd') {
-        this.simulation.setRotationDelta(-0.2);
-        console.log('Rotating clockwise: -0.2');
-    } else if (e.key === 'ArrowUp') {
-        this.simulation.setRotationDelta(0.2);
-    } else if (e.key === 'ArrowDown') {
-        this.simulation.setRotationDelta(-0.2);
-    }
-        
-    // Space + mouse for alternative jet mode
-    else if (e.key === ' ') {
-        this.isSpacePressed = true;
-        e.preventDefault();
-    }
-        
-    // Viscosity controls
-    else if (e.key === 'v') {
-        // Cycle viscosity: 0.05 -> 0.1 -> 0.5 -> 1.0 -> 2.0 -> 0.05
-        const viscosities = [0.05, 0.1, 0.5, 1.0, 2.0];
-        const currentIndex = viscosities.findIndex(v => Math.abs(v - this.simulation.viscosity) < 0.03);
-        const nextIndex = (currentIndex + 1) % viscosities.length;
-        this.simulation.viscosity = viscosities[nextIndex];
-        console.log(`Viscosity: ${this.simulation.viscosity} (lower = longer-lasting vortices)`);
-    }
-        
-    // Diffusion controls (molecular spreading)
-    else if (e.key === 'd') {
-        // D key: Cycle diffusion rates (realistic to fast)
-        const rates = [0.0001, 0.001, 0.01, 0.1];
-        const currentIndex = rates.findIndex(r => Math.abs(r - this.simulation.diffusionRate) < 0.00005);
-        const nextIndex = (currentIndex + 1) % rates.length;
-        this.simulation.diffusionRate = rates[nextIndex];
-        console.log(`🌊 Diffusion: ${this.simulation.diffusionRate} (molecular spreading rate)`);
-    }
-        
-    // Vorticity confinement controls
-    else if (e.key === 't') {
-        // T key: Cycle turbulence strength (vorticity confinement)
-        const strengths = [0.0, 0.1, 0.3, 0.5, 1.0];
-        const currentIndex = strengths.findIndex(s => Math.abs(s - this.simulation.vorticityStrength) < 0.05);
-        const nextIndex = (currentIndex + 1) % strengths.length;
-        this.simulation.vorticityStrength = strengths[nextIndex];
-        console.log(`🌀 Turbulence: ${this.simulation.vorticityStrength} (vorticity confinement)`);
-    }
-        
-    // Light color rotation
-    else if (e.key === 'c' || e.key === 'C') {
-        // C key: Cycle light rotation speed
-        const speeds = [0, 0.5, 1.0, 2.0, 5.0];
-        const currentIndex = speeds.findIndex(s => Math.abs(s - this.lightRotationSpeed) < 0.1);
-        const nextIndex = (currentIndex + 1) % speeds.length;
-        this.lightRotationSpeed = speeds[nextIndex];
-        console.log(`💡 Light rotation: ${this.lightRotationSpeed === 0 ? 'OFF' : this.lightRotationSpeed + '°/frame'}`);
-    }
-        
-    // Clear canvas
-    else if (e.key === 'x') {
-        // X key: Clear all ink
-        this.simulation.clearColor();
-        console.log('🧹 Canvas cleared');
-    }
-        
-    // Volumetric rendering controls
-    else if (e.key === 'l') {
-        // L key: Toggle volumetric rendering
-        this.renderer.useVolumetric = !this.renderer.useVolumetric;
-        console.log(`💡 Volumetric rendering: ${this.renderer.useVolumetric ? 'ON' : 'OFF'}`);
-    }
-        
-    // Post-processing controls
-    else if (e.key === 'o') {
-        // O key: Toggle organic flow distortion
-        this.renderer.usePostProcessing = !this.renderer.usePostProcessing;
-        console.log(`🌊 Organic flow: ${this.renderer.usePostProcessing ? 'ON' : 'OFF'} (${this.renderer.distortionStrength})`);
-    }
-        
-    else if (e.key === 'k') {
-        // K key: Cycle absorption coefficient
-        const coefficients = [0.5, 1.0, 2.0, 4.0, 8.0];
-        const currentIndex = coefficients.findIndex(c => Math.abs(c - this.renderer.absorptionCoefficient) < 0.1);
-        const nextIndex = (currentIndex + 1) % coefficients.length;
-        this.renderer.absorptionCoefficient = coefficients[nextIndex];
-        console.log(`💡 Absorption: ${this.renderer.absorptionCoefficient} (higher = darker/richer)`);
-    }
-        
-    // Pause/Resume (F004 requirement: freeze state for debugging)
-    else if (e.key === 'p') {
-        this.simulation.paused = !this.simulation.paused;
-        console.log(this.simulation.paused ? '⏸️  Paused (colors stay put) - Try painting now!' : '▶️  Resumed');
-    }
-        
-    // Debug visualization
-    else if (e.key === 'm') {
-        // M key: Toggle velocity visualization mode
-        this.renderer.toggleDebugMode();
-        console.log('🔍 Debug mode toggled');
-    }
-        
-    // Quality tests
-    else if (e.key === 'q' && e.ctrlKey) {
-        // Ctrl+Q: Run quality tests
-        e.preventDefault();
-        this.qualityTester.runTests();
-    }
-        
-    // Testing shortcuts
-    else if (e.key === 't' && e.ctrlKey) {
-        // Ctrl+T: Run tests
-        if (window.tester) {
-            window.tester.runTests();
-        }
-    }
-    else if (e.key === 's' && e.ctrlKey) {
-        // Ctrl+S: Save state
-        if (window.tester) {
-            const state = window.tester.captureState('manual-save');
-            window.tester.saveState(state);
-        }
-    }
-}
+    
 
 onKeyUp(e) {
     if (e.key === 'ArrowLeft' || e.key === 'a' || 
         e.key === 'ArrowRight' || e.key === 'd' ||
         e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-        this.simulation.setRotation(0.0);
+        this.simulation.setRotationDelta(0.0);
     } else if (e.key === ' ') {
         this.isSpacePressed = false;
     }
