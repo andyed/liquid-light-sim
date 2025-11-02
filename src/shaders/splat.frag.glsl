@@ -35,14 +35,28 @@ void main() {
         // Clamp for safety (matches force shaders)
         result = clamp(result, vec3(-50000.0), vec3(50000.0));
     } else if (u_isOil) {
-        // Oil splat: no spaceAvailable gating, write thickness to alpha
+        // Oil splat: tint intensity scales with thickness
         float thAdd = gaussian * max(0.0, u_oilStrength);
-        vec3 oilAdd = u_color * thAdd;
-        vec3 rgb = existing.rgb + oilAdd;
-        float a = existing.a + thAdd;
+        float newThickness = existing.a + thAdd;
+        newThickness = clamp(newThickness, 0.0, 1.0);
+        
+        // Add tint weighted by splash contribution, blend with existing
+        // New tint contribution scales with how much thickness is being added
+        vec3 existingTint = existing.rgb * existing.a; // thickness-weighted existing
+        vec3 newTint = u_color * thAdd; // thickness-weighted new
+        
+        vec3 combinedTint = existingTint + newTint;
+        
+        // Normalize by total thickness to get average tint
+        vec3 rgb;
+        if (newThickness > 0.001) {
+            rgb = combinedTint / newThickness;
+        } else {
+            rgb = u_color;
+        }
         rgb = clamp(rgb, vec3(0.0), vec3(1.0));
-        a = clamp(a, 0.0, 1.0);
-        outColor = vec4(rgb, a);
+        
+        outColor = vec4(rgb, newThickness);
         return;
     } else {
         // Color splat: respect available space to avoid mixing

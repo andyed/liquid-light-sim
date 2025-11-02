@@ -60,14 +60,8 @@ void main() {
     vec2 vel_forward = texture(u_velocity_texture, coord_forward).xy;
     vec2 coord_backward = clampToCircle(coord_forward + vel_forward * u_dt);
     vec4 backward = texture(u_color_texture, coord_backward);
-    
-    // For oil, favor stable semi-Lagrangian to preserve alpha thickness; skip MacCormack and post-fixes
-    if (u_isOil) {
-        outColor = forward;
-        return;
-    }
 
-    // Step 3: Error correction (non-oil)
+    // Step 3: Error correction
     vec4 current = texture(u_color_texture, v_texCoord);
     vec4 corrected = forward + 0.5 * (current - backward);
     
@@ -90,6 +84,39 @@ void main() {
     // Soften limiter: allow significant overshoots to reduce banding
     float epsilon = 0.08; // larger margin to avoid hard clamping steps
     outColor = clamp(corrected, minVal - epsilon, maxVal + epsilon);
+    
+    // Oil needs special handling for alpha (thickness) channel
+    if (u_isOil) {
+        // Blend with forward to reduce MacCormack artifacts (similar to ink)
+        float oilSharpness = 0.3; // prefer forward more for stability
+        outColor = mix(forward, outColor, oilSharpness);
+        
+        // Clamp RGB tint to [0,1] and alpha thickness to [0,1]
+        outColor.rgb = clamp(outColor.rgb, vec3(0.0), vec3(1.0));
+        outColor.a = clamp(outColor.a, 0.0, 1.0);
+        
+        // Thickness dissipation in thin regions - prevents diffusion across canvas
+        // Thin oil evaporates/dissipates faster than thick oil
+        float thicknessThreshold = 0.05; // below this, start dissipating
+        if (outColor.a < thicknessThreshold) {
+            float dissipationFactor = smoothstep(0.0, thicknessThreshold, outColor.a);
+            outColor.a *= mix(0.95, 1.0, dissipationFactor); // 5% loss per frame in thin regions
+            outColor.rgb *= dissipationFactor; // fade tint with thickness
+        }
+        
+        // Rim absorption for oil (prevent boundary accumulation)
+        float aspect = u_resolution.x / max(u_resolution.y, 1.0);
+        vec2 r = v_texCoord - center;
+        vec2 r_as = vec2(r.x * aspect, r.y);
+        float d = length(r_as);
+        float rimAbsorption = smoothstep(containerRadius - 0.04, containerRadius, d);
+        
+        // Absorb both tint intensity and thickness at rim
+        outColor.rgb *= (1.0 - rimAbsorption * 0.15); // 15% tint absorption
+        outColor.a *= (1.0 - rimAbsorption * 0.10); // 10% thickness absorption
+        
+        return;
+    }
     
     if (u_isVelocity == 0) {
         // Color-only: blend with forward to reduce banding from limiter

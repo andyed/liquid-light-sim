@@ -189,10 +189,10 @@ Full two‑layer system – water (ink carrier) + oil (lens/viscosity layer) wit
 
 ### Oil Layer Pipeline (6 steps per frame)
 1. **Advect oil velocity by itself** (semi-Lagrangian, stable)
-2. **Apply water coupling** (`oil-coupling.frag.glsl`) – thickness-dependent: thin oil (0%) follows water 80%, thick oil (30%+) only 30%
+2. **Apply water coupling** (`oil-coupling.frag.glsl`) – thickness-dependent: thin oil follows water 10-40%, thick oil more independent
 3. **Apply oil viscosity** (Jacobi solver on velocity) – material-specific iterations (30-200) create characteristic slow flow
-4. **Advect oil thickness** by oil velocity – oil moves by its own velocity field
-5. **Optional smoothing** (`diffusionProgram`) – controlled by `oilSmoothingRate` (0.003-0.012), softens hard edges from semi-Lagrangian
+4. **Advect oil thickness by oil velocity** (MacCormack 2nd-order) – sharp features, minimal diffusion, automatic dissipation of thin regions
+5. **Optional smoothing** (`diffusionProgram`) – disabled by default (MacCormack sufficient), can enable for extra cohesion
 6. **Overflow control** (every 8 frames) – thickness-weighted occupancy, targets 70-85% coverage (looser than ink's 80-90%)
 
 ### Bidirectional Layer Coupling

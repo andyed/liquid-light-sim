@@ -48,8 +48,9 @@ void main() {
     vec3 baseOccluded = mix(base, base * (1.0 - u_occlusion), a);
     // Then refract and blend oil over the occluded base
     vec3 color = mix(baseOccluded, refracted, a);
-    // Apply color tint from the oil itself for visibility (material-dependent)
-    color = mix(color, oilRGB, a * clamp(u_tint_strength, 0.0, 1.0));
+    // Apply color tint from the oil itself - gate by thickness squared to fade in thin regions
+    float tintVisibility = a * a; // thin oil → very faint tint
+    color = mix(color, oilRGB, tintVisibility * clamp(u_tint_strength, 0.0, 1.0));
     // Add highlight on top
     color += highlight * a;
     fragColor = vec4(color, 1.0);

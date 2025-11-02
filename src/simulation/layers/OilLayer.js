@@ -175,7 +175,7 @@ export default class OilLayer extends FluidLayer {
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, this.oilTexture1);
       gl.uniform1i(gl.getUniformLocation(sim.diffusionProgram, 'u_color_texture'), 0);
-      gl.uniform1f(gl.getUniformLocation(sim.diffusionProgram, 'u_diffusion_rate'), Math.min(0.005, sim.oilSmoothingRate));
+      gl.uniform1f(gl.getUniformLocation(sim.diffusionProgram, 'u_diffusion_rate'), sim.oilSmoothingRate);
       gl.uniform2f(gl.getUniformLocation(sim.diffusionProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       this.swapOilTextures();

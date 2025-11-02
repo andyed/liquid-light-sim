@@ -171,6 +171,12 @@ export default class Simulation {
             await loadShader('src/shaders/coupling-force.frag.glsl')
         );
 
+        // Marangoni program (surface tension gradient forces at oil-water interface)
+        this.marangoniProgram = this.renderer.createProgram(
+            fullscreenVert,
+            await loadShader('src/shaders/marangoni.frag.glsl')
+        );
+
         const width = gl.canvas.width;
         const height = gl.canvas.height;
 

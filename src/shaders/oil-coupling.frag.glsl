@@ -23,8 +23,8 @@ void main() {
   float th = thickness(oil);
   
   // Coupling factor: thin oil → more water-driven, thick oil → more independent
-  // Range: 0.3 (thick) to 0.8 (thin)
-  float coupling = u_couplingStrength * (0.8 - 0.5 * smoothstep(0.0, 0.3, th));
+  // Range: 0.1 (thick) to 0.4 (thin) - reduced for slower spread
+  float coupling = u_couplingStrength * (0.4 - 0.3 * smoothstep(0.0, 0.3, th));
   
   // If no oil present, just copy water velocity (for stability)
   if (th < 0.001) {
@@ -34,7 +34,7 @@ void main() {
   
   // Apply water influence as additive force, scaled by dt
   vec2 force = (vWater - vOil) * coupling;
-  vec2 newVel = vOil + force * u_dt * 2.0; // 2.0 for faster coupling response
+  vec2 newVel = vOil + force * u_dt; // removed 2.0 multiplier
   
   fragColor = newVel;
 }
