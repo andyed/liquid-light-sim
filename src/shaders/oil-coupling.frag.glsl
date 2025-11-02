@@ -10,17 +10,13 @@ uniform sampler2D u_oil;           // Oil thickness field
 uniform float u_couplingStrength;  // Base coupling factor
 uniform float u_dt;
 
-// Compute oil thickness from RGB luminance
-float thickness(vec3 oil) {
-  return dot(oil.rgb, vec3(0.333333));
-}
+
 
 void main() {
   vec2 vOil = texture(u_oilVelocity, v_texCoord).xy;
   vec2 vWater = texture(u_waterVelocity, v_texCoord).xy;
-  vec3 oil = texture(u_oil, v_texCoord).rgb;
-  
-  float th = thickness(oil);
+  vec4 oil = texture(u_oil, v_texCoord);
+  float th = oil.a;
   
   // Base coupling factor by thickness: thin oil → more water-driven, thick oil → more independent
   float thicknessFactor = (0.4 - 0.3 * smoothstep(0.0, 0.3, th));

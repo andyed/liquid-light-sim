@@ -8,16 +8,37 @@ export default class Controller {
         this.gl = simulation.gl;
         this.qualityTester = new QualityTester(simulation);
 
+        this.defaultPreset = {
+            oilSmoothingRate: 0.0,
+            oilViscosity: 0.0,
+            oilViscosityIterations: 0,
+            couplingStrength: 0.0,
+            absorption: 3.0,
+            paletteDom: 0.15,
+            refractStrength: 0.0,
+            fresnelPower: 3.0,
+            oilOcclusion: 0.0,
+            oilAlphaGamma: 1.0,
+            marangoniStrength: 0.0,
+            marangoniKth: 0.8,
+            marangoniEdgeBand: 2.0,
+            marangoniThMin: 0.01,
+            marangoniForceClamp: 0.08,
+            marangoniAmp: 3.0,
+            oilAttractionStrength: 0.0,
+            surfaceTension: 0.0
+        };
+
         this.isMouseDown = false;
         this.isRightMouseDown = false;
         this.isSpacePressed = false;
         this.currentColor = { r: 0.3, g: 0.898, b: 1.0 };  // Default: cyan (#4de5ff)
         this.materials = [
-            { name: 'Ink', palette: ['#4DE5FF', '#FF3B3B', '#FFD93B', '#9B59B6', '#2ECC71'], preset: { oilSmoothingRate: 0.0, oilViscosity: 0.0, oilViscosityIterations: 0, couplingStrength: 0.0, absorption: 3.0, paletteDom: 0.15, refractStrength: 0.0, fresnelPower: 3.0, oilOcclusion: 0.0, oilAlphaGamma: 1.0, marangoniStrength: 0.0, marangoniKth: 0.8, marangoniEdgeBand: 2.0, oilAttractionStrength: 0.0, surfaceTension: 0.0 } },
-            { name: 'Mineral Oil', palette: ['#FFF3C4', '#FFD166', '#F6BD60', '#F7EDE2', '#F28482'], preset: { oilSmoothingRate: 0.0, oilViscosity: 0.65, oilViscosityIterations: 90, couplingStrength: 0.003, absorption: 3.5, paletteDom: 0.12, refractStrength: 0.0075, fresnelPower: 3.0, oilOcclusion: 0.15, oilAlphaGamma: 1.80, marangoniStrength: 1.2, marangoniKth: 1.5, marangoniEdgeBand: 3.0, marangoniThMin: 0.01, marangoniForceClamp: 0.15, marangoniAmp: 5.0, oilAttractionStrength: 0.1, surfaceTension: 0.05 } },
-            { name: 'Alcohol', palette: ['#BDE0FE', '#A2D2FF', '#CDB4DB', '#FFC8DD', '#FFAFCC'], preset: { oilSmoothingRate: 0.0, oilViscosity: 0.15, oilViscosityIterations: 30, couplingStrength: 0.001, absorption: 2.5, paletteDom: 0.20, refractStrength: 0.007, fresnelPower: 2.8, oilOcclusion: 0.30, oilAlphaGamma: 0.90, marangoniStrength: 0.0, marangoniKth: 0.4, marangoniEdgeBand: 1.5, oilAttractionStrength: 0.0, surfaceTension: 0.0 } },
-            { name: 'Syrup', palette: ['#8B4513', '#D2691E', '#C97A36', '#F4A261', '#E76F51'], preset: { oilSmoothingRate: 0.0, oilViscosity: 3.0, oilViscosityIterations: 200, couplingStrength: 0.002, absorption: 4.0, paletteDom: 0.12, refractStrength: 0.012, fresnelPower: 3.2, oilOcclusion: 0.60, oilAlphaGamma: 1.20, marangoniStrength: 0.0, marangoniKth: 1.0, marangoniEdgeBand: 2.5, oilAttractionStrength: 0.0, surfaceTension: 0.0 } },
-            { name: 'Glycerine', palette: ['#E0FBFC', '#98C1D9', '#3D5A80', '#EE6C4D', '#293241'], preset: { oilSmoothingRate: 0.0, oilViscosity: 2.4, oilViscosityIterations: 160, couplingStrength: 0.003, absorption: 4.5, paletteDom: 0.10, refractStrength: 0.015, fresnelPower: 3.5, oilOcclusion: 0.70, oilAlphaGamma: 1.30, marangoniStrength: 0.0, marangoniKth: 1.2, marangoniEdgeBand: 3.0, oilAttractionStrength: 0.0, surfaceTension: 0.0 } }
+            { name: 'Ink', palette: ['#4DE5FF', '#FF3B3B', '#FFD93B', '#9B59B6', '#2ECC71'], preset: {} },
+            { name: 'Mineral Oil', palette: ['#FFF3C4', '#FFD166', '#F6BD60', '#F7EDE2', '#F28482'], preset: { oilSmoothingRate: 0.0, oilViscosity: 0.65, oilViscosityIterations: 90, couplingStrength: 0.01, absorption: 3.5, paletteDom: 0.12, refractStrength: 0.0075, fresnelPower: 3.0, oilOcclusion: 0.15, oilAlphaGamma: 1.80, marangoniStrength: 1.2, marangoniKth: 1.5, marangoniEdgeBand: 3.0, marangoniThMin: 0.01, marangoniForceClamp: 0.15, marangoniAmp: 5.0, oilAttractionStrength: 0.1, surfaceTension: 0.00001 } },
+            { name: 'Alcohol', palette: ['#BDE0FE', '#A2D2FF', '#CDB4DB', '#FFC8DD', '#FFAFCC'], preset: { oilViscosity: 0.15, oilViscosityIterations: 30, couplingStrength: 0.001, absorption: 2.5, paletteDom: 0.20, refractStrength: 0.007, fresnelPower: 2.8, oilOcclusion: 0.30, oilAlphaGamma: 0.90, marangoniKth: 0.4, marangoniEdgeBand: 1.5 } },
+            { name: 'Syrup', palette: ['#8B4513', '#D2691E', '#C97A36', '#F4A261', '#E76F51'], preset: { oilViscosity: 3.0, oilViscosityIterations: 200, couplingStrength: 0.002, absorption: 4.0, paletteDom: 0.12, refractStrength: 0.012, fresnelPower: 3.2, oilOcclusion: 0.60, oilAlphaGamma: 1.20, marangoniKth: 1.0, marangoniEdgeBand: 2.5 } },
+            { name: 'Glycerine', palette: ['#E0FBFC', '#98C1D9', '#3D5A80', '#EE6C4D', '#293241'], preset: { oilViscosity: 2.4, oilViscosityIterations: 160, couplingStrength: 0.003, absorption: 4.5, paletteDom: 0.10, refractStrength: 0.015, fresnelPower: 3.5, oilOcclusion: 0.70, oilAlphaGamma: 1.30, marangoniKth: 1.2, marangoniEdgeBand: 3.0 } }
         ];
         this.currentMaterialIndex = 0;
         
@@ -86,22 +107,8 @@ export default class Controller {
     }
 
     setMaterial(index, autoPick = true) {
-        const prevMaterialIndex = this.currentMaterialIndex;
         const clamped = Math.max(0, Math.min(this.materials.length - 1, index));
         this.currentMaterialIndex = clamped;
-
-        const prevMaterial = this.materials[prevMaterialIndex];
-        const newMaterial = this.materials[this.currentMaterialIndex];
-
-        // If switching from one oil type to another, or from ink to oil, clear the oil layer
-        // This prevents parameter leakage between different oil types
-        const isPrevOil = prevMaterial && prevMaterial.name !== 'Ink';
-        const isNewOil = newMaterial && newMaterial.name !== 'Ink';
-
-        if (isNewOil && (newMaterial.name !== prevMaterial.name || !isPrevOil)) {
-            this.simulation.oil.clearOil();
-            console.log(`🧹 Cleared oil for new material: ${newMaterial.name}`);
-        }
 
         if (autoPick) {
             this.autoPickColorForMaterial();
@@ -114,61 +121,26 @@ export default class Controller {
 
     applyMaterialPreset() {
         const mat = this.materials[this.currentMaterialIndex];
-        if (!mat || !mat.preset) return;
-        const p = mat.preset;
-        // Oil smoothing rate
-        if (typeof p.oilSmoothingRate === 'number') {
-            this.simulation.oilSmoothingRate = p.oilSmoothingRate;
+        if (!mat) return;
+
+        // Start with the default preset to reset all parameters
+        const preset = { ...this.defaultPreset, ...mat.preset };
+
+        // Apply all parameters from the final preset
+        for (const key in preset) {
+            if (Object.hasOwnProperty.call(preset, key)) {
+                const value = preset[key];
+                if (key in this.simulation) {
+                    this.simulation[key] = value;
+                } else if (key in this.renderer) {
+                    this.renderer[key] = value;
+                }
+            }
         }
-        // Oil viscosity parameters
-        if (typeof p.oilViscosity === 'number') {
-            this.simulation.oilViscosity = p.oilViscosity;
-        }
-        if (typeof p.oilViscosityIterations === 'number') {
-            this.simulation.oilViscosityIterations = p.oilViscosityIterations;
-        }
-        // Oil → Water coupling strength
-        if (typeof p.couplingStrength === 'number') {
-            this.simulation.couplingStrength = p.couplingStrength;
-        }
-        // Renderer knobs
-        if (typeof p.absorption === 'number') {
-            this.renderer.absorptionCoefficient = p.absorption;
-        }
-        if (typeof p.paletteDom === 'number') {
-            this.renderer.paletteDominance = p.paletteDom;
-        }
-        if (typeof p.refractStrength === 'number') {
-            this.renderer.oilRefractStrength = p.refractStrength;
-        }
-        if (typeof p.fresnelPower === 'number') {
-            this.renderer.oilFresnelPower = p.fresnelPower;
-        }
-        if (typeof p.oilOcclusion === 'number') {
-            this.renderer.oilOcclusion = p.oilOcclusion;
-        }
-        if (typeof p.oilAlphaGamma === 'number') {
-            this.renderer.oilAlphaGamma = p.oilAlphaGamma;
-        }
-        // Marangoni
-        if (typeof p.marangoniStrength === 'number') {
-            this.simulation.marangoniStrength = p.marangoniStrength;
-        }
-        if (typeof p.marangoniKth === 'number') {
-            this.simulation.marangoniKth = p.marangoniKth;
-        }
-        if (typeof p.marangoniEdgeBand === 'number') {
-            this.simulation.marangoniEdgeBand = p.marangoniEdgeBand;
-        }
-        if (typeof p.oilAttractionStrength === 'number') {
-            this.simulation.oilAttractionStrength = p.oilAttractionStrength;
-        }
-        if (typeof p.surfaceTension === 'number') {
-            this.simulation.surfaceTension = p.surfaceTension;
-        }
+
         // Menu reflects changes
         this.updateMarangoniHUD();
-        console.log('Applying preset:', p);
+        console.log('Applying preset:', preset);
     }
 
     autoPickColorForMaterial() {

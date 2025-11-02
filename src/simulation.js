@@ -194,9 +194,14 @@ export default class Simulation {
             await loadShader('src/shaders/agitation.frag.glsl')
         );
 
-        this.surfaceTensionProgram = this.renderer.createProgram(
+        this.curvatureProgram = this.renderer.createProgram(
             fullscreenVert,
-            await loadShader('src/shaders/surface-tension.frag.glsl')
+            await loadShader('src/shaders/curvature.frag.glsl')
+        );
+
+        this.applySurfaceTensionProgram = this.renderer.createProgram(
+            fullscreenVert,
+            await loadShader('src/shaders/apply-surface-tension.frag.glsl')
         );
 
         const width = gl.canvas.width;
