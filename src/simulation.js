@@ -85,8 +85,11 @@ export default class Simulation {
 
         this.agitation = 0.0; // Heat lamp agitation
         this.oilDragStrength = 10.0; // Water damping inside oil (flow-around behavior)
+        this.oilNormalDamp = 0.6;    // Damping of normal component at oil rim in coupling
         this.surfaceTension = 0.0; // Surface tension for oil
         this.surfaceTensionIterations = 0; // Iterations for two-pass surface tension
+        this.debugCopyWaterToOil = false; // Debug: force oil velocity = water velocity
+        this.debugAdvectOilWithWaterVelocity = false; // Debug: advect oil using water velocity in advection step
 
         // Logging verbosity (set true to see detailed telemetry)
         this.logVerbose = false;
@@ -210,6 +213,18 @@ export default class Simulation {
         this.waterOilDragProgram = this.renderer.createProgram(
             fullscreenVert,
             await loadShader('src/shaders/oil-drag.frag.glsl')
+        );
+
+        // Debug: copy water velocity into oil velocity
+        this.copyVelocityProgram = this.renderer.createProgram(
+            fullscreenVert,
+            await loadShader('src/shaders/copy-velocity.frag.glsl')
+        );
+
+        // Splat per-pixel oil material properties
+        this.splatOilPropsProgram = this.renderer.createProgram(
+            fullscreenVert,
+            await loadShader('src/shaders/splat-oil-props.frag.glsl')
         );
 
         const width = gl.canvas.width;

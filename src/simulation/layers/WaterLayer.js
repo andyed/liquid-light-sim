@@ -207,6 +207,19 @@ export default class WaterLayer extends FluidLayer {
       gl.bindTexture(gl.TEXTURE_2D, sim.oil.oilTexture1);
       gl.uniform1i(gl.getUniformLocation(sim.waterOilDragProgram, 'u_oil'), 1);
 
+      // Optional per-pixel drag from oil properties
+      if (sim.oil && sim.oil.oilPropsTexture) {
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_2D, sim.oil.oilPropsTexture);
+        const propsLoc = gl.getUniformLocation(sim.waterOilDragProgram, 'u_oilProps');
+        if (propsLoc) gl.uniform1i(propsLoc, 2);
+        const usePropsLoc = gl.getUniformLocation(sim.waterOilDragProgram, 'u_useProps');
+        if (usePropsLoc) gl.uniform1f(usePropsLoc, 1.0);
+      } else {
+        const usePropsLoc = gl.getUniformLocation(sim.waterOilDragProgram, 'u_useProps');
+        if (usePropsLoc) gl.uniform1f(usePropsLoc, 0.0);
+      }
+
       gl.uniform1f(gl.getUniformLocation(sim.waterOilDragProgram, 'u_drag'), sim.oilDragStrength);
       gl.uniform1f(gl.getUniformLocation(sim.waterOilDragProgram, 'u_dt'), dt);
 
