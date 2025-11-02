@@ -95,12 +95,12 @@ void main() {
         outColor.rgb = clamp(outColor.rgb, vec3(0.0), vec3(1.0));
         outColor.a = clamp(outColor.a, 0.0, 1.0);
         
-        // Thickness dissipation in thin regions - prevents diffusion across canvas
-        // Thin oil evaporates/dissipates faster than thick oil
-        float thicknessThreshold = 0.05; // below this, start dissipating
+        // Thickness dissipation in very thin regions only - prevents diffusion across canvas
+        // Only affects extremely thin oil (< 0.01) to avoid visible decay artifacts
+        float thicknessThreshold = 0.01; // much lower threshold
         if (outColor.a < thicknessThreshold) {
             float dissipationFactor = smoothstep(0.0, thicknessThreshold, outColor.a);
-            outColor.a *= mix(0.95, 1.0, dissipationFactor); // 5% loss per frame in thin regions
+            outColor.a *= mix(0.98, 1.0, dissipationFactor); // only 2% loss per frame
             outColor.rgb *= dissipationFactor; // fade tint with thickness
         }
         
