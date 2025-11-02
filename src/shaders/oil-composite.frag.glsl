@@ -41,15 +41,17 @@ void main() {
     vec3 tint = mix(vec3(1.0), normalize(oilRGB + 1e-4), 0.5);
     vec3 highlight = fres * (0.15 * tint + 0.35 * oilRGB);
 
-    // Alpha by thickness
-    float a = clamp(pow(th, u_oil_gamma), 0.0, 1.0);
+    // Alpha by thickness with thin-film suppression (ignore ultra-thin oil)
+    // Smoothly gate contributions below ~0.005-0.02 thickness
+    float thinGate = smoothstep(0.005, 0.020, th);
+    float a = clamp(pow(th, u_oil_gamma), 0.0, 1.0) * thinGate;
     vec3 base = texture(u_scene, v_texCoord).rgb;
     // Apply occlusion to base content under oil first (no color blend yet)
     vec3 baseOccluded = mix(base, base * (1.0 - u_occlusion), a);
     // Then refract and blend oil over the occluded base
     vec3 color = mix(baseOccluded, refracted, a);
     // Apply color tint from the oil itself - gate by thickness squared to fade in thin regions
-    float tintVisibility = a * a; // thin oil → very faint tint
+    float tintVisibility = (a * a) * (thinGate * thinGate); // thin oil → extremely faint tint
     color = mix(color, oilRGB, tintVisibility * clamp(u_tint_strength, 0.0, 1.0));
     // Add highlight on top
     color += highlight * a;

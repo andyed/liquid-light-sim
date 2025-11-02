@@ -116,4 +116,114 @@ export class QualityTester {
         
         return straightness;
     }
+
+    /** Compute oil thickness centroid (UV) using occupancy buffer */
+    _measureOilCentroid() {
+        const sim = this.simulation;
+        const gl = this.gl;
+        if (!sim.useOil || !sim.oil) return { x: 0.5, y: 0.5, mass: 0 };
+
+        // Render oil to occupancy buffer (R=thickness, G=inside)
+        gl.useProgram(sim.occupancyProgram);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, sim.occupancyFBO);
+        gl.viewport(0, 0, sim.occupancyWidth, sim.occupancyHeight);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
+        const positionAttrib = gl.getAttribLocation(sim.occupancyProgram, 'a_position');
+        gl.enableVertexAttribArray(positionAttrib);
+        gl.vertexAttribPointer(positionAttrib, 2, gl.FLOAT, false, 0, 0);
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, sim.oil.oilTexture1);
+        gl.uniform1i(gl.getUniformLocation(sim.occupancyProgram, 'u_color_texture'), 0);
+        gl.uniform2f(gl.getUniformLocation(sim.occupancyProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+        const isOilLoc = gl.getUniformLocation(sim.occupancyProgram, 'u_isOil');
+        if (isOilLoc) gl.uniform1i(isOilLoc, 1);
+
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+        // Read back low-res buffer
+        const w = sim.occupancyWidth, h = sim.occupancyHeight;
+        const pixels = new Uint8Array(w * h * 4);
+        gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+        // Weighted centroid using R as weight; consider only inside mask G>0
+        let sumW = 0, sumX = 0, sumY = 0;
+        for (let j = 0; j < h; j++) {
+          for (let i = 0; i < w; i++) {
+            const idx = (j * w + i) * 4;
+            const inside = pixels[idx + 1] > 0;
+            if (!inside) continue;
+            const wgt = pixels[idx] / 255.0; // thickness proxy
+            if (wgt <= 0) continue;
+            // UV center of the pixel
+            const u = (i + 0.5) / w;
+            const v = (j + 0.5) / h;
+            sumW += wgt;
+            sumX += wgt * u;
+            sumY += wgt * v;
+          }
+        }
+        if (sumW <= 1e-6) return { x: 0.5, y: 0.5, mass: 0 };
+        return { x: sumX / sumW, y: sumY / sumW, mass: sumW };
+    }
+
+    /**
+     * Oil mobility test: apply small rotation and verify oil centroid moves.
+     * Options: { frames: number, dt: number, minDisplacement: number, tempCoupling: number }
+     */
+    runOilMobilityTest(options = {}) {
+        const sim = this.simulation;
+        const gl = this.gl;
+        const frames = options.frames ?? 120;
+        const dt = options.dt ?? 1/60;
+        const minDisp = options.minDisplacement ?? 0.003; // ~0.3% of canvas
+        const tempCoupling = options.tempCoupling ?? 0.006; // ensure response
+
+        if (!sim.useOil || !sim.oil) {
+          console.warn('🛢️ Oil layer not enabled; enabling for test');
+          sim.useOil = true;
+        }
+
+        // Save state
+        const prevPaused = sim.paused;
+        const prevRotBase = sim.rotationBase;
+        const prevRotDelta = sim.rotationDelta;
+        const prevCoupling = sim.couplingStrength;
+        const prevOilVisc = sim.oilViscosity;
+        const prevOilIters = sim.oilViscosityIterations;
+
+        // Test parameters (gentle rotation, moderate coupling, reasonable viscosity)
+        sim.paused = false;
+        sim.rotationBase = 0.8;
+        sim.rotationDelta = 0.0;
+        sim.couplingStrength = tempCoupling;
+        sim.oilViscosity = Math.min(prevOilVisc, 0.7);
+        sim.oilViscosityIterations = Math.min(prevOilIters, 90);
+
+        const before = this._measureOilCentroid();
+        for (let i = 0; i < frames; i++) {
+          sim.update(dt);
+        }
+        const after = this._measureOilCentroid();
+
+        // Restore state
+        sim.rotationBase = prevRotBase;
+        sim.rotationDelta = prevRotDelta;
+        sim.couplingStrength = prevCoupling;
+        sim.oilViscosity = prevOilVisc;
+        sim.oilViscosityIterations = prevOilIters;
+        sim.paused = prevPaused;
+
+        const dx = after.x - before.x;
+        const dy = after.y - before.y;
+        const disp = Math.hypot(dx, dy);
+        const passed = disp >= minDisp;
+        console.log(`🛢️ Oil mobility: disp=${disp.toFixed(4)} (min ${minDisp}) → ${passed ? 'PASS' : 'FAIL'}`);
+        if (!passed) {
+          console.log('   Hint: increase couplingStrength or reduce oilViscosity/iterations');
+        }
+        return { displacement: disp, passed, before, after };
+    }
 }

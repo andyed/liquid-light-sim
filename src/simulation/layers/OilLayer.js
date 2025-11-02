@@ -26,6 +26,21 @@ export default class OilLayer extends FluidLayer {
     this.oilVelocityTexture1 = this.sim.createTexture(w, h, gl.RG16F, gl.RG, gl.HALF_FLOAT);
     this.oilVelocityTexture2 = this.sim.createTexture(w, h, gl.RG16F, gl.RG, gl.HALF_FLOAT);
     this.oilVelocityFBO = this.sim.createFBO(this.oilVelocityTexture1);
+    // Initialize textures to zero to avoid garbage-driven spreading
+    const prevFbo = gl.getParameter(gl.FRAMEBUFFER_BINDING);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture1, 0);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilVelocityFBO);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilVelocityTexture1, 0);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilVelocityTexture2, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, prevFbo);
   }
 
   resize() {
@@ -48,6 +63,21 @@ export default class OilLayer extends FluidLayer {
     this.oilVelocityTexture1 = this.sim.createTexture(w, h, gl.RG16F, gl.RG, gl.HALF_FLOAT);
     this.oilVelocityTexture2 = this.sim.createTexture(w, h, gl.RG16F, gl.RG, gl.HALF_FLOAT);
     this.oilVelocityFBO = this.sim.createFBO(this.oilVelocityTexture1);
+    // Zero initialize after resize to prevent residuals
+    const prevFbo2 = gl.getParameter(gl.FRAMEBUFFER_BINDING);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture1, 0);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilVelocityFBO);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilVelocityTexture1, 0);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilVelocityTexture2, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, prevFbo2);
   }
 
   update(dt) {
@@ -102,7 +132,7 @@ export default class OilLayer extends FluidLayer {
     gl.bindTexture(gl.TEXTURE_2D, this.oilTexture1);
     gl.uniform1i(gl.getUniformLocation(sim.oilCouplingProgram, 'u_oil'), 2);
 
-    gl.uniform1f(gl.getUniformLocation(sim.oilCouplingProgram, 'u_couplingStrength'), 1.0); // full strength
+    gl.uniform1f(gl.getUniformLocation(sim.oilCouplingProgram, 'u_couplingStrength'), sim.couplingStrength);
     gl.uniform1f(gl.getUniformLocation(sim.oilCouplingProgram, 'u_dt'), dt);
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);

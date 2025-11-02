@@ -35,8 +35,16 @@ void main() {
         // Clamp for safety (matches force shaders)
         result = clamp(result, vec3(-50000.0), vec3(50000.0));
     } else if (u_isOil) {
-        // Oil splat: tint intensity scales with thickness
-        float thAdd = gaussian * max(0.0, u_oilStrength);
+        // Oil splat: apply radius mask to avoid depositing a thin film across canvas
+        // Soft edge near the given radius (correct argument order)
+        float edge = smoothstep(u_radius * 0.85, u_radius, d); // 0 inside, 1 outside
+        float mask = 1.0 - edge; // 1 inside, 0 outside
+        float thAdd = gaussian * mask * max(0.0, u_oilStrength);
+        // Cull negligible tails entirely
+        if (thAdd < 1e-5) {
+            outColor = existing;
+            return;
+        }
         float newThickness = existing.a + thAdd;
         newThickness = clamp(newThickness, 0.0, 1.0);
         

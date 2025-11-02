@@ -78,6 +78,10 @@ export default class Simulation {
         this.marangoniStrength = 0.0; // per-material; 0 disables
         this.marangoniEdgeBand = 2.0; // pixels
         this.marangoniKth = 0.8;      // thickness→sigma gain
+        // Safety/tuning for Marangoni
+        this.marangoniThMin = 0.01;       // minimum thickness to engage
+        this.marangoniForceClamp = 0.08;   // per-component clamp for dv
+        this.marangoniAmp = 3.0;           // gradient amplification factor
 
         // Logging verbosity (set true to see detailed telemetry)
         this.logVerbose = false;

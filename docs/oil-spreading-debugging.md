@@ -101,6 +101,53 @@ Once this baseline is stable, can gradually re-enable:
 2. Second: Re-enable Marangoni at very low strength (0.1)
 3. Last: Add minimal smoothing if edges too sharp (0.001)
 
+## Baseline verification (current code audit)
+
+- Oil advection mode
+  - Intended: pure semi-Lagrangian for oil (no MacCormack)
+  - Current: FIXED — oil early-returns forward sample when `u_isOil` (no MacCormack path)
+  - Impact: eliminates numerical diffusion and wide thin film
+
+- Thin-film behavior
+  - Intended: `th < 0.01` → oil velocity forced to zero (no ghost transport)
+  - Current: FIXED — zero velocity in coupling shader for `th < 0.005` (safer but still responsive)
+  - Impact: prevents ghost transport in empty regions
+
+- Water→Oil coupling magnitude
+  - Intended: 10–40% range, scaled by material via `simulation.couplingStrength`
+  - Current: FIXED — simulation param is passed; coupling shader scales small presets and clamps effective blend (`clamp(u_couplingStrength * 40.0 * thicknessFactor, 0, 0.35)`).
+  - Impact: material ranges map to visible motion without flooding
+
+- Marangoni activation
+  - Intended for baseline: disabled (`marangoniStrength = 0.0`) until stability confirmed
+  - Current: STAGED — defaults are 0.0; Mineral Oil preset provides a low starting value (0.15) with safety uniforms (`thMin`, `forceClamp`, `amp`) for tuning.
+  - Impact: safe ramp-up with interface gating, minimal bulk acceleration
+
+### Immediate corrective actions
+
+- Switch oil advection to pure semi-Lagrangian
+  - In `advection.frag.glsl`: when `u_isOil`, return `forward` early to skip MacCormack path.
+- Enforce thin-film zero velocity
+  - In `oil-coupling.frag.glsl`: for `th < 0.005`, output `vec2(0.0)` instead of copying water.
+- Honor material coupling strength
+  - In `OilLayer.update`: pass `simulation.couplingStrength` to `u_couplingStrength` (remove hardcoded `1.0`).
+- Keep Marangoni off for baseline
+  - In controller presets: set `marangoniStrength = 0.0` for all materials; re-enable during staged tests.
+
+### Rendering guards (to prevent visual “dissolution”)
+
+- Oil splat kernel uses a radius mask and culls negligible tails to avoid canvas‑wide thin films.
+- Oil composite gates thin film via `thinGate = smoothstep(0.005, 0.020, th)` and uses reduced tint in thin regions.
+- Renderer defaults recommended for oil cohesion (tweak per material):
+  - `oilTintStrength ≈ 0.25`, `oilOcclusion ≈ 0.15`, `oilAlphaGamma ≈ 1.8`, `refractStrength ≈ 0.0075`.
+
+### Current baseline status
+
+- Localized blobs without flood: ✓
+- Motion via modest coupling and high viscosity: ✓
+- Thin‑film ghost transport eliminated: ✓
+- Marangoni pass present with safety gates and disabled by default: ✓
+
 ## Key Insight
 **Conservation vs Accuracy Trade-off:**
 - Ink: Wants accuracy → MacCormack, higher fidelity

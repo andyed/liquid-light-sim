@@ -69,6 +69,13 @@ export default class WaterLayer extends FluidLayer {
     gl.uniform1f(gl.getUniformLocation(sim.marangoniProgram, 'u_strength'), sim.marangoniStrength);
     gl.uniform1f(gl.getUniformLocation(sim.marangoniProgram, 'u_edgeBand'), sim.marangoniEdgeBand);
     gl.uniform1f(gl.getUniformLocation(sim.marangoniProgram, 'u_k_th'), sim.marangoniKth);
+    // New safety/tuning uniforms
+    const thMinLoc = gl.getUniformLocation(sim.marangoniProgram, 'u_thMin');
+    if (thMinLoc) gl.uniform1f(thMinLoc, sim.marangoniThMin);
+    const clampLoc = gl.getUniformLocation(sim.marangoniProgram, 'u_forceClamp');
+    if (clampLoc) gl.uniform1f(clampLoc, sim.marangoniForceClamp);
+    const ampLoc = gl.getUniformLocation(sim.marangoniProgram, 'u_amp');
+    if (ampLoc) gl.uniform1f(ampLoc, sim.marangoniAmp);
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     this.swapVelocityTextures();
@@ -133,6 +140,8 @@ export default class WaterLayer extends FluidLayer {
     this.pressureTexture1 = this.sim.createTexture(w, h, gl.R16F, gl.RED, gl.HALF_FLOAT);
     this.pressureTexture2 = this.sim.createTexture(w, h, gl.R16F, gl.RED, gl.HALF_FLOAT);
     this.pressureFBO = this.sim.createFBO(this.pressureTexture1);
+    // Keep Simulation aliases in sync after recreating resources
+    this._syncAliases();
   }
 
   update(dt) {
