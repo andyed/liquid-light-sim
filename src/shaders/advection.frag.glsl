@@ -10,6 +10,7 @@ uniform float u_dt;
 uniform vec2 u_resolution;
 uniform int u_isVelocity; // 1 when advecting velocity, 0 when advecting color
 uniform bool u_isOil;     // true when advecting oil RGBA (preserve alpha thickness)
+uniform float u_oilRimAbsorptionScale; // 0 disables oil rim absorption fade
 
 // Circular container boundary (aspect-correct)
 const vec2 center = vec2(0.5, 0.5);
@@ -68,8 +69,9 @@ void main() {
         vec2 r_as = vec2(r.x * aspect, r.y);
         float d = length(r_as);
         float rimAbsorption = smoothstep(containerRadius - 0.04, containerRadius, d);
-        outColor.rgb *= (1.0 - rimAbsorption * 0.15);
-        outColor.a   *= (1.0 - rimAbsorption * 0.10);
+        float rimScale = max(0.0, u_oilRimAbsorptionScale);
+        outColor.rgb *= (1.0 - rimAbsorption * 0.15 * rimScale);
+        outColor.a   *= (1.0 - rimAbsorption * 0.10 * rimScale);
         return;
     }
 

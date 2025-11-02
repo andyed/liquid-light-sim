@@ -4,6 +4,18 @@
 
 Added **bidirectional momentum exchange** between oil and water layers, creating realistic interaction where oil thickness gradients push water around (buoyancy-like forces).
 
+## Implementation Status (Nov 2, 2025)
+
+- Water → Oil: interface-aware coupling transfers the tangential component of water velocity along the oil rim and damps normal penetration.
+- Oil → Water: water-side oil drag dampens velocity inside oil regions (flow-around behavior), increasing shear at the interface.
+- Advection: oil thickness advection confirmed working; debug forcing shows clear motion when using water velocity.
+- Visibility: composite can hide thin oil; debug views show blobs present even when not visible in color view.
+
+### Known Issues
+- Oil motion can be subtle without sufficient interface shear; coupling may need higher gain in practice.
+- Default oil composite thresholds can hide thin films; tune renderer settings for visibility.
+- During testing, rim absorption in advection can thin blobs near the container; it is now toggleable and disabled for tests.
+
 ## Key Changes
 
 ### 1. New Shader: coupling-force.frag.glsl
@@ -28,11 +40,25 @@ v_water += forceDir * forceMag * dt * 10.0
 - Similar to buoyancy (density gradients → force)
 - Foundation for Marangoni (which is also a gradient-driven interfacial force)
 
+### 1b. Water-Side Oil Drag: oil-drag.frag.glsl
+
+Purpose: damp water velocity proportionally to local oil thickness so streamlines route around blobs (Brinkman-lite), creating rim shear that pulls oil tangentially.
+
+Key idea:
+```
+v *= 1.0 - clamp(thickness * drag * dt, 0.0, 0.95)
+```
+
+Applied in WaterLayer between coupling and velocity advection.
+
 ### 2. Simulation.js - Added Parameters
 
 ```javascript
 // Oil → Water coupling (thickness gradient → force)
 this.couplingStrength = 0.005;  // Material-specific
+this.oilDragStrength = 10.0;    // Water damping inside oil
+this.oilNormalDamp = 0.6;       // Suppress normal motion at interface
+this.surfaceTension; this.surfaceTensionIterations; // two-pass wiring
 ```
 
 Also loaded `couplingForceProgram` shader.
@@ -90,9 +116,9 @@ if (typeof p.couplingStrength === 'number') {
 Now we have **complete two-way interaction**:
 
 ### Water → Oil (Prerequisite 1)
-Already implemented via `oil-coupling.frag.glsl`:
-- Water velocity influences oil velocity
-- Thickness-dependent: thin oil follows water closely
+Implemented via `oil-coupling.frag.glsl`:
+- Interface-aware: transfers tangential component along rim (gradient-weighted)
+- Normal component damping reduces penetration across interface
 - Applied in `OilLayer.update()`
 
 ### Oil → Water (Prerequisite 3) ⬅️ NEW
@@ -192,6 +218,28 @@ Coupling forces and Marangoni are **complementary**:
 Both work together for complete interfacial physics.
 
 ## Testing Checklist
+
+- [ ] Oil blobs visible in Color view (tune renderer if needed)
+- [ ] Oil thickness advects when using water velocity (debug flag)
+- [ ] Coupling-driven motion visible with rotation (no debug forcing)
+- [ ] Water routes around blobs when oil drag > 0
+- [ ] No unintended thinning when rim absorption is disabled for tests
+
+## Debug and Tuning
+
+- Enable quick motion for diagnostics:
+  - `simulation.debugAdvectOilWithWaterVelocity = true;` (advection proof)
+  - `simulation.debugCopyWaterToOil = true;` (one-frame velocity transfer)
+- Visibility in composite (Renderer):
+  - `renderer.oilAlphaGamma = 0.5–0.8`
+  - `renderer.oilOcclusion = 0.4–0.7`
+  - `renderer.oilTintStrength = 0.6–0.9`
+  - `renderer.oilRefractStrength = 0.015–0.025`
+- Physics tuning for motion:
+  - `simulation.couplingStrength = 0.6–1.0`
+  - `simulation.oilNormalDamp = 0.2–0.6`
+  - `simulation.oilViscosity = 0.1–0.4`, `iterations = 30–80`
+  - `simulation.oilDragStrength = 8–16`
 
 - [ ] Oil blobs push water when rotating
 - [ ] Interface creates visible vorticity patterns

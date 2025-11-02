@@ -90,6 +90,9 @@ export default class Simulation {
         this.surfaceTensionIterations = 0; // Iterations for two-pass surface tension
         this.debugCopyWaterToOil = false; // Debug: force oil velocity = water velocity
         this.debugAdvectOilWithWaterVelocity = false; // Debug: advect oil using water velocity in advection step
+        this.debugOffsetOilOnce = false; // Debug: perform a one-frame offset copy of oil texture
+        this.debugOffsetOilDX = 0.0; // UV offset X for debug
+        this.debugOffsetOilDY = 0.0; // UV offset Y for debug
 
         // Logging verbosity (set true to see detailed telemetry)
         this.logVerbose = false;
@@ -209,6 +212,12 @@ export default class Simulation {
             await loadShader('src/shaders/apply-surface-tension.frag.glsl')
         );
 
+        // Surface tension force (applied to velocity, not thickness)
+        this.surfaceTensionForceProgram = this.renderer.createProgram(
+            fullscreenVert,
+            await loadShader('src/shaders/surface-tension-force.frag.glsl')
+        );
+
         // Water-side oil drag (Brinkman penalization lite)
         this.waterOilDragProgram = this.renderer.createProgram(
             fullscreenVert,
@@ -225,6 +234,12 @@ export default class Simulation {
         this.splatOilPropsProgram = this.renderer.createProgram(
             fullscreenVert,
             await loadShader('src/shaders/splat-oil-props.frag.glsl')
+        );
+
+        // Offset-copy program for debug texture translation
+        this.offsetCopyProgram = this.renderer.createProgram(
+            fullscreenVert,
+            await loadShader('src/shaders/offset-copy.frag.glsl')
         );
 
         const width = gl.canvas.width;
