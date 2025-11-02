@@ -69,7 +69,7 @@ export default class OilLayer extends FluidLayer {
     this.oilVelocityTexture2 = this.sim.createTexture(w, h, gl.RG16F, gl.RG, gl.HALF_FLOAT);
     this.oilVelocityFBO = this.sim.createFBO(this.oilVelocityTexture1);
 
-    this.curvatureTexture = this.sim.createTexture(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
+    this.curvatureTexture = this.sim.createTexture(w, h, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE);
     this.curvatureFBO = this.sim.createFBO(this.curvatureTexture);
     // Zero initialize after resize to prevent residuals
     const prevFbo2 = gl.getParameter(gl.FRAMEBUFFER_BINDING);

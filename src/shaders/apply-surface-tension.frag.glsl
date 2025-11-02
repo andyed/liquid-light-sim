@@ -16,7 +16,7 @@ void main() {
     // This will move oil from areas of high curvature to areas of low curvature
     // Effectively smoothing the surface and creating blobby shapes
     float thickness = oil.a;
-    oil.a += laplacian * u_surface_tension * smoothstep(0.0, 0.1, thickness);
+    oil.a += laplacian * u_surface_tension * smoothstep(0.0, 0.5, thickness);
 
     fragColor = oil;
 }

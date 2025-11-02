@@ -382,6 +382,10 @@ export default class Renderer {
             gl.bindTexture(gl.TEXTURE_2D, this.simulation.oil.oilTexture1);
             gl.uniform1i(gl.getUniformLocation(this.oilCompositeProgram, 'u_oil_texture'), 1);
 
+            gl.activeTexture(gl.TEXTURE2);
+            gl.bindTexture(gl.TEXTURE_2D, this.simulation.oil.curvatureTexture);
+            gl.uniform1i(gl.getUniformLocation(this.oilCompositeProgram, 'u_curvature_texture'), 2);
+
             // Set composite uniforms
             gl.uniform2f(gl.getUniformLocation(this.oilCompositeProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
             gl.uniform1f(gl.getUniformLocation(this.oilCompositeProgram, 'u_refract_strength'), this.oilRefractStrength);

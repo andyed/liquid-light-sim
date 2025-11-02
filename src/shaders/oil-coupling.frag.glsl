@@ -18,10 +18,7 @@ void main() {
   vec4 oil = texture(u_oil, v_texCoord);
   float th = oil.a;
   
-  // Base coupling factor by thickness: thin oil → more water-driven, thick oil → more independent
-  float thicknessFactor = (0.4 - 0.3 * smoothstep(0.0, 0.3, th));
-  // Scale small preset values into a usable blend range and clamp for stability
-  float coupling = clamp(u_couplingStrength * 40.0 * thicknessFactor, 0.0, 0.35);
+  float coupling = u_couplingStrength;
   
   // If no (or ultra-thin) oil present, zero velocity to prevent ghost transport
   if (th < 0.005) {

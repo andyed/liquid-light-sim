@@ -179,66 +179,36 @@ This document is a snapshot of the current simulation architecture, the major im
    - Real-time tracking of mixed/speckled pixels (coherence < 70%)
    - Logged alongside occupancy percentage for monitoring.
 
-## Oil Layer Implementation (Complete)
-Full two‑layer system – water (ink carrier) + oil (lens/viscosity layer) with independent motion, material-specific viscosity, and bidirectional coupling.
+## Oil Layer Implementation (In Progress)
+
+The simulation now includes a separate oil layer, which is rendered on top of the water layer. The oil has its own velocity field and is affected by the water's movement through a one-way coupling.
 
 ### Oil Layer Resources (OilLayer.js)
 - **Thickness/tint field:** `oilTexture1/2` RGBA16F (thickness + tint) with `oilFBO`
 - **Velocity field:** `oilVelocityTexture1/2` RG16F ping-pong pair with `oilVelocityFBO`
-- **Total:** 4 textures, 2 FBOs (doubled from initial scaffold)
+- **Curvature texture:** `curvatureTexture` RGBA8 (stores the Laplacian of the oil thickness) with `curvatureFBO`
 
-### Oil Layer Pipeline (6 steps per frame)
+### Oil Layer Pipeline (8 steps per frame)
 1. **Advect oil velocity by itself** (semi-Lagrangian, stable)
-2. **Apply water coupling** (`oil-coupling.frag.glsl`) – thickness-dependent: thin oil follows water 10-40%, thick oil more independent
-3. **Apply oil viscosity** (Jacobi solver on velocity) – material-specific iterations (30-200) create characteristic slow flow
-4. **Advect oil thickness by oil velocity** (MacCormack 2nd-order) – sharp features, minimal diffusion, automatic dissipation of thin regions
-5. **Optional smoothing** (`diffusionProgram`) – disabled by default (MacCormack sufficient), can enable for extra cohesion
-6. **Overflow control** (every 8 frames) – thickness-weighted occupancy, targets 70-85% coverage (looser than ink's 80-90%)
-
-### Bidirectional Layer Coupling
-- **Water → Oil:** Thickness-dependent velocity blending (`oil-coupling.frag.glsl`)
-  - Thin oil follows water closely, thick oil more independent
-  - Applied in OilLayer.update() step 2
-- **Oil → Water:** Thickness gradient forces (`coupling-force.frag.glsl`)
-  - Oil blobs push water away (buoyancy-like effect)
-  - Applied in WaterLayer.update() after external forces, before projection
-
-### Material-Specific Parameters (per preset)
-- **Viscosity:** `oilViscosity` (0.15-3.0), `oilViscosityIterations` (30-200)
-  - Alcohol (5× water): 0.15 visc, 30 iters → fast flow
-  - Mineral Oil (25× water): 0.75 visc, 90 iters → balanced
-  - Glycerine (80× water): 2.4 visc, 160 iters → honey-like
-  - Syrup (120× water): 3.0 visc, 200 iters → molasses-thick
-- **Coupling:** `couplingStrength` (0.001-0.003) – oil → water force magnitude
-- **Smoothing:** `oilSmoothingRate` (0.003-0.012) – softens advection edges
-- **Overflow:** Independent thresholds (70-85% vs ink's 80-90%)
+2. **Apply water coupling** (`oil-coupling.frag.glsl`) – blends water velocity into oil velocity
+3. **Apply oil viscosity** (Jacobi solver on velocity)
+4. **Advect oil thickness by oil velocity** (MacCormack 2nd-order)
+5. **Apply self-attraction for cohesion** (`oil-attraction.frag.glsl`)
+6. **Apply surface tension** (two-pass model):
+    - **Pass 1: Calculate curvature** (`curvature.frag.glsl`) – calculates the Laplacian of the oil thickness
+    - **Pass 2: Apply surface tension force** (`apply-surface-tension.frag.glsl`) – applies a force based on the curvature
+7. **Optional smoothing** (`diffusionProgram`)
+8. **Overflow control** (every 8 frames)
 
 ### Shaders
 - **`oil-coupling.frag.glsl`** – blends water velocity into oil velocity
-- **`coupling-force.frag.glsl`** – computes thickness gradient forces on water
+- **`oil-attraction.frag.glsl`** – applies a cohesion force to the oil
+- **`curvature.frag.glsl`** – calculates the Laplacian of the oil thickness
+- **`apply-surface-tension.frag.glsl`** – applies a force based on the curvature
 - **`oil-composite.frag.glsl`** – soft refraction + Fresnel highlight rendering
-- **`occupancy.frag.glsl`** – thickness-weighted measurement (with `u_isOil` flag)
-- **`overflow.frag.glsl`** – gentle damping when overfilled (shared with water)
 
-### Rendering
-- Oil composite pass adds soft refraction (thickness gradient based) and Fresnel highlight
-- Renderer uniforms: `oilRefractStrength`, `oilFresnelPower`, `oilOcclusion`, `oilAlphaGamma`
-- Always enabled (all materials use oil layer for persistence)
-
-### Conservation & Overflow
-- Thickness-weighted occupancy measurement every 8 frames
-- Separate thresholds: `oilOverflowLower = 0.70`, `oilOverflowUpper = 0.85`
-- Prevents unrealistic accumulation during extended use
-- Independent from water layer overflow
-
-### Ready for Marangoni
-All prerequisites complete:
-1. ✅ Separate oil velocity field (independent motion)
-2. ✅ Oil-specific viscosity (material characteristic flow)
-3. ✅ Basic coupling forces (bidirectional interaction)
-4. ✅ Oil conservation & overflow (stable long-term behavior)
-
-See `docs/marangoni-implementation.md` for next phase.
+### Known Issues
+- **Frozen Oil:** The oil is currently frozen in place, even when the water around it is moving. This is likely due to an imbalance between the coupling, viscosity, and surface tension forces. The `couplingStrength` parameter is not having the desired effect, and the viscosity and surface tension forces are overwhelming the coupling force.
 
 ## Testing / Debugging Checklist
 - Toggle post/volumetric off when validating physics (O, L).
