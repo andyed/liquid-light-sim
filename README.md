@@ -42,6 +42,9 @@ A GPU-accelerated fluid simulation for VJ performance and digital art, built wit
 - **Brightness Gain** - Increases the overall brightness of the simulation.
 - **Agitation** - Adds a subtle, noisy perturbation to the velocity field to create more natural, blob-like structures.
 
+### ✅ Surface Tension
+- **Cohesion** - A simplified surface tension model gives oil a tendency to form blob-like shapes and resist shearing.
+
 ### ✅ User Interaction
 - **Color Painting** - Left-click to inject dye (no color mixing)
 - **Jet Impulse** - Right-click for strong turbulent forces (50k multiplier)
@@ -289,6 +292,7 @@ tester.checkForNaN()
 
 ### Current Limitations
 - **Straight lines in velocity field** - MacCormack can create horizontal/vertical artifacts at high sharpness. Use Ctrl+Q to measure, increase turbulence (T key) if >15%
+- **Parameter Leakage** - Switching from "Mineral Oil" to "Ink" can cause the oil to shear away. This is a known bug that will be addressed in a future refactor.
 - Water layer only (oil/water pending phase field implementation)
 - No buoyancy or surface tension yet
 - Light rotation off by default (press C to enable)
