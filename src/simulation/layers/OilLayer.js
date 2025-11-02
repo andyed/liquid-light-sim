@@ -247,7 +247,10 @@ export default class OilLayer extends FluidLayer {
     }
 
     // STEP 3.5: Apply surface tension force to velocity (creates blobby cohesion)
-    this.applySurfaceTensionForce(dt);
+    // TEMPORARILY DISABLED to test if it's preventing motion
+    if (sim.surfaceTension > 0.0001) { // Only apply if explicitly high
+        this.applySurfaceTensionForce(dt);
+    }
 
     // STEP 4: Advect oil thickness by oil velocity
     gl.useProgram(sim.advectionProgram);

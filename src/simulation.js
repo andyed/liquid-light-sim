@@ -37,7 +37,7 @@ export default class Simulation {
         // Occupancy / overflow control (water)
         this.occupancyPercent = 0.0; // 0..1 fraction of inked pixels inside plate
         this.pixelSoupPercent = 0.0; // 0..1 fraction of inked pixels that are mixed/speckled
-        this.occupancyEveryN = 8; // compute occupancy every N frames
+        this.occupancyEveryN = 120; // compute occupancy every N frames (~2 seconds at 60fps)
         this._frameCounter = 0;
         this.overflowLower = 0.80; // target lower bound
         this.overflowUpper = 0.90; // trigger threshold

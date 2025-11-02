@@ -42,28 +42,33 @@ void main() {
     // In texture space h = 1 texel, so we just use texel-normalized units
     float laplacian = (thL + thR + thD + thU - 4.0 * thC);
     
-    // Compute thickness gradient for directional force
+    // Compute thickness gradient for interface normal
     vec2 gradThickness = vec2(thR - thL, thU - thD) * 0.5;
     float gradMag = length(gradThickness);
     
-    // Surface tension creates force opposing curvature (toward flatter regions)
-    // Force direction: along negative gradient of curvature
-    // Simplified: move toward lower curvature (higher Laplacian means more force)
+    // Surface tension minimizes interface perimeter (like a rubber band shrinking)
+    // Force pulls INWARD along normal direction to reduce surface area
     vec2 force = vec2(0.0);
     
-    if (gradMag > 1e-6) {
-        // Direction: perpendicular to thickness gradient (tangent to interface)
-        // Actually, surface tension pulls along the thickness gradient toward thicker regions
-        vec2 forceDir = normalize(gradThickness);
+    if (gradMag > 1e-5 && thickness > 0.005) {
+        // Normal direction (points outward from blob)
+        vec2 normalDir = normalize(gradThickness);
         
-        // Magnitude: proportional to curvature and thickness
-        // Use absolute laplacian so concave and convex both create cohesive forces
-        float forceMag = abs(laplacian) * tension * smoothstep(0.0, 0.3, thickness);
+        // Curvature = laplacian / gradient magnitude
+        // Positive = convex (bulging out) → pull inward
+        // Negative = concave (dented in) → push outward
+        float curvature = laplacian / (gradMag + 1e-6);
         
-        force = forceDir * forceMag * u_dt;
+        // Force magnitude: proportional to curvature and thickness
+        // Higher tension = stronger pull, like tighter rubber band
+        // Reduced multiplier to allow motion (was 500.0)
+        float forceMag = curvature * tension * thickness * 50.0;
         
-        // Clamp force to prevent instability
-        float maxForce = 0.05; // Maximum velocity change per frame
+        // Pull inward along normal (shrinks the blob into round shape)
+        force = -normalDir * forceMag * u_dt;
+        
+        // Clamp for stability but allow stronger forces
+        float maxForce = 0.5;
         if (length(force) > maxForce) {
             force = normalize(force) * maxForce;
         }
