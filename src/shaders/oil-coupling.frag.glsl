@@ -18,16 +18,27 @@ void main() {
   vec4 oil = texture(u_oil, v_texCoord);
   float th = oil.a;
   
-  float coupling = u_couplingStrength;
-  
-  // If no (or ultra-thin) oil present, zero velocity to prevent ghost transport
-  if (th < 0.005) {
+  // Lower threshold to capture thinner oil films
+  if (th < 0.001) {
     fragColor = vec2(0.0);
     return;
   }
   
-  // Apply water influence as immediate blend (no dt) using the effective weight
-  vec2 newVel = mix(vOil, vWater, coupling);
+  // DEBUG: Output water velocity magnitude to console via a pixel read
+  // This will help us see if water velocity exists where oil is
+  float waterMag = length(vWater);
+  float oilMag = length(vOil);
+  
+  // Modulate coupling by oil thickness - thicker oil gets more coupling
+  float thicknessFactor = min(1.0, th * 10.0); // Scale thickness to 0-1 range
+  float effectiveCoupling = u_couplingStrength * thicknessFactor;
+  
+  // Clamp to reasonable range (0.0 to 1.0) without dt multiplication
+  // The dt is already handled in the advection step
+  effectiveCoupling = clamp(effectiveCoupling, 0.0, 1.0);
+  
+  // Blend water velocity into oil velocity using effective coupling
+  vec2 newVel = mix(vOil, vWater, effectiveCoupling);
   
   fragColor = newVel;
 }

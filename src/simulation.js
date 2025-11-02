@@ -85,6 +85,7 @@ export default class Simulation {
 
         this.agitation = 0.0; // Heat lamp agitation
         this.surfaceTension = 0.0; // Surface tension for oil
+        this.surfaceTensionIterations = 0; // Iterations for two-pass surface tension
 
         // Logging verbosity (set true to see detailed telemetry)
         this.logVerbose = false;

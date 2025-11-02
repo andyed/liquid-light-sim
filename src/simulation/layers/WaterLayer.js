@@ -207,7 +207,7 @@ export default class WaterLayer extends FluidLayer {
 
     // Overflow control cadence mirrors Simulation.update
     sim._frameCounter = (sim._frameCounter + 1) | 0;
-    if ((sim._frameCounter % sim.occupancyEveryN) === 0) {
+    if ((sim._frameCounter % sim.occupancyEveryN) === 0 && 1==0) {
       const prevViewport = gl.getParameter(gl.VIEWPORT);
       this.computeOccupancy();
       if (sim.occupancyPercent > sim.overflowUpper) {

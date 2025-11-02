@@ -24,10 +24,12 @@ export default class OilLayer extends FluidLayer {
     this.oilTexture2 = this.sim.createTexture(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
     this.oilFBO = this.sim.createFBO(this.oilTexture1);
 
-    this.oilVelocityTexture2 = this.sim.createTexture(w, h, gl.RG16F, gl.RG, gl.HALF_FLOAT);
+    // Oil velocity field (RG32F for velocity vectors - more robust than RG16F)
+    this.oilVelocityTexture1 = this.sim.createTexture(w, h, gl.RG32F, gl.RG, gl.FLOAT);
+    this.oilVelocityTexture2 = this.sim.createTexture(w, h, gl.RG32F, gl.RG, gl.FLOAT);
     this.oilVelocityFBO = this.sim.createFBO(this.oilVelocityTexture1);
 
-    this.curvatureTexture = this.sim.createTexture(w, h, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE);
+    this.curvatureTexture = this.sim.createTexture(w, h, gl.R16F, gl.RED, gl.HALF_FLOAT);
     this.curvatureFBO = this.sim.createFBO(this.curvatureTexture);
     // Initialize textures to zero to avoid garbage-driven spreading
     const prevFbo = gl.getParameter(gl.FRAMEBUFFER_BINDING);
@@ -66,10 +68,12 @@ export default class OilLayer extends FluidLayer {
     if (this.curvatureTexture) gl.deleteTexture(this.curvatureTexture);
     if (this.curvatureFBO) gl.deleteFramebuffer(this.curvatureFBO);
 
-    this.oilVelocityTexture2 = this.sim.createTexture(w, h, gl.RG16F, gl.RG, gl.HALF_FLOAT);
+    // Recreate oil velocity field (RG32F for better hardware compatibility)
+    this.oilVelocityTexture1 = this.sim.createTexture(w, h, gl.RG32F, gl.RG, gl.FLOAT);
+    this.oilVelocityTexture2 = this.sim.createTexture(w, h, gl.RG32F, gl.RG, gl.FLOAT);
     this.oilVelocityFBO = this.sim.createFBO(this.oilVelocityTexture1);
 
-    this.curvatureTexture = this.sim.createTexture(w, h, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE);
+    this.curvatureTexture = this.sim.createTexture(w, h, gl.R16F, gl.RED, gl.HALF_FLOAT);
     this.curvatureFBO = this.sim.createFBO(this.curvatureTexture);
     // Zero initialize after resize to prevent residuals
     const prevFbo2 = gl.getParameter(gl.FRAMEBUFFER_BINDING);
@@ -249,6 +253,11 @@ export default class OilLayer extends FluidLayer {
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);
 
+    gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
+    const pos = gl.getAttribLocation(sim.splatProgram, 'a_position');
+    gl.enableVertexAttribArray(pos);
+    gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.oilTexture1);
     gl.uniform1i(gl.getUniformLocation(sim.splatProgram, 'u_texture'), 0);
@@ -257,6 +266,7 @@ export default class OilLayer extends FluidLayer {
     gl.uniform1f(gl.getUniformLocation(sim.splatProgram, 'u_radius'), radius);
     gl.uniform2f(gl.getUniformLocation(sim.splatProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
     gl.uniform1i(gl.getUniformLocation(sim.splatProgram, 'u_isVelocity'), 0);
+    
     // Oil-specific flags
     const isOilLoc = gl.getUniformLocation(sim.splatProgram, 'u_isOil');
     if (isOilLoc) gl.uniform1i(isOilLoc, 1);
@@ -393,45 +403,50 @@ export default class OilLayer extends FluidLayer {
     const gl = this.gl;
     if (!sim.curvatureProgram || !sim.applySurfaceTensionProgram || sim.surfaceTension <= 0.0 || !this.curvatureFBO) return;
 
-    // Pass 1: Calculate curvature
-    gl.useProgram(sim.curvatureProgram);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this.curvatureFBO);
+    const iters = Math.max(1, sim.surfaceTensionIterations | 0);
+    for (let i = 0; i < iters; i++) {
+      // Pass 1: Calculate curvature of current oil thickness
+      gl.useProgram(sim.curvatureProgram);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.curvatureFBO);
 
-    gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
-    const posCurv = gl.getAttribLocation(sim.curvatureProgram, 'a_position');
-    gl.enableVertexAttribArray(posCurv);
-    gl.vertexAttribPointer(posCurv, 2, gl.FLOAT, false, 0, 0);
+      gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
+      const posCurv = gl.getAttribLocation(sim.curvatureProgram, 'a_position');
+      gl.enableVertexAttribArray(posCurv);
+      gl.vertexAttribPointer(posCurv, 2, gl.FLOAT, false, 0, 0);
 
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, this.oilTexture1);
-    gl.uniform1i(gl.getUniformLocation(sim.curvatureProgram, 'u_oil_texture'), 0);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.oilTexture1);
+      gl.uniform1i(gl.getUniformLocation(sim.curvatureProgram, 'u_oil_texture'), 0);
 
-    gl.uniform2f(gl.getUniformLocation(sim.curvatureProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+      gl.uniform2f(gl.getUniformLocation(sim.curvatureProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
 
-    gl.drawArrays(gl.TRIANGLES, 0, 6);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
 
-    // Pass 2: Apply surface tension force
-    gl.useProgram(sim.applySurfaceTensionProgram);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);
+      // Pass 2: Apply surface tension to oil thickness
+      gl.useProgram(sim.applySurfaceTensionProgram);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);
 
-    gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
-    const posApply = gl.getAttribLocation(sim.applySurfaceTensionProgram, 'a_position');
-    gl.enableVertexAttribArray(posApply);
-    gl.vertexAttribPointer(posApply, 2, gl.FLOAT, false, 0, 0);
+      gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
+      const posApply = gl.getAttribLocation(sim.applySurfaceTensionProgram, 'a_position');
+      gl.enableVertexAttribArray(posApply);
+      gl.vertexAttribPointer(posApply, 2, gl.FLOAT, false, 0, 0);
 
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, this.oilTexture1);
-    gl.uniform1i(gl.getUniformLocation(sim.applySurfaceTensionProgram, 'u_oil_texture'), 0);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.oilTexture1);
+      gl.uniform1i(gl.getUniformLocation(sim.applySurfaceTensionProgram, 'u_oil_texture'), 0);
 
-    gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, this.curvatureTexture);
-    gl.uniform1i(gl.getUniformLocation(sim.applySurfaceTensionProgram, 'u_curvature_texture'), 1);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, this.curvatureTexture);
+      gl.uniform1i(gl.getUniformLocation(sim.applySurfaceTensionProgram, 'u_curvature_texture'), 1);
 
-    gl.uniform1f(gl.getUniformLocation(sim.applySurfaceTensionProgram, 'u_surface_tension'), sim.surfaceTension);
+      gl.uniform1f(gl.getUniformLocation(sim.applySurfaceTensionProgram, 'u_surface_tension'), sim.surfaceTension);
+      const dtLoc = gl.getUniformLocation(sim.applySurfaceTensionProgram, 'u_dt');
+      if (dtLoc) gl.uniform1f(dtLoc, dt);
 
-    gl.drawArrays(gl.TRIANGLES, 0, 6);
-    this.swapOilTextures();
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      this.swapOilTextures();
+    }
   }
 
   clearOil() {

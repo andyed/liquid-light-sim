@@ -1,5 +1,6 @@
 #version 300 es
 precision highp float;
+// UPDATED: Nov 2, 2025 - Lowered thin-film threshold from 0.005-0.020 to 0.001-0.01
 
 in vec2 v_texCoord;
 out vec4 fragColor;
@@ -42,8 +43,8 @@ void main() {
     vec3 highlight = fres * (0.15 * tint + 0.35 * oilRGB);
 
     // Alpha by thickness with thin-film suppression (ignore ultra-thin oil)
-    // Smoothly gate contributions below ~0.005-0.02 thickness
-    float thinGate = smoothstep(0.005, 0.020, th);
+    // Lowered threshold from 0.005-0.020 to 0.001-0.01 for better visibility
+    float thinGate = smoothstep(0.001, 0.01, th);
     float a = clamp(pow(th, u_oil_gamma), 0.0, 1.0) * thinGate;
     vec3 base = texture(u_scene, v_texCoord).rgb;
     // Apply occlusion to base content under oil first (no color blend yet)

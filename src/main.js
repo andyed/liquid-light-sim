@@ -26,11 +26,13 @@ class App {
         window.tester = new SimulationTester(this.simulation);
         window.perfMonitor = this.perfMonitor;
         window.simulation = this.simulation; // For console debugging
+        window.controller = this.controller; // For material debugging
         
         console.log('\n📚 Testing Tools Available:');
         console.log('  window.tester - Simulation testing utilities');
         console.log('  window.perfMonitor - Performance monitoring');
         console.log('  window.simulation - Direct simulation access');
+        console.log('  window.controller - Material and input controller');
         console.log('\n⌨️  Keyboard Shortcuts:');
         console.log('  P - Pause/Resume');
         console.log('  Ctrl+T - Run tests');
