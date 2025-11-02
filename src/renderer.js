@@ -30,6 +30,7 @@ export default class Renderer {
         this.oilOcclusion = 0.35; // 0..1
         this.oilAlphaGamma = 1.0; // gamma for thickness→alpha
         this.oilTintStrength = 0.4; // 0..1, how much oil color tints scene
+        this.brightnessGain = 1.0;
 
         this.resize();
         window.addEventListener('resize', () => this.resize());
@@ -318,6 +319,7 @@ export default class Renderer {
             let textureUniform = gl.getUniformLocation(this.volumetricProgram, 'u_color_texture');
             gl.uniform1i(textureUniform, 0);
             gl.uniform1f(gl.getUniformLocation(this.volumetricProgram, 'u_absorption_coefficient'), this.absorptionCoefficient);
+            gl.uniform1f(gl.getUniformLocation(this.volumetricProgram, 'u_brightness_gain'), this.brightnessGain);
             gl.uniform3f(gl.getUniformLocation(this.volumetricProgram, 'u_light_color'), 
                 this.backgroundColor.r, this.backgroundColor.g, this.backgroundColor.b);
         } else {

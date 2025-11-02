@@ -38,6 +38,10 @@ A GPU-accelerated fluid simulation for VJ performance and digital art, built wit
 - **Clickable Light Indicator** - Visual feedback in bottom-right corner
 - **Absorption Control** - K key cycles intensity (0.5-4.0)
 
+### ✅ Heat Lamp
+- **Brightness Gain** - Increases the overall brightness of the simulation.
+- **Agitation** - Adds a subtle, noisy perturbation to the velocity field to create more natural, blob-like structures.
+
 ### ✅ User Interaction
 - **Color Painting** - Left-click to inject dye (no color mixing)
 - **Jet Impulse** - Right-click for strong turbulent forces (50k multiplier)
@@ -77,7 +81,7 @@ http://localhost:8001
 - **Right-click + drag** - Create powerful jets
 - **A/D or Arrows** - Rotate container
 - **1–5** - Select material (Ink, Mineral Oil, Alcohol, Syrup, Glycerine). Non‑Ink enables Oil.
-- **Hamburger → Oil Layer** - Toggle Oil on/off
+- **Hamburger → Heat Lamp** - Toggle Heat Lamp (OFF, LOW, MEDIUM, HIGH)
 - **C** - Cycle RGB light rotation speed
 - **Click light indicator** - Toggle light rotation
 - **V** - Cycle viscosity

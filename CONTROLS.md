@@ -75,6 +75,13 @@
   - 3.0 (Very strong - deep, dark) ⭐ Default
   - 4.0 (Extreme - almost opaque)
 
+### Heat Lamp Control
+- **Hamburger Menu -> Heat Lamp** - Cycle heat lamp level
+  - OFF: No heat effect
+  - LOW: Subtle brightness and agitation
+  - MEDIUM: Moderate brightness and agitation
+  - HIGH: Strong brightness and agitation
+
 ### Testing & Debugging 🧪
 - **P** - Pause/Resume simulation
 - **M** - Toggle velocity visualization (see invisible forces!)

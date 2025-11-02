@@ -81,6 +81,29 @@ export default class WaterLayer extends FluidLayer {
     this.swapVelocityTextures();
   }
 
+  applyAgitation(dt) {
+    const sim = this.sim;
+    const gl = this.gl;
+    gl.useProgram(sim.agitationProgram);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.velocityFBO);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.velocityTexture2, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
+    const positionAttrib = gl.getAttribLocation(sim.agitationProgram, 'a_position');
+    gl.enableVertexAttribArray(positionAttrib);
+    gl.vertexAttribPointer(positionAttrib, 2, gl.FLOAT, false, 0, 0);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.velocityTexture1);
+    gl.uniform1i(gl.getUniformLocation(sim.agitationProgram, 'u_velocity_texture'), 0);
+
+    gl.uniform1f(gl.getUniformLocation(sim.agitationProgram, 'u_agitation'), sim.agitation);
+    gl.uniform1f(gl.getUniformLocation(sim.agitationProgram, 'u_time'), performance.now() / 1000.0);
+
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    this.swapVelocityTextures();
+  }
+
   async init() {
     const gl = this.gl;
     const w = gl.canvas.width;
@@ -156,6 +179,10 @@ export default class WaterLayer extends FluidLayer {
 
     sim.applyForces(dt);
 
+    if (sim.agitation > 0.0) {
+      this.applyAgitation(dt);
+    }
+
     // Apply coupling force from oil thickness gradients (if oil layer present)
     if (sim.useOil && sim.oil && sim.couplingForceProgram && sim.couplingStrength > 0.0) {
       this.applyCouplingForce(dt);
@@ -215,6 +242,9 @@ export default class WaterLayer extends FluidLayer {
     gl.uniform1f(gl.getUniformLocation(sim.splatProgram, 'u_radius'), radius);
     gl.uniform2f(gl.getUniformLocation(sim.splatProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
     gl.uniform1i(gl.getUniformLocation(sim.splatProgram, 'u_isVelocity'), 0);
+    // Force ink path (not oil) to prevent stale uniform from previous oil splats
+    const isOilLoc = gl.getUniformLocation(sim.splatProgram, 'u_isOil');
+    if (isOilLoc) gl.uniform1i(isOilLoc, 0);
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     this.swapColorTextures();

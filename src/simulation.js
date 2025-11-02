@@ -83,6 +83,8 @@ export default class Simulation {
         this.marangoniForceClamp = 0.08;   // per-component clamp for dv
         this.marangoniAmp = 3.0;           // gradient amplification factor
 
+        this.agitation = 0.0; // Heat lamp agitation
+
         // Logging verbosity (set true to see detailed telemetry)
         this.logVerbose = false;
 
@@ -179,6 +181,16 @@ export default class Simulation {
         this.marangoniProgram = this.renderer.createProgram(
             fullscreenVert,
             await loadShader('src/shaders/marangoni.frag.glsl')
+        );
+
+        this.oilAttractionProgram = this.renderer.createProgram(
+            fullscreenVert,
+            await loadShader('src/shaders/oil-attraction.frag.glsl')
+        );
+
+        this.agitationProgram = this.renderer.createProgram(
+            fullscreenVert,
+            await loadShader('src/shaders/agitation.frag.glsl')
         );
 
         const width = gl.canvas.width;

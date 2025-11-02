@@ -7,6 +7,7 @@ out vec4 outColor;
 uniform sampler2D u_color_texture;
 uniform float u_absorption_coefficient;
 uniform vec3 u_light_color; // Colored light source (RGB rotation)
+uniform float u_brightness_gain;
 
 // Volumetric rendering with colored light
 // Ink absorbs and scatters the colored light
@@ -46,5 +47,5 @@ void main() {
     float luminance = dot(finalColor, vec3(0.299, 0.587, 0.114));
     vec3 saturated = mix(vec3(luminance), finalColor, 1.4);
     
-    outColor = vec4(saturated, 1.0);
+    outColor = vec4(saturated * u_brightness_gain, 1.0);
 }

@@ -13,11 +13,11 @@ export default class Controller {
         this.isSpacePressed = false;
         this.currentColor = { r: 0.3, g: 0.898, b: 1.0 };  // Default: cyan (#4de5ff)
         this.materials = [
-            { name: 'Ink', palette: ['#4DE5FF', '#FF3B3B', '#FFD93B', '#9B59B6', '#2ECC71'], preset: { useOil: true, oilSmoothingRate: 0.0, oilViscosity: 0.0, oilViscosityIterations: 0, couplingStrength: 0.0, absorption: 3.0, paletteDom: 0.15, refractStrength: 0.0, fresnelPower: 3.0, oilOcclusion: 0.0, oilAlphaGamma: 1.0, marangoniStrength: 0.0, marangoniKth: 0.8, marangoniEdgeBand: 2.0 } },
-            { name: 'Mineral Oil', palette: ['#FFF3C4', '#FFD166', '#F6BD60', '#F7EDE2', '#F28482'], preset: { useOil: true, oilSmoothingRate: 0.0, oilViscosity: 0.65, oilViscosityIterations: 90, couplingStrength: 0.003, absorption: 3.5, paletteDom: 0.12, refractStrength: 0.0075, fresnelPower: 3.0, oilOcclusion: 0.15, oilAlphaGamma: 1.80, marangoniStrength: 0.15, marangoniKth: 0.6, marangoniEdgeBand: 2.0, marangoniThMin: 0.01, marangoniForceClamp: 0.08, marangoniAmp: 3.0 } },
-            { name: 'Alcohol', palette: ['#BDE0FE', '#A2D2FF', '#CDB4DB', '#FFC8DD', '#FFAFCC'], preset: { useOil: true, oilSmoothingRate: 0.0, oilViscosity: 0.15, oilViscosityIterations: 30, couplingStrength: 0.001, absorption: 2.5, paletteDom: 0.20, refractStrength: 0.007, fresnelPower: 2.8, oilOcclusion: 0.30, oilAlphaGamma: 0.90, marangoniStrength: 0.0, marangoniKth: 0.4, marangoniEdgeBand: 1.5 } },
-            { name: 'Syrup', palette: ['#8B4513', '#D2691E', '#C97A36', '#F4A261', '#E76F51'], preset: { useOil: true, oilSmoothingRate: 0.0, oilViscosity: 3.0, oilViscosityIterations: 200, couplingStrength: 0.002, absorption: 4.0, paletteDom: 0.12, refractStrength: 0.012, fresnelPower: 3.2, oilOcclusion: 0.60, oilAlphaGamma: 1.20, marangoniStrength: 0.0, marangoniKth: 1.0, marangoniEdgeBand: 2.5 } },
-            { name: 'Glycerine', palette: ['#E0FBFC', '#98C1D9', '#3D5A80', '#EE6C4D', '#293241'], preset: { useOil: true, oilSmoothingRate: 0.0, oilViscosity: 2.4, oilViscosityIterations: 160, couplingStrength: 0.003, absorption: 4.5, paletteDom: 0.10, refractStrength: 0.015, fresnelPower: 3.5, oilOcclusion: 0.70, oilAlphaGamma: 1.30, marangoniStrength: 0.0, marangoniKth: 1.2, marangoniEdgeBand: 3.0 } }
+            { name: 'Ink', palette: ['#4DE5FF', '#FF3B3B', '#FFD93B', '#9B59B6', '#2ECC71'], preset: { useOil: true, oilSmoothingRate: 0.0, oilViscosity: 0.0, oilViscosityIterations: 0, couplingStrength: 0.0, absorption: 3.0, paletteDom: 0.15, refractStrength: 0.0, fresnelPower: 3.0, oilOcclusion: 0.0, oilAlphaGamma: 1.0, marangoniStrength: 0.0, marangoniKth: 0.8, marangoniEdgeBand: 2.0, oilAttractionStrength: 0.0 } },
+            { name: 'Mineral Oil', palette: ['#FFF3C4', '#FFD166', '#F6BD60', '#F7EDE2', '#F28482'], preset: { useOil: true, oilSmoothingRate: 0.0, oilViscosity: 0.65, oilViscosityIterations: 90, couplingStrength: 0.003, absorption: 3.5, paletteDom: 0.12, refractStrength: 0.0075, fresnelPower: 3.0, oilOcclusion: 0.15, oilAlphaGamma: 1.80, marangoniStrength: 1.2, marangoniKth: 1.5, marangoniEdgeBand: 3.0, marangoniThMin: 0.01, marangoniForceClamp: 0.15, marangoniAmp: 5.0, oilAttractionStrength: 0.1 } },
+            { name: 'Alcohol', palette: ['#BDE0FE', '#A2D2FF', '#CDB4DB', '#FFC8DD', '#FFAFCC'], preset: { useOil: true, oilSmoothingRate: 0.0, oilViscosity: 0.15, oilViscosityIterations: 30, couplingStrength: 0.001, absorption: 2.5, paletteDom: 0.20, refractStrength: 0.007, fresnelPower: 2.8, oilOcclusion: 0.30, oilAlphaGamma: 0.90, marangoniStrength: 0.0, marangoniKth: 0.4, marangoniEdgeBand: 1.5, oilAttractionStrength: 0.0 } },
+            { name: 'Syrup', palette: ['#8B4513', '#D2691E', '#C97A36', '#F4A261', '#E76F51'], preset: { useOil: true, oilSmoothingRate: 0.0, oilViscosity: 3.0, oilViscosityIterations: 200, couplingStrength: 0.002, absorption: 4.0, paletteDom: 0.12, refractStrength: 0.012, fresnelPower: 3.2, oilOcclusion: 0.60, oilAlphaGamma: 1.20, marangoniStrength: 0.0, marangoniKth: 1.0, marangoniEdgeBand: 2.5, oilAttractionStrength: 0.0 } },
+            { name: 'Glycerine', palette: ['#E0FBFC', '#98C1D9', '#3D5A80', '#EE6C4D', '#293241'], preset: { useOil: true, oilSmoothingRate: 0.0, oilViscosity: 2.4, oilViscosityIterations: 160, couplingStrength: 0.003, absorption: 4.5, paletteDom: 0.10, refractStrength: 0.015, fresnelPower: 3.5, oilOcclusion: 0.70, oilAlphaGamma: 1.30, marangoniStrength: 0.0, marangoniKth: 1.2, marangoniEdgeBand: 3.0, oilAttractionStrength: 0.0 } }
         ];
         this.currentMaterialIndex = 0;
         
@@ -81,6 +81,8 @@ export default class Controller {
         this.createColorWheel();
 
         this.createMarangoniHUD();
+
+        this.heatLampLevel = 0; // 0: OFF, 1: LOW, 2: MEDIUM, 3: HIGH
     }
 
     setMaterial(index, autoPick = true) {
@@ -146,6 +148,9 @@ export default class Controller {
         }
         if (typeof p.marangoniEdgeBand === 'number') {
             this.simulation.marangoniEdgeBand = p.marangoniEdgeBand;
+        }
+        if (typeof p.oilAttractionStrength === 'number') {
+            this.simulation.oilAttractionStrength = p.oilAttractionStrength;
         }
         // Menu reflects changes
         if (this.menuPanel) this.updateMenuStates();
@@ -446,6 +451,10 @@ export default class Controller {
                     <span>Palette Dominance</span>
                     <span class="palette-value" style="opacity: 0.7; font-size: 12px;">0.15</span>
                 </div>
+                <div class="menu-action" data-action="heat" style="display: flex; justify-content: space-between; align-items: center; padding: 12px; margin-top: 8px; background: rgba(255,255,255,0.05); border-radius: 4px; cursor: pointer;">
+                    <span>Heat Lamp</span>
+                    <span class="heat-value" style="opacity: 0.7; font-size: 12px;">OFF</span>
+                </div>
             </div>
             
             <div style="margin-bottom: 30px;">
@@ -617,6 +626,9 @@ export default class Controller {
                 } else if (action.dataset.action === 'palette') {
                     this.cyclePaletteDominance();
                     this.updateMenuStates();
+                } else if (action.dataset.action === 'heat') {
+                    this.cycleHeatLamp();
+                    this.updateMenuStates();
                 }
             }
 
@@ -668,6 +680,12 @@ export default class Controller {
             paletteValue.textContent = this.renderer.paletteDominance.toFixed(2);
         }
 
+        const heatValue = this.menuPanel.querySelector('.heat-value');
+        if (heatValue) {
+            const levels = ['OFF', 'LOW', 'MEDIUM', 'HIGH'];
+            heatValue.textContent = levels[this.heatLampLevel];
+        }
+
         // Update Marangoni values
         const sEl = this.menuPanel.querySelector('.marangoni-strength-value');
         if (sEl) sEl.textContent = this.simulation.marangoniStrength.toFixed(2);
@@ -714,6 +732,22 @@ export default class Controller {
         const nextIndex = (currentIndex + 1) % values.length;
         this.renderer.paletteDominance = values[nextIndex];
         console.log(`🎨 Palette Dominance: ${this.renderer.paletteDominance} (higher = purer hues, less pixel soup)`);
+    }
+
+    cycleHeatLamp() {
+        this.heatLampLevel = (this.heatLampLevel + 1) % 4;
+        const levels = ['OFF', 'LOW', 'MEDIUM', 'HIGH'];
+        console.log(`🔥 Heat Lamp: ${levels[this.heatLampLevel]}`);
+        this.applyHeatLampPreset();
+    }
+
+    applyHeatLampPreset() {
+        const level = this.heatLampLevel;
+        const brightness = [1.0, 1.1, 1.2, 1.3];
+        const agitation = [0.0, 0.001, 0.002, 0.005];
+
+        this.renderer.brightnessGain = brightness[level];
+        this.simulation.agitation = agitation[level];
     }
     
     update() {

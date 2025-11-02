@@ -191,7 +191,10 @@ export default class OilLayer extends FluidLayer {
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     this.swapOilTextures();
 
-    // STEP 5: Optional smoothing for lens-like cohesion (oil-only smoothing)
+    // STEP 5: Apply self-attraction for cohesion
+    this.applySelfAttraction(dt);
+
+    // STEP 6: Optional smoothing for lens-like cohesion (oil-only smoothing)
     if (sim.oilSmoothingRate > 0.0) {
       gl.useProgram(sim.diffusionProgram);
       gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
@@ -349,6 +352,32 @@ export default class OilLayer extends FluidLayer {
       console.log(`🛢️ Oil overflow valve: strength=${strength.toFixed(2)} → target ${(sim.oilOverflowLower*100)|0}-${(sim.oilOverflowUpper*100)|0}%`);
     }
     gl.viewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
+  }
+
+  applySelfAttraction(dt) {
+    const sim = this.sim;
+    const gl = this.gl;
+    if (!sim.oilAttractionProgram || sim.oilAttractionStrength <= 0.0) return;
+
+    gl.useProgram(sim.oilAttractionProgram);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
+    const positionAttrib = gl.getAttribLocation(sim.oilAttractionProgram, 'a_position');
+    gl.enableVertexAttribArray(positionAttrib);
+    gl.vertexAttribPointer(positionAttrib, 2, gl.FLOAT, false, 0, 0);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.oilTexture1);
+    gl.uniform1i(gl.getUniformLocation(sim.oilAttractionProgram, 'u_oil_texture'), 0);
+
+    gl.uniform2f(gl.getUniformLocation(sim.oilAttractionProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+    gl.uniform1f(gl.getUniformLocation(sim.oilAttractionProgram, 'u_attraction_strength'), sim.oilAttractionStrength);
+    gl.uniform1f(gl.getUniformLocation(sim.oilAttractionProgram, 'u_dt'), dt);
+
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    this.swapOilTextures();
   }
 
   swapOilTextures() {
