@@ -84,6 +84,7 @@ export default class Simulation {
         this.marangoniAmp = 3.0;           // gradient amplification factor
 
         this.agitation = 0.0; // Heat lamp agitation
+        this.oilDragStrength = 10.0; // Water damping inside oil (flow-around behavior)
         this.surfaceTension = 0.0; // Surface tension for oil
         this.surfaceTensionIterations = 0; // Iterations for two-pass surface tension
 
@@ -203,6 +204,12 @@ export default class Simulation {
         this.applySurfaceTensionProgram = this.renderer.createProgram(
             fullscreenVert,
             await loadShader('src/shaders/apply-surface-tension.frag.glsl')
+        );
+
+        // Water-side oil drag (Brinkman penalization lite)
+        this.waterOilDragProgram = this.renderer.createProgram(
+            fullscreenVert,
+            await loadShader('src/shaders/oil-drag.frag.glsl')
         );
 
         const width = gl.canvas.width;

@@ -188,6 +188,32 @@ export default class WaterLayer extends FluidLayer {
       this.applyCouplingForce(dt);
     }
 
+    // Apply oil drag inside oil regions to encourage flow-around behavior
+    if (sim.useOil && sim.oil && sim.waterOilDragProgram && sim.oilDragStrength > 0.0) {
+      gl.useProgram(sim.waterOilDragProgram);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.velocityFBO);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.velocityTexture2, 0);
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
+      const positionAttrib = gl.getAttribLocation(sim.waterOilDragProgram, 'a_position');
+      gl.enableVertexAttribArray(positionAttrib);
+      gl.vertexAttribPointer(positionAttrib, 2, gl.FLOAT, false, 0, 0);
+
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.velocityTexture1);
+      gl.uniform1i(gl.getUniformLocation(sim.waterOilDragProgram, 'u_velocity'), 0);
+
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, sim.oil.oilTexture1);
+      gl.uniform1i(gl.getUniformLocation(sim.waterOilDragProgram, 'u_oil'), 1);
+
+      gl.uniform1f(gl.getUniformLocation(sim.waterOilDragProgram, 'u_drag'), sim.oilDragStrength);
+      gl.uniform1f(gl.getUniformLocation(sim.waterOilDragProgram, 'u_dt'), dt);
+
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      this.swapVelocityTextures();
+    }
+
     if (sim.vorticityStrength > 0) {
       sim.applyVorticityConfinement();
     }
