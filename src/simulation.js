@@ -32,7 +32,7 @@ export default class Simulation {
         this.rotationDelta = 0.0;   // Transient input (keys/gestures)
         this.jetForce = {x: 0, y: 0, strength: 0};  // Jet impulse tool
         this.useMacCormack = true;  // High-fidelity advection (eliminates numerical diffusion)
-        this.vorticityStrength = 0.4;  // Reduced to slow shredding/dilution for better conservation
+        this.vorticityStrength = 0.25;  // Reduced further to prevent ink shredding into pixel soup
         this.boundaryMode = 1;  // 0=bounce, 1=viscous drag, 2=repulsive force
         // Occupancy / overflow control (water)
         this.occupancyPercent = 0.0; // 0..1 fraction of inked pixels inside plate

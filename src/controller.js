@@ -13,7 +13,7 @@ export default class Controller {
             oilViscosity: 0.0,
             oilViscosityIterations: 0,
             couplingStrength: 0.7,  // Changed from 0.0 - oil should keep moving when Ink is selected
-            absorption: 3.0,
+            absorption: 1.5,  // Lower = vibrant centers (was 3.0, caused center washout)
             paletteDom: 0.15,
             refractStrength: 0.0,
             fresnelPower: 3.0,
@@ -381,14 +381,18 @@ export default class Controller {
         `;
         
         this.rotationButton.addEventListener('click', () => {
-            if (this.simulation.rotationBase === 0) {
-                this.simulation.setRotation(1.2);
+            // Reduced from 1.2 to 0.3 (75% reduction) to prevent ink disappearing in <3 rotations
+            const ROTATION_FORCE = 0.3;
+            const AMBIENT_FLOW = 0.12;
+            
+            if (this.simulation.rotationBase < ROTATION_FORCE) {
+                this.simulation.setRotation(ROTATION_FORCE);
                 this.rotationButton.style.background = 'rgba(0, 150, 255, 0.7)';
-                console.log('🔄 Rotation: ON');
+                console.log('🔄 Rotation: BOOST (0.3)');
             } else {
-                this.simulation.setRotation(0.0);
-                this.rotationButton.style.background = 'rgba(0, 0, 0, 0.7)';
-                console.log('🔄 Rotation: OFF');
+                this.simulation.setRotation(AMBIENT_FLOW);
+                this.rotationButton.style.background = 'rgba(0, 0, 0, 0.5)';
+                console.log('🔄 Rotation: AMBIENT (0.12)');
             }
         });
         

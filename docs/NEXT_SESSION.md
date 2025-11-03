@@ -1,13 +1,15 @@
-# Next Session: Fix Oil Dissolution Rate
+# Next Session: Polish & Advanced Features
 
 ## Current State (After This Commit)
 
-✅ **Oil moves with water** - major breakthrough!
-✅ **Coupling works** - oil gets water velocity  
-✅ **Material switching works** - doesn't freeze oil
+✅ **Oil moves with water** - coupling works perfectly  
+✅ **Ambient flow** - gentle rotation (0.12) provides constant motion
+✅ **Oil persistence** - disabled smoothing, fixed shaders, proper thresholds
+✅ **Ink persistence** - reduced rotation/vorticity, stays visible 10+ rotations
+✅ **Color fidelity** - centers stay vibrant, no gray washout
+✅ **Material-specific behavior** - syrup persists longer than oil, oil longer than alcohol
 ✅ **Multi-material works** - oil and ink coexist
-✅ **Oil dissipation fixed** - disabled smoothing, fixed overflow shader
-✅ **Material persistence fixed** - viscosity now matches physics (syrup > oil > alcohol)
+✅ **Documentation organized** - 38 files in docs/ folder
 
 ## Problem to Solve
 

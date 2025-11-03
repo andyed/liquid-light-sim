@@ -4,7 +4,7 @@ Try it: https://andyed.github.io/liquid-light-sim/
 
 ![Screenshot](https://raw.githubusercontent.com/andyed/liquid-light-sim/main/images/v01.png)
 
-**Status:** Milestone 3 - Layered core + Oil (alpha) ✅
+**Status:** Milestone 3 - Layered core + Oil persistence fixes ✅
 
 A GPU-accelerated fluid simulation for VJ performance and digital art, built with WebGL2. The core now uses a layered architecture (FluidLayer interface) with a WaterLayer and an alpha OilLayer (visual refraction, smoothing, presets).
 
@@ -14,6 +14,27 @@ A GPU-accelerated fluid simulation for VJ performance and digital art, built wit
 ![Testing](https://img.shields.io/badge/Tests-Automated-yellow)
 
 ---
+
+## What's New (Latest Update)
+
+### 🎨 Improved Persistence & Movement
+- **Ambient water flow** - Gentle rotation (0.12) mimics real liquid light shows
+- **Oil coupling fixed** - Oil now moves immediately when painted
+- **Gentler rotation** - Button force reduced 75% (prevents rapid dissipation)
+- **Material-specific persistence** - Syrup persists longer than mineral oil, which persists longer than alcohol
+
+### 🔧 Critical Bug Fixes
+- **Oil smoothing disabled** - Stopped per-frame thickness dissipation
+- **Shader alpha preservation** - Overflow & diffusion preserve oil thickness
+- **Overflow thresholds tuned** - Oil triggers later than water (0.95 vs 0.90)
+- **Vorticity reduced** - Less ink shredding (0.4 → 0.25)
+- **Absorption lowered** - Ink centers stay vibrant (3.0 → 1.5)
+
+### 📊 Expected Behavior
+- ✅ Oil persists 30+ seconds without fading
+- ✅ Ink persists 10+ rotations (was <3)
+- ✅ Colors stay vibrant throughout (no center washout)
+- ✅ Gentler, more controllable swirls
 
 ## What's New (Milestone 3)
 

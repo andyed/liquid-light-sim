@@ -18,7 +18,7 @@ export default class Renderer {
         this.backgroundColor = { r: 0.0, g: 0.0, b: 0.0 };
         this.debugMode = 0; // 0=color, 1=velocity, 2=concentration gradient, 3=oil thickness, 4=oil gradient, 5=occ split
         this.useVolumetric = true; // Beer-Lambert volumetric rendering
-        this.absorptionCoefficient = 3.0; // Higher = more saturated glow
+        this.absorptionCoefficient = 1.5; // Lower = more vibrant centers (was 3.0, too dark)
         this.usePostProcessing = true; // Organic flow distortion (O key to toggle)
         this.distortionStrength = 0.4; // 0.0-1.0, tuned to break severe banding artifacts
         this.smoothingStrength = 0.5; // 0.0-1.0, bilateral blur strength
