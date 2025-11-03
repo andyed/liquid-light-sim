@@ -60,18 +60,8 @@ void main() {
     // Oil uses pure semi-Lagrangian for maximum stability (no MacCormack)
     if (u_isOil) {
         outColor = forward;
-        // Clamp RGB tint and alpha thickness
         outColor.rgb = clamp(outColor.rgb, vec3(0.0), vec3(1.0));
         outColor.a = clamp(outColor.a, 0.0, 1.0);
-        // Rim absorption to prevent boundary accumulation
-        float aspect = u_resolution.x / max(u_resolution.y, 1.0);
-        vec2 r = v_texCoord - center;
-        vec2 r_as = vec2(r.x * aspect, r.y);
-        float d = length(r_as);
-        float rimAbsorption = smoothstep(containerRadius - 0.04, containerRadius, d);
-        float rimScale = max(0.0, u_oilRimAbsorptionScale);
-        outColor.rgb *= (1.0 - rimAbsorption * 0.15 * rimScale);
-        outColor.a   *= (1.0 - rimAbsorption * 0.10 * rimScale);
         return;
     }
 

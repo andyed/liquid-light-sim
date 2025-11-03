@@ -132,13 +132,7 @@ export default class OilLayer extends FluidLayer {
     // Ensure oil passes render at full canvas size (avoid stale viewport from other stages)
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
 
-    // STEP 1: Advect oil velocity by itself (semi-Lagrangian)
-    // TEMPORARILY DISABLED - velocity advection was dissipating before coupling
-    // Oil velocity should just be set by coupling, not self-advected
-    // gl.useProgram(sim.advectionProgram);
-    // gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilVelocityFBO);
-    // gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilVelocityTexture2, 0);
-    //
+    // STEP 1: Advect oil velocity by itself (self-advection for momentum)
     // gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
     // const posVel = gl.getAttribLocation(sim.advectionProgram, 'a_position');
     // gl.enableVertexAttribArray(posVel);
@@ -350,6 +344,8 @@ export default class OilLayer extends FluidLayer {
   splatColor(x, y, color, radius) {
     const gl = this.gl;
     const sim = this.sim;
+    
+    console.log('🛢️ OilLayer.splatColor called:', {x: x.toFixed(2), y: y.toFixed(2), radius, color});
 
     gl.useProgram(sim.splatProgram);
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
@@ -373,10 +369,12 @@ export default class OilLayer extends FluidLayer {
     const isOilLoc = gl.getUniformLocation(sim.splatProgram, 'u_isOil');
     if (isOilLoc) gl.uniform1i(isOilLoc, 1);
     const oilStrengthLoc = gl.getUniformLocation(sim.splatProgram, 'u_oilStrength');
-    if (oilStrengthLoc) gl.uniform1f(oilStrengthLoc, 1.0);
+    if (oilStrengthLoc) gl.uniform1f(oilStrengthLoc, 2.5); // Increased from 1.0 for more visible oil
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     this.swapOilTextures();
+    
+    console.log('  ✓ Oil splat drawn, textures swapped');
 
     // Also splat per-pixel material properties based on current simulation params
     if (this.sim.splatOilPropsProgram && this.oilPropsFBO) {

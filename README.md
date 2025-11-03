@@ -15,26 +15,31 @@ A GPU-accelerated fluid simulation for VJ performance and digital art, built wit
 
 ---
 
-## What's New (Latest Update)
+## What's New (Nov 2, 2025)
 
 ### 🎨 Improved Persistence & Movement
 - **Ambient water flow** - Gentle rotation (0.12) mimics real liquid light shows
-- **Oil coupling fixed** - Oil now moves immediately when painted
-- **Gentler rotation** - Button force reduced 75% (prevents rapid dissipation)
-- **Material-specific persistence** - Syrup persists longer than mineral oil, which persists longer than alcohol
+- **Oil coupling working** - Oil moves immediately when painted
+- **Gentler rotation** - Button force reduced 75% (1.2 → 0.3)
+- **Material-specific persistence** - Different overflow thresholds per material
 
 ### 🔧 Critical Bug Fixes
 - **Oil smoothing disabled** - Stopped per-frame thickness dissipation
 - **Shader alpha preservation** - Overflow & diffusion preserve oil thickness
-- **Overflow thresholds tuned** - Oil triggers later than water (0.95 vs 0.90)
+- **Overflow thresholds raised** - Oil 0.95 vs water 0.90
 - **Vorticity reduced** - Less ink shredding (0.4 → 0.25)
 - **Absorption lowered** - Ink centers stay vibrant (3.0 → 1.5)
+- **Occlusion lowered** - Oil more visible (50-75% reduction)
 
-### 📊 Expected Behavior
-- ✅ Oil persists 30+ seconds without fading
+### 📊 Current Status
 - ✅ Ink persists 10+ rotations (was <3)
-- ✅ Colors stay vibrant throughout (no center washout)
+- ✅ Ink colors stay vibrant (no center washout)
 - ✅ Gentler, more controllable swirls
+- ✅ Ambient flow provides constant gentle motion
+- 🟡 Oil persists ~15 seconds (improved from <5, still needs work)
+- 🟡 Oil color weak (needs tint strength tuning)
+
+**Known Issue:** Oil dissipates at container edges during rotation (boundary interaction)
 
 ## What's New (Milestone 3)
 
