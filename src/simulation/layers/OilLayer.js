@@ -354,7 +354,7 @@ export default class OilLayer extends FluidLayer {
     const isOilLoc = gl.getUniformLocation(sim.splatProgram, 'u_isOil');
     if (isOilLoc) gl.uniform1i(isOilLoc, 1);
     const oilStrengthLoc = gl.getUniformLocation(sim.splatProgram, 'u_oilStrength');
-    if (oilStrengthLoc) gl.uniform1f(oilStrengthLoc, 2.5); // Increased from 1.0 for more visible oil
+    if (oilStrengthLoc) gl.uniform1f(oilStrengthLoc, 1.0); // Increased from 1.0 for more visible oil
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     this.swapOilTextures();

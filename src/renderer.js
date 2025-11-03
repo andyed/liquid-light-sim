@@ -85,6 +85,9 @@ export default class Renderer {
         
         // Create intermediate texture for post-processing
         this.createPostProcessTexture();
+
+        // Create intermediate texture for oil compositing
+        this.createOilCompositeTexture();
         
         this.ready = true;
         console.log('✓ Renderer initialized');
@@ -104,6 +107,22 @@ export default class Renderer {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
         
         this.postProcessFBO = gl.createFramebuffer();
+    }
+
+    createOilCompositeTexture() {
+        const gl = this.gl;
+        const width = gl.canvas.width;
+        const height = gl.canvas.height;
+        
+        this.oilCompositeTexture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, this.oilCompositeTexture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        
+        this.oilCompositeFBO = gl.createFramebuffer();
     }
     
     createBoundaryTexture() {
@@ -169,6 +188,7 @@ export default class Renderer {
             if (this.ready) {
                 this.createBoundaryTexture();
                 this.createPostProcessTexture();
+                this.createOilCompositeTexture();
                 if (this.simulation && this.simulation.ready) {
                     this.simulation.recreateTextures();
                 }
@@ -363,8 +383,8 @@ export default class Renderer {
         
         // Step 2.5: Oil composite (if enabled)
         if (this.simulation.useOil && this.simulation.oil && this.oilCompositeProgram) {
-            gl.bindFramebuffer(gl.FRAMEBUFFER, this.boundaryFBO);
-            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.boundaryTexture, 0);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilCompositeFBO);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilCompositeTexture, 0);
             gl.clearColor(0.0, 0.0, 0.0, 1.0);
             gl.clear(gl.COLOR_BUFFER_BIT);
 
@@ -396,8 +416,8 @@ export default class Renderer {
 
             gl.drawArrays(gl.TRIANGLES, 0, 6);
 
-            // After compositing, the source becomes boundaryTexture
-            sourceTexture = this.boundaryTexture;
+            // After compositing, the source becomes oilCompositeTexture
+            sourceTexture = this.oilCompositeTexture;
         }
         
         // Step 3: Render with circular boundary overlay to screen

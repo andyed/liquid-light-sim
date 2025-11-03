@@ -54,12 +54,10 @@ void main() {
     // Refraction offset: bend toward normal (negative gradient)
     vec2 offset = -normalize(grad + 1e-6) * (u_refract_strength * th);
     vec2 refractCoord = clampToCircle(v_texCoord + offset, u_resolution);
-    vec3 refracted = texture(u_scene, refractCoord).rgb;
+    vec3 refracted = texture(u_scene, v_texCoord).rgb;
 
-    // Fresnel-ish highlight using view-normal alignment proxy: gradient magnitude
-    float g = length(grad);
-    float fres = pow(clamp(g * 20.0, 0.0, 1.0), u_fresnel_power); // scale factor 20 tuned for 1080p
-    vec3 highlight = fres * (0.1 * oilRGB + 0.1);
+    // Simple highlight based on thickness
+    float highlight = pow(th, 2.0) * 0.1;
 
     // Alpha by thickness with thin-film suppression (ignore ultra-thin oil)
     // Lowered threshold from 0.005-0.020 to 0.001-0.01 for better visibility
@@ -72,8 +70,8 @@ void main() {
     vec3 color = mix(baseOccluded, refracted, a);
     // Apply color tint from the oil itself - linear visibility for better color saturation
     float tintVisibility = a * thinGate; // was (a*a)*(thinGate*thinGate), too weak
-    color = mix(color, oilRGB, tintVisibility * clamp(u_tint_strength, 0.0, 1.0));
+    color = mix(color, oilRGB, tintVisibility * clamp(u_tint_strength, 0.0, 1.0) * 2.0);
     // Add highlight on top
-    color += highlight * a;
+    // color += highlight * a;
     fragColor = vec4(color, 1.0);
 }

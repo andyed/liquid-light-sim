@@ -20,8 +20,8 @@ void main() {
     float totalConc = length(concentration.rgb);
     
     if (totalConc < 0.001) {
-        // No ink - pure black background
-        outColor = vec4(0.0, 0.0, 0.0, 1.0);
+        // No ink - output the light color
+        outColor = vec4(u_light_color * u_brightness_gain, 1.0);
         return;
     }
     
