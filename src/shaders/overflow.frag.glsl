@@ -7,6 +7,7 @@ out vec4 outColor;
 uniform sampler2D u_color_texture;
 uniform vec2 u_resolution;
 uniform float u_strength; // 0..1 overall damping strength
+uniform bool u_isOil;     // true when processing oil (preserve alpha thickness)
 
 const vec2 center = vec2(0.5, 0.5);
 const float containerRadius = 0.48;
@@ -61,5 +62,9 @@ void main() {
     float damp = clamp(1.0 - totalDamping, 0.0, 1.0); // ensure valid range
 
     vec3 rgb = c.rgb * damp;
-    outColor = vec4(rgb * inside, 1.0);
+    
+    // For oil, preserve and damp thickness (alpha). For ink, hardcode alpha to 1.0
+    float alpha = u_isOil ? (c.a * damp * inside) : 1.0;
+    
+    outColor = vec4(rgb * inside, alpha);
 }

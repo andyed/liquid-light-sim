@@ -377,6 +377,7 @@ export default class WaterLayer extends FluidLayer {
     gl.uniform1i(gl.getUniformLocation(sim.overflowProgram, 'u_color_texture'), 0);
     gl.uniform2f(gl.getUniformLocation(sim.overflowProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
     gl.uniform1f(gl.getUniformLocation(sim.overflowProgram, 'u_strength'), strength);
+    gl.uniform1i(gl.getUniformLocation(sim.overflowProgram, 'u_isOil'), 0); // Ink: hardcode alpha to 1.0
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     this.swapColorTextures();

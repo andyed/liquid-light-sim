@@ -28,8 +28,11 @@ void main() {
 
   // ULTRA SIMPLE: Oil velocity = water velocity * coupling strength
   // No blending, no thickness factors, just direct copy
-  float propR = mix(1.0, texture(u_oilProps, v_texCoord).r, clamp(u_useProps, 0.0, 1.0));
+  float prop = texture(u_oilProps, v_texCoord).r;
+  // If per-pixel props are disabled or zero, fall back to full coupling (1.0)
+  float propR = (u_useProps > 0.5 && prop > 0.0) ? prop : 1.0;
   float strength = u_couplingStrength * propR * 2.0; // 2x multiplier boost
   
   fragColor = vWater * clamp(strength, 0.0, 2.0); // Allow up to 2x water velocity
 }
+

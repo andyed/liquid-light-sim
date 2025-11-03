@@ -2,6 +2,9 @@ export function diffuseColor(gl, renderer, diffusionProgram, simulation, dt) {
     gl.useProgram(diffusionProgram);
     gl.uniform1f(gl.getUniformLocation(diffusionProgram, 'u_dt'), dt);
     gl.uniform1f(gl.getUniformLocation(diffusionProgram, 'u_diffusion_rate'), simulation.diffusionRate);
+    // For ink/water: diffuse all channels (preserveAlpha=false)
+    const preserveAlphaLoc = gl.getUniformLocation(diffusionProgram, 'u_preserveAlpha');
+    if (preserveAlphaLoc) gl.uniform1i(preserveAlphaLoc, 0);
 
     for (let i = 0; i < simulation.diffusionIterations; i++) {
         gl.bindFramebuffer(gl.FRAMEBUFFER, simulation.colorFBO);

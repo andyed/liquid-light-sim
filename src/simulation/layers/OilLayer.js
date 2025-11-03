@@ -181,15 +181,15 @@ export default class OilLayer extends FluidLayer {
     gl.bindTexture(gl.TEXTURE_2D, this.oilTexture1);
     gl.uniform1i(gl.getUniformLocation(sim.oilCouplingProgram, 'u_oil'), 2);
 
-    // Per-pixel properties (optional)
+    // Per-pixel properties disabled for coupling to avoid double-scaling to near-zero
+    // Bind for API completeness but force u_useProps = 0.0
     if (this.oilPropsTexture1) {
       gl.activeTexture(gl.TEXTURE3);
       gl.bindTexture(gl.TEXTURE_2D, this.oilPropsTexture1);
       const locProps = gl.getUniformLocation(sim.oilCouplingProgram, 'u_oilProps');
       if (locProps) gl.uniform1i(locProps, 3);
-      const usePropsLoc = gl.getUniformLocation(sim.oilCouplingProgram, 'u_useProps');
-      if (usePropsLoc) gl.uniform1f(usePropsLoc, 1.0);
-    } else {
+    }
+    {
       const usePropsLoc = gl.getUniformLocation(sim.oilCouplingProgram, 'u_useProps');
       if (usePropsLoc) gl.uniform1f(usePropsLoc, 0.0);
     }
@@ -303,6 +303,9 @@ export default class OilLayer extends FluidLayer {
       gl.uniform1i(gl.getUniformLocation(sim.diffusionProgram, 'u_color_texture'), 0);
       gl.uniform1f(gl.getUniformLocation(sim.diffusionProgram, 'u_diffusion_rate'), sim.oilSmoothingRate);
       gl.uniform2f(gl.getUniformLocation(sim.diffusionProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+      // Preserve alpha (thickness) when smoothing oil - only diffuse RGB tint
+      const preserveAlphaLoc = gl.getUniformLocation(sim.diffusionProgram, 'u_preserveAlpha');
+      if (preserveAlphaLoc) gl.uniform1i(preserveAlphaLoc, 1);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       this.swapOilTextures();
     }
@@ -495,6 +498,7 @@ export default class OilLayer extends FluidLayer {
     gl.uniform1i(gl.getUniformLocation(sim.overflowProgram, 'u_color_texture'), 0);
     gl.uniform2f(gl.getUniformLocation(sim.overflowProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
     gl.uniform1f(gl.getUniformLocation(sim.overflowProgram, 'u_strength'), strength);
+    gl.uniform1i(gl.getUniformLocation(sim.overflowProgram, 'u_isOil'), 1); // Preserve alpha thickness
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     this.swapOilTextures();

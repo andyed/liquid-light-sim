@@ -25,7 +25,7 @@ export default class Simulation {
         // Physics parameters - based on real fluid properties
         this.viscosity = 0.03;  // Lower viscosity so momentum lingers longer
         this.diffusionRate = 0.0;  // Disable diffusion (was causing fading)
-        this.oilSmoothingRate = 0.0015; // Oil-only smoothing (independent of ink diffusion)
+        this.oilSmoothingRate = 0.0; // Oil-only smoothing DISABLED - was dissipating thickness
         this.spreadStrength = 0.0;  // Concentration pressure (removed - not real physics)
         this.rotationAmount = 0.0;  // Effective rotation force (base + delta)
         this.rotationBase = 0.0;    // Button/toggle driven rotation
@@ -42,10 +42,10 @@ export default class Simulation {
         this.overflowLower = 0.80; // target lower bound
         this.overflowUpper = 0.90; // trigger threshold
         
-        // Oil occupancy / overflow control (looser thresholds)
+        // Oil occupancy / overflow control (MUST be higher than water to persist longer)
         this.oilOccupancyPercent = 0.0; // 0..1 fraction of oil-covered pixels
-        this.oilOverflowLower = 0.70; // target lower bound (looser than ink)
-        this.oilOverflowUpper = 0.85; // trigger threshold (looser than ink)
+        this.oilOverflowLower = 0.80; // target lower bound
+        this.oilOverflowUpper = 0.95; // trigger threshold (HIGHER than water's 0.90 so oil persists longer)
         
         // Central spiral force accumulation
         this.centralSpiralPower = 0.0; // 0..1, builds up with sustained rotation
