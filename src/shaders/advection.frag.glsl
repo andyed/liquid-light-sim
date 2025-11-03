@@ -52,7 +52,22 @@ void main() {
     
     // Oil uses pure semi-Lagrangian for maximum stability (no MacCormack)
     if (u_isOil) {
-        outColor = forward;
+        // Sharpen the forward advection to reduce dissipation
+        vec2 texel = 1.0 / vec2(textureSize(u_color_texture, 0));
+        vec4 n0 = texture(u_color_texture, clampToCircle(coord_forward + vec2(-texel.x, -texel.y)));
+        vec4 n1 = texture(u_color_texture, clampToCircle(coord_forward + vec2(0.0, -texel.y)));
+        vec4 n2 = texture(u_color_texture, clampToCircle(coord_forward + vec2(texel.x, -texel.y)));
+        vec4 n3 = texture(u_color_texture, clampToCircle(coord_forward + vec2(-texel.x, 0.0)));
+        vec4 n4 = forward;
+        vec4 n5 = texture(u_color_texture, clampToCircle(coord_forward + vec2(texel.x, 0.0)));
+        vec4 n6 = texture(u_color_texture, clampToCircle(coord_forward + vec2(-texel.x, texel.y)));
+        vec4 n7 = texture(u_color_texture, clampToCircle(coord_forward + vec2(0.0, texel.y)));
+        vec4 n8 = texture(u_color_texture, clampToCircle(coord_forward + vec2(texel.x, texel.y)));
+        
+        vec4 minVal = min(min(min(n0, n1), min(n2, n3)), min(min(n4, n5), min(n6, min(n7, n8))));
+        vec4 maxVal = max(max(max(n0, n1), max(n2, n3)), max(max(n4, n5), max(n6, max(n7, n8))));
+
+        outColor = mix(forward, clamp(forward, minVal, maxVal), 0.5);
         outColor.rgb = clamp(outColor.rgb, vec3(0.0), vec3(1.0));
         outColor.a = clamp(outColor.a, 0.0, 1.0);
         return;
