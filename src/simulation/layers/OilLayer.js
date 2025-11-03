@@ -132,28 +132,7 @@ export default class OilLayer extends FluidLayer {
     // Ensure oil passes render at full canvas size (avoid stale viewport from other stages)
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
 
-    // STEP 1: Advect oil velocity by itself (self-advection for momentum)
-    // gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
-    // const posVel = gl.getAttribLocation(sim.advectionProgram, 'a_position');
-    // gl.enableVertexAttribArray(posVel);
-    // gl.vertexAttribPointer(posVel, 2, gl.FLOAT, false, 0, 0);
-    //
-    // gl.activeTexture(gl.TEXTURE0);
-    // gl.bindTexture(gl.TEXTURE_2D, this.oilVelocityTexture1);
-    // gl.uniform1i(gl.getUniformLocation(sim.advectionProgram, 'u_color_texture'), 0);
-    //
-    // gl.activeTexture(gl.TEXTURE1);
-    // gl.bindTexture(gl.TEXTURE_2D, this.oilVelocityTexture1); // advect by itself
-    // gl.uniform1i(gl.getUniformLocation(sim.advectionProgram, 'u_velocity_texture'), 1);
-    //
-    // gl.uniform1f(gl.getUniformLocation(sim.advectionProgram, 'u_dt'), dt);
-    // gl.uniform2f(gl.getUniformLocation(sim.advectionProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
-    // gl.uniform1i(gl.getUniformLocation(sim.advectionProgram, 'u_isVelocity'), 1); // velocity advection (semi-Lagrangian only)
-    // 
-    // gl.drawArrays(gl.TRIANGLES, 0, 6);
-    // this.swapOilVelocityTextures();
-
-    // STEP 2: Apply coupling from water velocity
+    // STEP 1: Apply coupling from water velocity
     gl.useProgram(sim.oilCouplingProgram);
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilVelocityFBO);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilVelocityTexture2, 0);
@@ -198,24 +177,30 @@ export default class OilLayer extends FluidLayer {
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     this.swapOilVelocityTextures();
 
-    // DEBUG: force oil velocity = water velocity for one frame
-    if (sim.debugCopyWaterToOil && sim.copyVelocityProgram) {
-      gl.useProgram(sim.copyVelocityProgram);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilVelocityFBO);
-      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilVelocityTexture2, 0);
+    // STEP 2: Advect oil velocity by itself (self-advection for momentum)
+    gl.useProgram(sim.advectionProgram);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilVelocityFBO);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilVelocityTexture2, 0);
 
-      gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
-      const posCopy = gl.getAttribLocation(sim.copyVelocityProgram, 'a_position');
-      gl.enableVertexAttribArray(posCopy);
-      gl.vertexAttribPointer(posCopy, 2, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
+    const posVel = gl.getAttribLocation(sim.advectionProgram, 'a_position');
+    gl.enableVertexAttribArray(posVel);
+    gl.vertexAttribPointer(posVel, 2, gl.FLOAT, false, 0, 0);
 
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, sim.velocityTexture1);
-      gl.uniform1i(gl.getUniformLocation(sim.copyVelocityProgram, 'u_src'), 0);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.oilVelocityTexture1);
+    gl.uniform1i(gl.getUniformLocation(sim.advectionProgram, 'u_color_texture'), 0);
 
-      gl.drawArrays(gl.TRIANGLES, 0, 6);
-      this.swapOilVelocityTextures();
-    }
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, this.oilVelocityTexture1); // advect by itself
+    gl.uniform1i(gl.getUniformLocation(sim.advectionProgram, 'u_velocity_texture'), 1);
+
+    gl.uniform1f(gl.getUniformLocation(sim.advectionProgram, 'u_dt'), dt);
+    gl.uniform2f(gl.getUniformLocation(sim.advectionProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+    gl.uniform1i(gl.getUniformLocation(sim.advectionProgram, 'u_isVelocity'), 1); // velocity advection (semi-Lagrangian only)
+    
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    this.swapOilVelocityTextures();
 
     // STEP 3: Apply oil viscosity (high viscosity = slow, smooth flow)
     // TEMPORARILY DISABLED - viscosity was killing all velocity
@@ -244,10 +229,9 @@ export default class OilLayer extends FluidLayer {
     // }
 
     // STEP 3.5: Apply surface tension force to velocity (creates blobby cohesion)
-    // TEMPORARILY DISABLED to test if it's preventing motion
-    // if (sim.surfaceTension > 0.0) {
-    //     this.applySurfaceTensionForce(dt);
-    // }
+    if (sim.surfaceTension > 0.0) {
+        this.applySurfaceTensionForce(dt);
+    }
 
     // STEP 4: Advect oil thickness by oil velocity
     gl.useProgram(sim.advectionProgram);
@@ -265,7 +249,8 @@ export default class OilLayer extends FluidLayer {
 
     gl.activeTexture(gl.TEXTURE1);
     // Use oil velocity (which should have water's velocity from coupling)
-    gl.bindTexture(gl.TEXTURE_2D, this.oilVelocityTexture1);
+    const velocityTexture = sim.debugAdvectOilWithWaterVelocity ? sim.velocityTexture1 : this.oilVelocityTexture1;
+    gl.bindTexture(gl.TEXTURE_2D, velocityTexture);
     gl.uniform1i(gl.getUniformLocation(sim.advectionProgram, 'u_velocity_texture'), 1);
 
     gl.uniform1f(gl.getUniformLocation(sim.advectionProgram, 'u_dt'), dt);

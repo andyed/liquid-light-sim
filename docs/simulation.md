@@ -189,8 +189,8 @@ The simulation now includes a separate oil layer, which is rendered on top of th
 - **Curvature texture:** `curvatureTexture` RGBA8 (stores the Laplacian of the oil thickness) with `curvatureFBO`
 
 ### Oil Layer Pipeline (8 steps per frame)
-1. **Advect oil velocity by itself** (semi-Lagrangian, stable)
-2. **Apply water coupling** (`oil-coupling.frag.glsl`) – blends water velocity into oil velocity
+1. **Apply water coupling** (`oil-coupling.frag.glsl`) – blends water velocity into oil velocity
+2. **Advect oil velocity by itself** (semi-Lagrangian, stable)
 3. **Apply oil viscosity** (Jacobi solver on velocity)
 4. **Advect oil thickness by oil velocity** (MacCormack 2nd-order)
 5. **Apply self-attraction for cohesion** (`oil-attraction.frag.glsl`)

@@ -17,6 +17,25 @@ uniform float u_tint_strength;     // 0..1 how much oil color tints the scene un
 // Thickness is stored in alpha channel of oil texture
 float thickness(vec4 o) { return o.a; }
 
+// Circular container boundary
+const vec2 center = vec2(0.5, 0.5);
+const float containerRadius = 0.48;
+
+// Clamp coordinate to circular boundary
+vec2 clampToCircle(vec2 coord, vec2 resolution) {
+    float aspect = resolution.x / max(resolution.y, 1.0);
+    vec2 r = coord - center;
+    vec2 r_as = vec2(r.x * aspect, r.y);
+    float d = length(r_as);
+    
+    if (d > containerRadius) {
+        vec2 r_as_clamped = (r_as / max(d, 1e-6)) * containerRadius;
+        vec2 r_uv_clamped = vec2(r_as_clamped.x / max(aspect, 1e-6), r_as_clamped.y);
+        return center + r_uv_clamped;
+    }
+    return coord;
+}
+
 void main() {
     vec2 texel = 1.0 / max(u_resolution, vec2(1.0));
 
@@ -34,7 +53,8 @@ void main() {
 
     // Refraction offset: bend toward normal (negative gradient)
     vec2 offset = -normalize(grad + 1e-6) * (u_refract_strength * th);
-    vec3 refracted = texture(u_scene, clamp(v_texCoord + offset, 0.0, 1.0)).rgb;
+    vec2 refractCoord = clampToCircle(v_texCoord + offset, u_resolution);
+    vec3 refracted = texture(u_scene, refractCoord).rgb;
 
     // Fresnel-ish highlight using view-normal alignment proxy: gradient magnitude
     float g = length(grad);
@@ -51,8 +71,8 @@ void main() {
     vec3 baseOccluded = mix(base, base * (1.0 - u_occlusion), a);
     // Then refract and blend oil over the occluded base
     vec3 color = mix(baseOccluded, refracted, a);
-    // Apply color tint from the oil itself - gate by thickness squared to fade in thin regions
-    float tintVisibility = (a * a) * (thinGate * thinGate); // thin oil → extremely faint tint
+    // Apply color tint from the oil itself - linear visibility for better color saturation
+    float tintVisibility = a * thinGate; // was (a*a)*(thinGate*thinGate), too weak
     color = mix(color, oilRGB, tintVisibility * clamp(u_tint_strength, 0.0, 1.0));
     // Add highlight on top
     color += highlight * a;

@@ -182,3 +182,19 @@ If oil still too dark, can adjust:
 **Oil persistence:** ✅ SOLVED  
 **Oil visibility:** ✅ FIXED  
 **Oil movement:** ✅ WORKING (ambient flow)
+
+## Update: Nov 3, 2025
+
+### Additional Rendering Fixes Applied
+
+1. **Tint Visibility Improved** (oil-composite.frag.glsl)
+   - Changed from quadratic `(a*a)*(thinGate*thinGate)` to linear `a*thinGate`
+   - Partial thickness oil (70%) now shows 28% color vs 20% before
+   - Fixes gray/desaturated centers in slow painting
+
+2. **Projection Artifacts Fixed** (oil-composite.frag.glsl)
+   - Added `clampToCircle()` for refraction sampling
+   - Prevents diagonal light beams when painting at edges
+   - Refraction offset stays within circular boundary
+
+See `docs/OIL_BOUNDARY_AND_TINT_FIX.md` for full details.

@@ -22,19 +22,12 @@ vec2 clampToCircle(vec2 coord) {
     vec2 r_as = vec2(r.x * aspect, r.y);
     float d = length(r_as);
     
-    // Smooth falloff near boundary instead of hard snap
-    float softEdge = 0.015; // blend zone width (balance smoothness vs accumulation)
-    if (d > containerRadius - softEdge) {
-        float overshoot = d - (containerRadius - softEdge);
-        float blend = smoothstep(0.0, softEdge, overshoot);
-        
-        // Target: clamped position at boundary
+    // Hard clamp at boundary - no blending to prevent oil loss at edges
+    if (d > containerRadius) {
+        // Clamp to exact boundary position
         vec2 r_as_clamped = (r_as / max(d, 1e-6)) * containerRadius;
         vec2 r_uv_clamped = vec2(r_as_clamped.x / max(aspect, 1e-6), r_as_clamped.y);
-        vec2 target = center + r_uv_clamped;
-        
-        // Smooth blend toward boundary
-        return mix(coord, target, blend);
+        return center + r_uv_clamped;
     }
     return coord;
 }

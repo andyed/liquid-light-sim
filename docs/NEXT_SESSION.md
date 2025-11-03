@@ -1,15 +1,18 @@
 # Next Session: Polish & Advanced Features
 
-## Current State (After This Commit)
+## Current State (Nov 3, 2025)
 
 ✅ **Oil moves with water** - coupling works perfectly  
 ✅ **Ambient flow** - gentle rotation (0.12) provides constant motion
 ✅ **Oil persistence** - disabled smoothing, fixed shaders, proper thresholds
+✅ **Boundary fixes** - hard clamp prevents edge dissipation
+✅ **Oil color saturation** - linear tint visibility fixes gray centers
+✅ **Projection artifacts fixed** - refraction stays within boundary
 ✅ **Ink persistence** - reduced rotation/vorticity, stays visible 10+ rotations
 ✅ **Color fidelity** - centers stay vibrant, no gray washout
 ✅ **Material-specific behavior** - syrup persists longer than oil, oil longer than alcohol
 ✅ **Multi-material works** - oil and ink coexist
-✅ **Documentation organized** - 38 files in docs/ folder
+✅ **Documentation organized** - 38+ files in docs/ folder
 
 ## Problem to Solve
 
@@ -140,11 +143,11 @@ Once diagnosis is complete:
 - Coupling (simplified, 2x boost)
 - Thickness advection
 - Oil-water interaction
+- Oil velocity advection
+- Surface tension
 
 **Disabled (for stability):**
-- Oil velocity advection
 - Viscosity
-- Surface tension
 
 **Next to re-enable (after dissolution fix):**
 - Very weak surface tension (0.00001)
@@ -171,10 +174,74 @@ Use `COMMIT_MESSAGE.txt` - documents the breakthrough!
 
 See `OIL_OVERFLOW_FIX.md` for complete details.
 
+## Latest Session Summary (Nov 3, 2025)
+
+### Problems Tackled
+1. ❌ Oil dissipating at container edges during rotation
+2. ❌ Projection artifacts when painting near edges  
+3. ❌ Gray/desaturated oil centers (slow painting)
+
+### Fixes Applied
+1. ✅ **Boundary hard clamp** - `advection.frag.glsl`
+   - Removed soft edge blending that was mixing oil with background
+   - Hard clamp to exact boundary position
+   - Prevents accelerating dissipation pattern at edges
+
+2. ✅ **Refraction boundary clamp** - `oil-composite.frag.glsl`
+   - Added `clampToCircle()` for refraction sampling
+   - Prevents diagonal projection artifacts
+   - Refraction offset stays within circular container
+
+3. ✅ **Linear tint visibility** - `oil-composite.frag.glsl`
+   - Changed from quadratic `(a*a)*(thinGate*thinGate)` to linear `a*thinGate`
+   - Partial thickness oil (70%) now shows 28% color vs 20%
+   - Fixes gray centers in slow painting
+
+### Known Remaining Issues
+⚠️ **Oil still dissipates gradually over time**
+- Not edge-related (boundary fix applied)
+- Likely numerical diffusion in advection or other pipeline step
+- Needs further investigation with diagnostic scripts
+
+⚠️ **Tint strength may need tuning**
+- Current max: 40% (`u_tint_strength = 0.4`)
+- Can increase to 0.6-0.7 for more vivid colors if needed
+
 ## Start Next Session
 
-1. ~~Create `compare-dissolution.js` diagnostic~~ ✅ Already exists
-2. ~~Run comparison test~~ → **Run in browser now**
-3. ~~Identify root cause~~ ✅ Found: overflow shader bug
-4. ~~Apply targeted fix~~ ✅ Applied
-5. **Re-test until oil persists like ink** ← YOU ARE HERE
+### Immediate Priority: Oil Dissipation Investigation
+Oil persists much longer now but still gradually dissipates. Need to identify remaining loss sources:
+
+1. **Test with diagnostics**
+   ```javascript
+   // Check thickness over time
+   fetch('debug-oil-steps.js').then(r => r.text()).then(eval)
+   ```
+
+2. **Possible causes**
+   - MacCormack advection numerical diffusion
+   - Overflow still triggering (despite higher thresholds)
+   - Some smoothing/damping we missed
+   - Need frame-by-frame pipeline inspection
+
+3. **If dissipation acceptable**
+   - Move to surface tension re-enablement
+   - Start with very low values (0.00001)
+   - Add blobby cohesion without freezing motion
+
+### Medium Priority: Visual Tuning
+- Increase `oilTintStrength` to 0.6-0.7 if colors too weak
+- Adjust `thinGate` thresholds if thin oil halos appear
+- Per-material tint strength overrides
+
+### Long-term: Re-enable Physics
+Once dissipation fully resolved:
+- Surface tension (velocity-based, very weak)
+- Viscosity (minimal, 2-3 iterations)
+- Per-pixel material properties (Phase 2)
+
+### Documentation
+✅ Created `docs/OIL_BOUNDARY_AND_TINT_FIX.md`  
+✅ Updated `README.md` with Nov 3 changes  
+✅ Updated `docs/v1.0-end-game.md` known issues  
+✅ Updated `docs/OIL_RENDERING_FIX.md` with latest fixes

@@ -1,46 +1,28 @@
-# Frozen Oil Fix - Summary (Nov 2, 2025)
+# Frozen Oil Fix - Summary (Nov 3, 2025)
 
 ## Problem
 Oil blobs had velocity in the simulation but were not visibly moving.
 
 ## Root Cause
-**Surface tension was fighting against advection** by modifying oil thickness AFTER it had been advected, effectively pulling it back to its original position each frame.
+The oil velocity pipeline was in the wrong order. The self-advection step was running *before* the water-oil coupling step. This caused the oil's velocity to be zeroed out at the beginning of each frame, as it was advecting a zero-velocity field.
 
 ## Solution
-Convert surface tension from a **thickness-modification** to a **velocity-based force** applied BEFORE advection.
+Reorder the oil velocity pipeline to run the coupling step *before* the self-advection step. This ensures that the oil has some velocity from the water before it's advected, preserving its momentum.
 
 ## Changes Made
 
-### 1. New Shader
-**File**: `src/shaders/surface-tension-force.frag.glsl`
-- Computes curvature from oil thickness
-- Creates force along thickness gradient
-- Applies force to oil velocity field
-- Supports per-pixel material properties
-
-### 2. Shader Loading
-**File**: `src/simulation.js` (line 215-219)
-- Added `surfaceTensionForceProgram` shader loading
-
-### 3. Pipeline Reorder
+### 1. Pipeline Reorder
 **File**: `src/simulation/layers/OilLayer.js`
-- **Added**: `applySurfaceTensionForce(dt)` method (line 488-529)
-- **Moved**: Surface tension force now called at line 237 (BEFORE advection)
-- **Removed**: Old `applySelfAttraction` and `applySurfaceTension` calls from pipeline
-
-### 4. Documentation
-**Files**:
-- `docs/surface-tension-fix-nov2.md` - Detailed explanation
-- `docs/v1.0-end-game.md` - Updated status to RESOLVED
+- **Moved**: The water-oil coupling step now runs before the self-advection step.
 
 ## New Pipeline Order
 
 ```
 OilLayer.update(dt):
-  1. Advect oil velocity by itself
-  2. Apply water→oil coupling
+  1. Apply water→oil coupling
+  2. Advect oil velocity by itself
   3. Apply viscosity damping
-  4. Apply surface tension FORCE to velocity ⬅️ NEW POSITION
+  4. Apply surface tension FORCE to velocity
   5. Advect oil thickness by velocity
   6. Oil smoothing (optional)
   7. Overflow control

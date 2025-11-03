@@ -15,7 +15,20 @@ A GPU-accelerated fluid simulation for VJ performance and digital art, built wit
 
 ---
 
-## What's New (Nov 2, 2025)
+## What's New (Nov 3, 2025)
+
+### 🎨 Oil Rendering & Boundary Fixes
+- **Boundary hard clamp** - No more dissipation at edges during rotation
+- **Refraction clamp** - Fixes projection artifacts when painting near edges
+- **Linear tint visibility** - Oil shows full color in centers, not just edges
+- **Gray center fix** - Slow painting now creates saturated, colored oil
+
+### 🔧 Technical Improvements
+- Hard boundary clamping prevents edge blending losses
+- Refraction sampling constrained to circular boundary
+- Tint formula changed from quadratic to linear (40% more color)
+
+## Previous Update (Nov 2, 2025)
 
 ### 🎨 Improved Persistence & Movement
 - **Ambient water flow** - Gentle rotation (0.12) mimics real liquid light shows
