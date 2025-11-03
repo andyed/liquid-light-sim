@@ -58,9 +58,8 @@ void main() {
 
     // Fresnel-ish highlight using view-normal alignment proxy: gradient magnitude
     float g = length(grad);
-    float fres = pow(clamp(g * 40.0, 0.0, 1.0), u_fresnel_power); // scale factor 40 tuned for 1080p
-    vec3 tint = mix(vec3(1.0), normalize(oilRGB + 1e-4), 0.5);
-    vec3 highlight = fres * (0.15 * tint + 0.35 * oilRGB);
+    float fres = pow(clamp(g * 20.0, 0.0, 1.0), u_fresnel_power); // scale factor 20 tuned for 1080p
+    vec3 highlight = fres * (0.1 * oilRGB + 0.1);
 
     // Alpha by thickness with thin-film suppression (ignore ultra-thin oil)
     // Lowered threshold from 0.005-0.020 to 0.001-0.01 for better visibility

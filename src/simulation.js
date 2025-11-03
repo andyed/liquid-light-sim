@@ -28,7 +28,7 @@ export default class Simulation {
         this.oilSmoothingRate = 0.0; // Oil-only smoothing DISABLED - was dissipating thickness
         this.spreadStrength = 0.0;  // Concentration pressure (removed - not real physics)
         this.rotationAmount = 0.0;  // Effective rotation force (base + delta)
-        this.rotationBase = 0.12;    // Button/toggle driven rotation (default gentle flow like real shows)
+        this.rotationBase = 0.06;    // Button/toggle driven rotation (default gentle flow like real shows)
         this.rotationDelta = 0.0;   // Transient input (keys/gestures)
         this.jetForce = {x: 0, y: 0, strength: 0};  // Jet impulse tool
         this.useMacCormack = true;  // High-fidelity advection (eliminates numerical diffusion)

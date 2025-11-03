@@ -29,7 +29,7 @@ export default class Renderer {
         this.oilFresnelPower = 3.0;
         this.oilOcclusion = 0.35; // 0..1
         this.oilAlphaGamma = 1.0; // gamma for thickness→alpha
-        this.oilTintStrength = 0.4; // 0..1, how much oil color tints scene
+        this.oilTintStrength = 0.8; // 0..1, how much oil color tints scene
         this.brightnessGain = 1.0;
 
         this.resize();
