@@ -178,6 +178,7 @@ export default class WaterLayer extends FluidLayer {
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
 
     sim.applyForces(dt);
+    sim.applyCouplingForce(dt);
 
     if (sim.agitation > 0.0) {
       this.applyAgitation(dt);

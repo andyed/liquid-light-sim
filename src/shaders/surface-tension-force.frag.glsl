@@ -57,7 +57,7 @@ void main() {
         // Curvature = laplacian / gradient magnitude
         // Positive = convex (bulging out) → pull inward
         // Negative = concave (dented in) → push outward
-        float curvature = laplacian / (gradMag + 1e-6);
+        float curvature = laplacian / (gradMag * 0.5 + 1e-6);
         
         // Force magnitude: proportional to curvature and thickness
         // Higher tension = stronger pull, like tighter rubber band

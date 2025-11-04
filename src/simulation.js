@@ -186,6 +186,11 @@ export default class Simulation {
             await loadShader('src/shaders/coupling-force.frag.glsl')
         );
 
+        this.couplingForceProgram = this.renderer.createProgram(
+            fullscreenVert,
+            await loadShader('src/shaders/coupling-force.frag.glsl')
+        );
+
         // Marangoni program (surface tension gradient forces at oil-water interface)
         this.marangoniProgram = this.renderer.createProgram(
             fullscreenVert,
@@ -418,6 +423,31 @@ export default class Simulation {
     }
     applyDiffusion(dt) {
         diffuseColor(this.gl, this.renderer, this.diffusionProgram, this, dt);
+    }
+    applyCouplingForce(dt) {
+        const gl = this.gl;
+        gl.useProgram(this.couplingForceProgram);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.water.velocityFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.water.velocityTexture2, 0);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.renderer.quadBuffer);
+        const positionAttrib = gl.getAttribLocation(this.couplingForceProgram, 'a_position');
+        gl.enableVertexAttribArray(positionAttrib);
+        gl.vertexAttribPointer(positionAttrib, 2, gl.FLOAT, false, 0, 0);
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.water.velocityTexture1);
+        gl.uniform1i(gl.getUniformLocation(this.couplingForceProgram, 'u_waterVelocity'), 0);
+
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, this.oil.oilTexture1);
+        gl.uniform1i(gl.getUniformLocation(this.couplingForceProgram, 'u_oilThickness'), 1);
+
+        gl.uniform1f(gl.getUniformLocation(this.couplingForceProgram, 'u_couplingStrength'), this.couplingStrength);
+        gl.uniform2f(gl.getUniformLocation(this.couplingForceProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        this.water.swapVelocityTextures();
     }
 
     update(deltaTime) {
