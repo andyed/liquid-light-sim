@@ -33,17 +33,18 @@ void main() {
 
     blurred_oil /= total_weight;
 
-    vec2 center_of_mass = vec2(0.5, 0.5); // for now, just use the center of the screen
-    vec2 dir = center_of_mass - v_texCoord;
-    float dist = length(dir);
+    // Calculate the gradient of the blurred oil thickness
+    float blurred_thL = texture(u_oilTexture, v_texCoord + vec2(-texel.x, 0.0)).a;
+    float blurred_thR = texture(u_oilTexture, v_texCoord + vec2(texel.x, 0.0)).a;
+    float blurred_thD = texture(u_oilTexture, v_texCoord + vec2(0.0, -texel.y)).a;
+    float blurred_thU = texture(u_oilTexture, v_texCoord + vec2(0.0, texel.y)).a;
 
-    if (dist > 0.0) {
-        dir /= dist;
-    }
+    vec2 grad = vec2(blurred_thR - blurred_thL, blurred_thU - blurred_thD) * 0.5;
 
-    float force = u_attractionStrength * (1.0 - dist);
+    // Apply a force in the direction of the gradient
+    vec2 force = normalize(grad) * u_attractionStrength;
 
-    blurred_oil.a += force;
+    blurred_oil.a += length(force);
 
     fragColor = blurred_oil;
 }
