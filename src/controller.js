@@ -382,7 +382,7 @@ export default class Controller {
         
         this.rotationButton.addEventListener('click', () => {
             // Reduced from 1.2 to 0.3 (75% reduction) to prevent ink disappearing in <3 rotations
-            const ROTATION_FORCE = 0.15;
+            const ROTATION_FORCE = 0.075;
             const AMBIENT_FLOW = 0.12;
             
             if (this.simulation.rotationBase < ROTATION_FORCE) {

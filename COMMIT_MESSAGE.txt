@@ -1,50 +1,15 @@
-Fix oil/ink dissipation and improve rendering
+feat: Implement two-way coupling and improve oil blob curvature
 
-Major improvements to oil and ink persistence:
+This commit introduces two-way coupling between oil and water, allowing oil to affect water movement, and further refines oil blob aesthetics.
 
-Oil Dissipation Fixes:
-- Disable oil smoothing (0.0015 → 0.0) - stops per-frame loss
-- Fix overflow shader to preserve alpha (u_isOil uniform)
-- Fix diffusion shader to preserve alpha (u_preserveAlpha uniform)  
-- Increase oil splat strength (1.0 → 2.5)
-- Clean advection shader (remove rim absorption code)
-
-Ink/Water Improvements:
-- Add gentle ambient rotation (0.12) for realistic flow
-- Reduce rotation button force 75% (1.2 → 0.3)
-- Reduce vorticity 38% (0.4 → 0.25) - less shredding
-- Lower absorption (3.0 → 1.5) - vibrant ink centers
-
-Oil Rendering:
-- Lower absorption for all materials (50% avg reduction)
-- Lower occlusion (0.05-0.20 vs 0.15-0.70) - more visible
-- Material-specific settings preserved
-
-Housekeeping:
-- Move 17 .md files to docs/ folder
-- Create diagnostic test scripts
-- Add debug logging to OilLayer (can be removed later)
-
-Files Modified:
-- src/simulation.js
-- src/controller.js  
-- src/renderer.js
-- src/shaders/overflow.frag.glsl
-- src/shaders/diffusion.frag.glsl
-- src/shaders/advection.frag.glsl
-- src/simulation/layers/OilLayer.js
-- src/simulation/layers/WaterLayer.js
-- src/simulation/kernels/diffusion.js
-
-Results:
-- Ink: <3 rotations → ~10 rotations (3x improvement)
-- Ink centers: vibrant colors (not gray)
-- Oil: <5 seconds → ~15 seconds (3x improvement)
-- Ambient flow: constant gentle motion
-- Rotation: 75% gentler
-
-Known Issues:
-- Oil still dissipates in ~15s (likely boundary/edge interaction)
-- Oil color weak (occlusion/tint balance needs tuning)
-
-See docs/COMMIT_SUMMARY_NOV2.md for full details.
+- **Two-Way Coupling**:
+    - Implemented a new `coupling-force.frag.glsl` shader to calculate the force exerted by oil on water.
+    - Integrated this force into the `Simulation` class with a new `applyCouplingForce()` method.
+    - Applied the coupling force within `WaterLayer.js` to update water velocity based on oil presence.
+- **Oil Blob Curvature**:
+    - Modified `surface-tension-force.frag.glsl` to adjust the curvature calculation, aiming for more pronounced and aesthetically pleasing oil blob shapes.
+- **Documentation**:
+    - Updated `docs/v1.0-end-game.md` to reflect the "Two-Way Coupling" as "In Progress" and added "Oil Attraction" as a future enhancement.
+- **Advection Refinements**:
+    - Reverted ink advection in `advection.frag.glsl` to the semi-Lagrangian method with a sharpness filter to ensure better conservation.
+    - Increased the sharpness of oil advection in `advection.frag.glsl` to reduce dissipation at blob edges.
