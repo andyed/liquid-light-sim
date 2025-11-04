@@ -89,7 +89,7 @@ export default class Simulation {
         this.surfaceTension = 0.1; // Surface tension for oil
         this.surfaceTensionIterations = 0; // Iterations for two-pass surface tension
         this.oilAttractionStrength = 0.0; // Strength of oil self-attraction
-        this.dissipationStrength = 0.1; // Strength of thickness-based dissipation
+        this.dissipationStrength = 0.02; // Strength of thickness-based dissipation
         this.debugCopyWaterToOil = false; // Debug: force oil velocity = water velocity
         this.debugAdvectOilWithWaterVelocity = true; // Debug: advect oil using water velocity in advection step
         this.debugOffsetOilOnce = false; // Debug: perform a one-frame offset copy of oil texture
