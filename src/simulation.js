@@ -64,7 +64,7 @@ export default class Simulation {
         this.oilVorticityStrength = 0.0;  // Disable vorticity for oil (high viscosity damps swirls)
         
         // Oil → Water coupling (thickness gradient → force)
-        this.couplingStrength = 0.002;  // Strength of oil pushing water (material-specific)
+        this.couplingStrength = 0.2;  // Strength of oil pushing water (material-specific)
         
         // Testing/debugging
         this.paused = false;  // F004 requirement: pause/freeze state
