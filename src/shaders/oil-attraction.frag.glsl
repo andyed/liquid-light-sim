@@ -21,8 +21,8 @@ void main() {
     vec4 blurred_oil = vec4(0.0);
     float total_weight = 0.0;
 
-    for (int x = -1; x <= 1; x++) {
-        for (int y = -1; y <= 1; y++) {
+    for (int x = -2; x <= 2; x++) {
+        for (int y = -2; y <= 2; y++) {
             vec2 offset = vec2(float(x), float(y)) * texel;
             vec4 neighbor_oil = texture(u_oilTexture, v_texCoord + offset);
             float weight = 1.0;
