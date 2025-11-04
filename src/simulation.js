@@ -84,7 +84,7 @@ export default class Simulation {
         this.marangoniAmp = 3.0;           // gradient amplification factor
 
         this.agitation = 0.01; // Heat lamp agitation
-        this.oilDragStrength = 10.0; // Water damping inside oil (flow-around behavior)
+        this.oilDragStrength = 15.0; // Water damping inside oil (flow-around behavior)
         this.oilNormalDamp = 0.6;    // Damping of normal component at oil rim in coupling
         this.surfaceTension = 0.1; // Surface tension for oil
         this.surfaceTensionIterations = 0; // Iterations for two-pass surface tension
