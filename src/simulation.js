@@ -83,7 +83,7 @@ export default class Simulation {
         this.marangoniForceClamp = 0.08;   // per-component clamp for dv
         this.marangoniAmp = 3.0;           // gradient amplification factor
 
-        this.agitation = 0.0; // Heat lamp agitation
+        this.agitation = 0.01; // Heat lamp agitation
         this.oilDragStrength = 10.0; // Water damping inside oil (flow-around behavior)
         this.oilNormalDamp = 0.6;    // Damping of normal component at oil rim in coupling
         this.surfaceTension = 0.1; // Surface tension for oil
