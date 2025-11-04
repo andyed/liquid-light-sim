@@ -193,7 +193,7 @@ The simulation now includes a separate oil layer, which is rendered on top of th
 2. **Advect oil velocity by itself** (semi-Lagrangian, stable)
 3. **Apply oil viscosity** (Jacobi solver on velocity)
 4. **Advect oil thickness by oil velocity** (MacCormack 2nd-order)
-5. **Apply self-attraction for cohesion** (`oil-attraction.frag.glsl`)
+5. **Apply self-attraction and merge** (`oil-attraction.frag.glsl`)
 6. **Apply surface tension** (two-pass model):
     - **Pass 1: Calculate curvature** (`curvature.frag.glsl`) – calculates the Laplacian of the oil thickness
     - **Pass 2: Apply surface tension force** (`apply-surface-tension.frag.glsl`) – applies a force based on the curvature
@@ -202,13 +202,13 @@ The simulation now includes a separate oil layer, which is rendered on top of th
 
 ### Shaders
 - **`oil-coupling.frag.glsl`** – blends water velocity into oil velocity
-- **`oil-attraction.frag.glsl`** – applies a cohesion force to the oil
+- **`oil-attraction.frag.glsl`** – applies a cohesion and merge force to the oil
 - **`curvature.frag.glsl`** – calculates the Laplacian of the oil thickness
 - **`apply-surface-tension.frag.glsl`** – applies a force based on the curvature
 - **`oil-composite.frag.glsl`** – soft refraction + Fresnel highlight rendering
 
 ### Known Issues
-- **Frozen Oil:** The oil is currently frozen in place, even when the water around it is moving. This is likely due to an imbalance between the coupling, viscosity, and surface tension forces. The `couplingStrength` parameter is not having the desired effect, and the viscosity and surface tension forces are overwhelming the coupling force.
+- **Sparkly/Dusty Artifacts**: The oil can appear sparkly or dusty, especially at the edges. This is likely due to numerical instability in the simulation. We are currently experimenting with different advection and force application methods to address this issue.
 
 ## Testing / Debugging Checklist
 - Toggle post/volumetric off when validating physics (O, L).

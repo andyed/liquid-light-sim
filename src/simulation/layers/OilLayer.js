@@ -266,48 +266,9 @@ export default class OilLayer extends FluidLayer {
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     this.swapOilTextures();
 
-    // STEP 5: Optional smoothing for lens-like cohesion (oil-only smoothing)
-    if (sim.oilSmoothingRate > 0.0) {
-      gl.useProgram(sim.diffusionProgram);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
-      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);
-
-      gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
-      const pos2 = gl.getAttribLocation(sim.diffusionProgram, 'a_position');
-      gl.enableVertexAttribArray(pos2);
-      gl.vertexAttribPointer(pos2, 2, gl.FLOAT, false, 0, 0);
-
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, this.oilTexture1);
-      gl.uniform1i(gl.getUniformLocation(sim.diffusionProgram, 'u_color_texture'), 0);
-      gl.uniform1f(gl.getUniformLocation(sim.diffusionProgram, 'u_diffusion_rate'), sim.oilSmoothingRate);
-      gl.uniform2f(gl.getUniformLocation(sim.diffusionProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
-      // Preserve alpha (thickness) when smoothing oil - only diffuse RGB tint
-      const preserveAlphaLoc = gl.getUniformLocation(sim.diffusionProgram, 'u_preserveAlpha');
-      if (preserveAlphaLoc) gl.uniform1i(preserveAlphaLoc, 1);
-      gl.drawArrays(gl.TRIANGLES, 0, 6);
-      this.swapOilTextures();
-    }
-
-    // DEBUG (final): One-frame offset copy of oil texture to validate FBO write/swap
-    if (sim.debugOffsetOilOnce && sim.offsetCopyProgram) {
-      gl.useProgram(sim.offsetCopyProgram);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
-      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);
-
-      gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
-      const posOff = gl.getAttribLocation(sim.offsetCopyProgram, 'a_position');
-      gl.enableVertexAttribArray(posOff);
-      gl.vertexAttribPointer(posOff, 2, gl.FLOAT, false, 0, 0);
-
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, this.oilTexture1);
-      gl.uniform1i(gl.getUniformLocation(sim.offsetCopyProgram, 'u_src'), 0);
-      gl.uniform2f(gl.getUniformLocation(sim.offsetCopyProgram, 'u_offset'), sim.debugOffsetOilDX, sim.debugOffsetOilDY);
-
-      gl.drawArrays(gl.TRIANGLES, 0, 6);
-      this.swapOilTextures();
-      sim.debugOffsetOilOnce = false; // consume
+    // STEP 5.5: Apply self-attraction
+    if (sim.oilAttractionStrength > 0.0) {
+        sim.applyOilAttraction(dt);
     }
 
     // STEP 6: Oil overflow control (same cadence as water, independent thresholds)

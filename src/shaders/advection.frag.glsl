@@ -10,6 +10,7 @@ uniform float u_dt;
 uniform vec2 u_resolution;
 uniform int u_isVelocity; // 1 when advecting velocity, 0 when advecting color
 uniform bool u_isOil;     // true when advecting oil RGBA (preserve alpha thickness)
+uniform float u_dissipation_strength; // Strength of thickness-based dissipation
 uniform float u_oilRimAbsorptionScale; // 0 disables oil rim absorption fade
 
 // Circular container boundary (aspect-correct)
@@ -67,7 +68,9 @@ void main() {
         vec4 minVal = min(min(min(n0, n1), min(n2, n3)), min(min(n4, n5), min(n6, min(n7, n8))));
         vec4 maxVal = max(max(max(n0, n1), max(n2, n3)), max(max(n4, n5), max(n6, max(n7, n8))));
 
-        outColor = mix(forward, clamp(forward, minVal, maxVal), 0.8);
+        float thickness = texture(u_color_texture, v_texCoord).a;
+        float dissipation = u_dissipation_strength * (1.0 - thickness);
+        outColor = mix(forward, clamp(forward, minVal, maxVal), 0.8 + dissipation);
         outColor.rgb = clamp(outColor.rgb, vec3(0.0), vec3(1.0));
         outColor.a = clamp(outColor.a, 0.0, 1.0);
         return;

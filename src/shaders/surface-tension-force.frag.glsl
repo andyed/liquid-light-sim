@@ -62,7 +62,7 @@ void main() {
         // Force magnitude: proportional to curvature and thickness
         // Higher tension = stronger pull, like tighter rubber band
         // Strong multiplier needed to overcome shear forces
-        float forceMag = curvature * tension * 5000.0;
+        float forceMag = curvature * tension * 500.0;
         
         // Pull inward along normal (shrinks the blob into round shape)
         force = -normalDir * forceMag;

@@ -88,6 +88,8 @@ export default class Simulation {
         this.oilNormalDamp = 0.6;    // Damping of normal component at oil rim in coupling
         this.surfaceTension = 0.1; // Surface tension for oil
         this.surfaceTensionIterations = 0; // Iterations for two-pass surface tension
+        this.oilAttractionStrength = 0.0; // Strength of oil self-attraction
+        this.dissipationStrength = 0.1; // Strength of thickness-based dissipation
         this.debugCopyWaterToOil = false; // Debug: force oil velocity = water velocity
         this.debugAdvectOilWithWaterVelocity = true; // Debug: advect oil using water velocity in advection step
         this.debugOffsetOilOnce = false; // Debug: perform a one-frame offset copy of oil texture
@@ -195,6 +197,11 @@ export default class Simulation {
         this.marangoniProgram = this.renderer.createProgram(
             fullscreenVert,
             await loadShader('src/shaders/marangoni.frag.glsl')
+        );
+
+        this.oilAttractionProgram = this.renderer.createProgram(
+            fullscreenVert,
+            await loadShader('src/shaders/oil-attraction.frag.glsl')
         );
 
         this.oilAttractionProgram = this.renderer.createProgram(
@@ -411,6 +418,8 @@ export default class Simulation {
     }
     advectVelocity(dt) {
         advectVelocity(this.gl, this.renderer, this.advectionProgram, this, dt);
+        const gl = this.gl;
+        gl.uniform1f(gl.getUniformLocation(this.advectionProgram, 'u_dissipation_strength'), this.dissipationStrength);
     }
     applyViscosity(dt) {
         applyViscosity(this.gl, this.renderer, this.viscosityProgram, this, dt);
@@ -420,6 +429,8 @@ export default class Simulation {
     }
     advectColor(dt) {
         advectColor(this.gl, this.renderer, this.advectionProgram, this, dt);
+        const gl = this.gl;
+        gl.uniform1f(gl.getUniformLocation(this.advectionProgram, 'u_dissipation_strength'), this.dissipationStrength);
     }
     applyDiffusion(dt) {
         diffuseColor(this.gl, this.renderer, this.diffusionProgram, this, dt);
@@ -448,6 +459,28 @@ export default class Simulation {
 
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         this.water.swapVelocityTextures();
+    }
+
+    applyOilAttraction(dt) {
+        const gl = this.gl;
+        gl.useProgram(this.oilAttractionProgram);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.oil.oilFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oil.oilTexture2, 0);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.renderer.quadBuffer);
+        const positionAttrib = gl.getAttribLocation(this.oilAttractionProgram, 'a_position');
+        gl.enableVertexAttribArray(positionAttrib);
+        gl.vertexAttribPointer(positionAttrib, 2, gl.FLOAT, false, 0, 0);
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.oil.oilTexture1);
+        gl.uniform1i(gl.getUniformLocation(this.oilAttractionProgram, 'u_oilTexture'), 0);
+
+        gl.uniform1f(gl.getUniformLocation(this.oilAttractionProgram, 'u_attractionStrength'), this.oilAttractionStrength);
+        gl.uniform2f(gl.getUniformLocation(this.oilAttractionProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        this.oil.swapOilTextures();
     }
 
     update(deltaTime) {
