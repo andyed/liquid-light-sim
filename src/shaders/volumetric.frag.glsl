@@ -20,8 +20,8 @@ void main() {
     float totalConc = length(concentration.rgb);
     
     if (totalConc < 0.001) {
-        // No ink - output the light color
-        outColor = vec4(u_light_color * u_brightness_gain, 1.0);
+        // No ink - output a very dark version of the light color
+        outColor = vec4(u_light_color * u_brightness_gain * 0.1, 1.0);
         return;
     }
     
@@ -33,7 +33,7 @@ void main() {
     float opacity = 1.0 - exp(-u_absorption_coefficient * totalConc);
     
     // Ink's inherent color (always visible)
-    vec3 inkBase = inkColor * opacity * 1.5; // Boost base brightness
+    vec3 inkBase = inkColor * opacity * 2.0; // Boost base brightness
     
     // Add colored light as ADDITIVE component (doesn't change ink color)
     // Only add light if it's not black (light rotation is active)
