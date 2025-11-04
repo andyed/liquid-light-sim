@@ -67,7 +67,7 @@ void main() {
         vec4 minVal = min(min(min(n0, n1), min(n2, n3)), min(min(n4, n5), min(n6, min(n7, n8))));
         vec4 maxVal = max(max(max(n0, n1), max(n2, n3)), max(max(n4, n5), max(n6, max(n7, n8))));
 
-        outColor = mix(forward, clamp(forward, minVal, maxVal), 0.5);
+        outColor = mix(forward, clamp(forward, minVal, maxVal), 0.8);
         outColor.rgb = clamp(outColor.rgb, vec3(0.0), vec3(1.0));
         outColor.a = clamp(outColor.a, 0.0, 1.0);
         return;
@@ -99,7 +99,7 @@ void main() {
     vec4 maxVal = max(max(max(n0, n1), max(n2, n3)), max(max(n4, n5), max(n6, max(n7, n8))));
     
     // Soften limiter: allow significant overshoots to reduce banding
-    float epsilon = 0.08; // larger margin to avoid hard clamping steps
+    float epsilon = 0.08; // larger margin to allow more growth
     outColor = clamp(corrected, minVal - epsilon, maxVal + epsilon);
     
     if (u_isVelocity == 0) {
