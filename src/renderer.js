@@ -22,7 +22,7 @@ export default class Renderer {
         this.usePostProcessing = true; // Organic flow distortion (O key to toggle)
         this.distortionStrength = 0.4; // 0.0-1.0, tuned to break severe banding artifacts
         this.smoothingStrength = 0.5; // 0.0-1.0, bilateral blur strength
-        this.paletteDominance = 0.15; // 0.0-1.0, winner-takes-all strength
+        this.paletteDominance = 0.3; // 0.0-1.0, winner-takes-all strength
         this.paletteSoftPower = 3.0; // softmax power; lower = softer, higher = snappier
         // Oil composite defaults
         this.oilRefractStrength = 0.010; // screen-UV scale
