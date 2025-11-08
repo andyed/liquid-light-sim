@@ -271,6 +271,29 @@ export default class OilLayer extends FluidLayer {
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     this.swapOilTextures();
 
+    // STEP 4.5: Apply thickness smoothing (removes pixel dust, promotes droplets)
+    if (sim.oilSmoothingRate > 0.0 && sim.oilSmoothProgram) {
+        gl.useProgram(sim.oilSmoothProgram);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
+        const posSmooth = gl.getAttribLocation(sim.oilSmoothProgram, 'a_position');
+        gl.enableVertexAttribArray(posSmooth);
+        gl.vertexAttribPointer(posSmooth, 2, gl.FLOAT, false, 0, 0);
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.oilTexture1);
+        gl.uniform1i(gl.getUniformLocation(sim.oilSmoothProgram, 'u_oil_texture'), 0);
+
+        gl.uniform2f(gl.getUniformLocation(sim.oilSmoothProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+        gl.uniform1f(gl.getUniformLocation(sim.oilSmoothProgram, 'u_smoothingRate'), sim.oilSmoothingRate);
+        gl.uniform1f(gl.getUniformLocation(sim.oilSmoothProgram, 'u_thicknessThreshold'), 0.015); // Kill dust
+
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        this.swapOilTextures();
+    }
+
     // STEP 5.5: Apply self-attraction
     if (sim.oilAttractionStrength > 0.0) {
         sim.applyOilAttraction(dt);

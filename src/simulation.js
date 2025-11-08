@@ -242,6 +242,12 @@ export default class Simulation {
             await loadShader('src/shaders/copy-velocity.frag.glsl')
         );
 
+        // Oil thickness smoothing (removes pixel dust, promotes droplet formation)
+        this.oilSmoothProgram = this.renderer.createProgram(
+            fullscreenVert,
+            await loadShader('src/shaders/oil-smooth.frag.glsl')
+        );
+
         // Splat per-pixel oil material properties
         this.splatOilPropsProgram = this.renderer.createProgram(
             fullscreenVert,

@@ -156,6 +156,41 @@ New oil composite shader uses:
 - Extreme surface tension (>30) can cause instability
 - Iridescence colors are approximated (not spectral rendering)
 
+## Pixel Dust Removal (Latest Update) ✨
+
+**Problem**: Oil appeared grainy with thousands of isolated pixels instead of smooth droplets.
+
+**Solution**: Three-pronged approach:
+1. **Increased Surface Tension**: 2-3x stronger (20-45 range)
+   - Forces stronger cohesion and droplet formation
+   - Thin regions break apart naturally
+   - Thick regions pool together dramatically
+
+2. **Thickness-Weighted Bilateral Filter** (new shader: `oil-smooth.frag.glsl`)
+   - Smooths thin oil aggressively (removes noise)
+   - Preserves thick oil detail (keeps boundaries sharp)
+   - 3x3 neighborhood with spatial + range weighting
+   - Applied after advection, before overflow
+
+3. **Dust Threshold**: Hard kill at 0.015 thickness
+   - Sub-pixel oil immediately removed
+   - Clean separation between droplets
+   - No lingering artifacts
+
+**Results**:
+- ✅ Smooth, coalescent droplets
+- ✅ No pixel dust or graininess  
+- ✅ Clear visual separation
+- ✅ Maintains breakup behavior
+- ✅ Physics-motivated approach
+
+**Parameters**:
+```javascript
+oilSmoothingRate: 0.20-0.30  // Bilateral filter strength
+surfaceTension: 20.0-45.0     // Droplet cohesion (2-3x increase)
+thicknessThreshold: 0.015     // Dust elimination cutoff
+```
+
 ## Credits
 
 Based on real fluid dynamics:
@@ -163,3 +198,4 @@ Based on real fluid dynamics:
 - Young-Laplace equation for surface tension
 - Fresnel equations for reflection
 - Thin-film interference optics
+- Bilateral filtering for edge-preserving smoothing

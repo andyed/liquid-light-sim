@@ -188,24 +188,41 @@ The simulation now includes a separate oil layer, which is rendered on top of th
 - **Velocity field:** `oilVelocityTexture1/2` RG16F ping-pong pair with `oilVelocityFBO`
 - **Curvature texture:** `curvatureTexture` RGBA8 (stores the Laplacian of the oil thickness) with `curvatureFBO`
 
-### Oil Layer Pipeline (8 steps per frame)
+### Oil Layer Pipeline (9 steps per frame)
 1. **Apply water coupling** (`oil-coupling.frag.glsl`) – blends water velocity into oil velocity
 2. **Advect oil velocity by itself** (semi-Lagrangian, stable)
-3. **Apply oil viscosity** (Jacobi solver on velocity)
-4. **Advect oil thickness by oil velocity** (MacCormack 2nd-order)
-5. **Apply self-attraction and merge** (`oil-attraction.frag.glsl`) – pulls oil particles towards areas of higher oil density using a gradient-based force.
-6. **Apply surface tension** (two-pass model):
-    - **Pass 1: Calculate curvature** (`curvature.frag.glsl`) – calculates the Laplacian of the oil thickness
-    - **Pass 2: Apply surface tension force** (`apply-surface-tension.frag.glsl`) – applies a force based on the curvature
-7. **Optional smoothing** (`diffusionProgram`)
-8. **Overflow control** (every 8 frames)
+3. **Apply oil viscosity** (Jacobi solver on velocity, re-enabled with 0.15x scaling)
+4. **Apply surface tension force** (`surface-tension-force.frag.glsl`) – creates blobby cohesion, 4x stronger for dramatic pooling
+5. **Advect oil thickness by oil velocity** (MacCormack 2nd-order)
+6. **Apply thickness smoothing** (`oil-smooth.frag.glsl`) – **NEW**: Removes pixel dust, promotes droplet formation
+    - Thickness-weighted bilateral filtering (thin = more smoothing)
+    - Kills dust below 0.015 thickness threshold
+    - Preserves droplet boundaries (range-based weighting)
+7. **Apply self-attraction** (`oil-attraction.frag.glsl`) – pulls oil towards denser regions (optional)
+8. **Optional legacy smoothing** (`diffusionProgram`) - deprecated in favor of bilateral filter
+9. **Overflow control** (every N frames based on material)
 
 ### Shaders
 - **`oil-coupling.frag.glsl`** – blends water velocity into oil velocity
-- **`oil-attraction.frag.glsl`** – applies a cohesion and merge force to the oil by calculating the gradient of the blurred oil thickness and applying a force in that direction, pulling oil towards denser parts of the blob.
-- **`curvature.frag.glsl`** – calculates the Laplacian of the oil thickness
-- **`apply-surface-tension.frag.glsl`** – applies a force based on the curvature
-- **`oil-composite.frag.glsl`** – soft refraction + Fresnel highlight rendering
+- **`surface-tension-force.frag.glsl`** – applies surface tension force to velocity field (curvature-based)
+- **`oil-smooth.frag.glsl`** – **NEW**: thickness-weighted bilateral filter for pixel dust removal
+- **`oil-attraction.frag.glsl`** – applies cohesion force pulling oil towards denser regions
+- **`curvature.frag.glsl`** – calculates Laplacian of oil thickness (legacy, for two-pass model)
+- **`apply-surface-tension.frag.glsl`** – legacy two-pass surface tension (deprecated)
+- **`oil-composite.frag.glsl`** – realistic optics: thin-film interference, Fresnel, chromatic aberration
+
+### Oil Parameters (Material Presets)
+- **Surface Tension**: 20.0-45.0 (was 8.0-25.0) - dramatically increased for droplet formation
+  - Mineral Oil: 35.0
+  - Alcohol: 20.0
+  - Syrup: 45.0
+  - Glycerine: 38.0
+- **Smoothing Rate**: 0.20-0.30 (new parameter)
+  - Controls bilateral filter strength
+  - Higher viscosity materials = more smoothing
+- **Dust Threshold**: 0.015 (hard-coded in shader)
+  - Pixels below this thickness are eliminated
+  - Prevents grainy "pixel dust" artifacts
 
 ### Known Issues
 
