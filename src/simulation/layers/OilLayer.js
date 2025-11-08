@@ -321,12 +321,40 @@ export default class OilLayer extends FluidLayer {
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         this.swapOilTextures();
         
-        // SECOND PASS (even more aggressive)
+        // SECOND PASS (aggressive consolidation - snap particles together into blobs)
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, this.oilTexture1);
         gl.uniform1i(gl.getUniformLocation(sim.oilSmoothProgram, 'u_oil_texture'), 0);
+        
+        // Much more aggressive: higher threshold and stronger pull
+        gl.uniform1f(gl.getUniformLocation(sim.oilSmoothProgram, 'u_smoothingRate'), sim.oilSmoothingRate * 1.5);
+        gl.uniform1f(gl.getUniformLocation(sim.oilSmoothProgram, 'u_thicknessThreshold'), 0.10); // Kill even more dust
+        
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        this.swapOilTextures();
+    }
+
+    // STEP 5: Apply cohesion force (snap thin particles to thick blobs, prevent dust)
+    if (sim.oilCohesionStrength > 0.0 && sim.oilCohesionProgram) {
+        gl.useProgram(sim.oilCohesionProgram);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
+        const posCohesion = gl.getAttribLocation(sim.oilCohesionProgram, 'a_position');
+        gl.enableVertexAttribArray(posCohesion);
+        gl.vertexAttribPointer(posCohesion, 2, gl.FLOAT, false, 0, 0);
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.oilTexture1);
+        gl.uniform1i(gl.getUniformLocation(sim.oilCohesionProgram, 'u_oil_texture'), 0);
+
+        gl.uniform2f(gl.getUniformLocation(sim.oilCohesionProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+        gl.uniform1f(gl.getUniformLocation(sim.oilCohesionProgram, 'u_cohesionStrength'), sim.oilCohesionStrength);
+        gl.uniform1f(gl.getUniformLocation(sim.oilCohesionProgram, 'u_absorptionThreshold'), sim.oilAbsorptionThreshold);
+
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         this.swapOilTextures();
     }

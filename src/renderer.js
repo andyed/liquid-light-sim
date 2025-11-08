@@ -443,7 +443,10 @@ export default class Renderer {
         gl.uniform2f(centerUniform, 0.5, 0.5);
         
         const radiusUniform = gl.getUniformLocation(this.boundaryProgram, 'u_radius');
-        gl.uniform1f(radiusUniform, 0.48);
+        // Smaller radius on mobile to prevent right-edge cropping
+        const isMobile = window.innerWidth <= 768;
+        const radius = isMobile ? 0.47 : 0.48;
+        gl.uniform1f(radiusUniform, radius);
         
         const thicknessUniform = gl.getUniformLocation(this.boundaryProgram, 'u_thickness');
         gl.uniform1f(thicknessUniform, 0.005);

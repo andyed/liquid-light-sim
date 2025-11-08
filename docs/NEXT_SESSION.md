@@ -197,51 +197,182 @@ See `OIL_OVERFLOW_FIX.md` for complete details.
    - Partial thickness oil (70%) now shows 28% color vs 20%
    - Fixes gray centers in slow painting
 
-### Known Remaining Issues
-⚠️ **Oil still dissipates gradually over time**
-- Not edge-related (boundary fix applied)
-- Likely numerical diffusion in advection or other pipeline step
-- Needs further investigation with diagnostic scripts
+## Current Status (Nov 8, 2025)
 
-⚠️ **Tint strength may need tuning**
-- Current max: 40% (`u_tint_strength = 0.4`)
-- Can increase to 0.6-0.7 for more vivid colors if needed
+### ✅ Phase 2 COMPLETE: Dual-Fluid System
+- **Layered architecture**: WaterLayer + OilLayer with independent advection
+- **Buoyancy force**: Density-based vertical motion (lighter oils rise, heavier sink)
+- **Capillary forces**: Surface tension (50-100) with curvature-based blob formation
+- **5 Material presets**: Ink, Mineral Oil, Alcohol, Syrup, Glycerine
+- **Material selector UI**: 5 circles with color memory, arc layout beside color wheel
+
+### ✅ Recent Implementations (This Session)
+1. **Cohesion Force** - Oil particles snap together into blobs
+   - `oil-cohesion.frag.glsl` shader pulls thin oil toward thick blobs
+   - Prevents dust formation at source (not just reactive cleaning)
+   - Absorption threshold: 0.08 (oil thinner than this gets absorbed)
+   - Cohesion strength: 1.5 (configurable per material)
+   - **Mental model**: After movement forces, particles snap together
+
+2. **Dynamic Lighting System** (90% complete)
+   - Plate tilt tracks container rotation (visual lean during spin)
+   - Wobble physics: damped spring returns to neutral
+   - Ready for paint/jet impact wobbles
+   - **Still needs**: Volumetric shader integration, wobble triggers
+
+3. **Aggressive Dust Removal**
+   - Two-pass smoothing with escalating thresholds (0.06 → 0.10)
+   - Second pass 1.5× stronger for blob consolidation
+   - Syrup persistence boosted: higher overflow thresholds, slower checks
+
+4. **Mobile UX**
+   - Container radius reduced to 0.47 on mobile (prevents right-edge cropping)
+
+---
 
 ## Start Next Session
 
-### Immediate Priority: Oil Dissipation Investigation
-Oil persists much longer now but still gradually dissipates. Need to identify remaining loss sources:
+### Immediate Priority: Complete Dynamic Lighting 🌟
 
-1. **Test with diagnostics**
+**What's Done:**
+- ✅ Light tilt system (tracks rotation)
+- ✅ Wobble physics (damped spring)
+- ✅ `updateLightTilt()` method
+
+**Still Needed:**
+
+1. **Wire up wobble triggers in controller**
    ```javascript
-   // Check thickness over time
-   fetch('debug-oil-steps.js').then(r => r.text()).then(eval)
+   // In onMouseMove (painting)
+   if (this.isMouseDown && !this.isRightMouseDown) {
+       const forceX = this.mouseVelocityX * 10;
+       const forceY = this.mouseVelocityY * 10;
+       this.simulation.addWobble(forceX, forceY);
+   }
+   
+   // In jet burst logic
+   this.simulation.addWobble(vx * 50, vy * 50);
    ```
 
-2. **Possible causes**
-   - MacCormack advection numerical diffusion
-   - Overflow still triggering (despite higher thresholds)
-   - Some smoothing/damping we missed
-   - Need frame-by-frame pipeline inspection
+2. **Update volumetric.frag.glsl shader**
+   ```glsl
+   uniform float u_lightTiltX;  // -0.5 to 0.5
+   uniform float u_lightTiltY;
+   
+   // In main():
+   vec3 lightDir = normalize(vec3(
+       u_lightTiltX,
+       u_lightTiltY,
+       -1.0  // Base downward direction
+   ));
+   ```
 
-3. **If dissipation acceptable**
-   - Move to surface tension re-enablement
-   - Start with very low values (0.00001)
-   - Add blobby cohesion without freezing motion
+3. **Pass uniforms in renderer**
+   ```javascript
+   // In volumetric rendering
+   gl.uniform1f(lightTiltXLoc, this.simulation.lightTiltX);
+   gl.uniform1f(lightTiltYLoc, this.simulation.lightTiltY);
+   ```
 
-### Medium Priority: Visual Tuning
-- Increase `oilTintStrength` to 0.6-0.7 if colors too weak
-- Adjust `thinGate` thresholds if thin oil halos appear
-- Per-material tint strength overrides
+**Expected Visual Impact:**
+- Rotation creates directional light sweep
+- Paint drops cause brief wobbles (light bounces)
+- Jet blasts create dramatic tilts
+- Most visible with volumetric + RGB rotation ON
 
-### Long-term: Re-enable Physics
-Once dissipation fully resolved:
-- Surface tension (velocity-based, very weak)
-- Viscosity (minimal, 2-3 iterations)
-- Per-pixel material properties (Phase 2)
+**Tuning Parameters:**
+- `lightDamping`: 0.92 (lower = settles faster)
+- `lightSpring`: 0.15 (return to neutral strength)
+- Wobble force multipliers in triggers
 
-### Documentation
-✅ Created `docs/OIL_BOUNDARY_AND_TINT_FIX.md`  
-✅ Updated `README.md` with Nov 3 changes  
-✅ Updated `docs/v1.0-end-game.md` known issues  
-✅ Updated `docs/OIL_RENDERING_FIX.md` with latest fixes
+---
+
+### Secondary: Cohesion Force Tuning
+
+**Current Values:**
+- `oilCohesionStrength`: 1.5 (pull strength toward blobs)
+- `oilAbsorptionThreshold`: 0.08 (dust elimination threshold)
+
+**Test Approach:**
+1. Drop Syrup (#4), let it spread
+2. Watch for dust formation at edges
+3. If still dusty: increase cohesion to 2.0-3.0
+4. If blobs too sticky: reduce to 1.0
+5. If dust persists: raise absorption threshold to 0.10-0.12
+
+**Per-Material Tuning:**
+Could add cohesion to material presets:
+- Syrup/Glycerine: High cohesion (2.0-3.0)
+- Mineral Oil: Medium (1.5)
+- Alcohol: Lower (1.0) - thinner, flows more
+
+---
+
+### Medium Priority: Heat Lamp Temperature Effects?
+
+**Current Implementation:**
+- Brightness gain (visual)
+- Agitation noise (creates blob motion)
+
+**Possible Enhancements:**
+1. **Temperature-based viscosity** - Hot = thinner, flows faster
+2. **Marangoni convection** - Temperature gradients drive flow
+3. **Visual heat glow** - Warmer tones in heated regions
+
+**Recommendation:** Current "hippie lamp vibes" approach is working well. Only add explicit temperature if user wants thermal convection effects for more complex patterns.
+
+---
+
+### Long-term: Phase 3 Polish
+
+**Already Complete:**
+- ✅ Material presets (5 materials)
+- ✅ Color palettes with memory
+- ✅ Material selector UI
+
+**Remaining:**
+- [ ] Performance profiles (mobile optimization?)
+- [ ] MIDI/OSC control for VJ use
+- [ ] Preset save/load system
+- [ ] Export animations/screenshots
+
+---
+
+### Known Issues to Monitor
+
+⚠️ **Blob dusting** - Cohesion force should solve this, but monitor:
+- Does cohesion create artifacts?
+- Performance cost of 7×7 neighborhood search?
+- Need third smoothing pass?
+
+⚠️ **Mobile performance**
+- Cohesion adds GPU cost (7×7 = 49 samples per pixel)
+- May need to reduce kernel size on mobile
+- Or make cohesion optional in settings
+
+⚠️ **Overflow dissipation**
+- Syrup now has very high thresholds (1.20 upper)
+- Monitor if oil accumulates excessively
+- May need separate "slow decay" vs "overflow" logic
+
+---
+
+### Testing Checklist
+
+Before next session ends:
+- [ ] Dynamic lighting wobbles on paint/jets
+- [ ] Rotation creates visible light tilt
+- [ ] Cohesion eliminates Syrup dusting
+- [ ] Mobile: container fits without cropping
+- [ ] All 5 materials feel distinct and stable
+- [ ] No performance regression from new features
+
+---
+
+### Documentation Updates Needed
+
+- [ ] Add cohesion force to `docs/simulation.md`
+- [ ] Document dynamic lighting system
+- [ ] Update Phase 2 completion notes
+- [ ] Add material selector UI to README
+- [ ] Create `LIGHTING.md` technical doc

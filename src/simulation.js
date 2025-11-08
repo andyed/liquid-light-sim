@@ -27,10 +27,20 @@ export default class Simulation {
         this.diffusionRate = 0.0;  // Disable diffusion (was causing fading)
         this.oilSmoothingRate = 0.0; // Oil-only smoothing DISABLED - was dissipating thickness
         this.spreadStrength = 0.0;  // Concentration pressure (removed - not real physics)
+        this.oilCohesionStrength = 1.5;  // How strongly thin oil is pulled toward thick blobs
+        this.oilAbsorptionThreshold = 0.08;  // Oil thinner than this gets absorbed by neighbors
         this.rotationAmount = 0.0;  // Effective rotation force (base + delta)
         this.rotationBase = 0.03;    // Button/toggle driven rotation (default gentle flow like real shows)
         this.rotationDelta = 0.0;   // Transient input (keys/gestures)
         this.jetForce = {x: 0, y: 0, strength: 0};  // Jet impulse tool
+        
+        // Dynamic lighting - plate tilt and wobble
+        this.lightTiltX = 0.0;  // -1 to 1 (left/right tilt)
+        this.lightTiltY = 0.0;  // -1 to 1 (up/down tilt)
+        this.lightVelX = 0.0;   // Wobble velocity
+        this.lightVelY = 0.0;
+        this.lightDamping = 0.92;  // Wobble damping (lower = settles faster)
+        this.lightSpring = 0.15;   // Return to neutral strength
         this.useMacCormack = true;  // High-fidelity advection (eliminates numerical diffusion)
         this.vorticityStrength = 0.25;  // Reduced further to prevent ink shredding into pixel soup
         this.boundaryMode = 1;  // 0=bounce, 1=viscous drag, 2=repulsive force
@@ -254,6 +264,12 @@ export default class Simulation {
             await loadShader('src/shaders/buoyancy.frag.glsl')
         );
 
+        // Oil cohesion force (particles snap together, prevents dusting)
+        this.oilCohesionProgram = this.renderer.createProgram(
+            fullscreenVert,
+            await loadShader('src/shaders/oil-cohesion.frag.glsl')
+        );
+
         // Splat per-pixel oil material properties
         this.splatOilPropsProgram = this.renderer.createProgram(
             fullscreenVert,
@@ -374,6 +390,37 @@ export default class Simulation {
 
     setJetForce(x, y, strength) {
         this.jetForce = {x, y, strength};
+    }
+
+    updateLightTilt(dt) {
+        // Target tilt from rotation (stronger rotation = more tilt)
+        const rotationTilt = Math.sign(this.rotationAmount) * Math.min(0.3, Math.abs(this.rotationAmount) * 5.0);
+        
+        // Spring force toward rotation-driven tilt
+        const targetX = rotationTilt;
+        const targetY = 0.0;
+        
+        // Spring physics
+        this.lightVelX += (targetX - this.lightTiltX) * this.lightSpring;
+        this.lightVelY += (targetY - this.lightTiltY) * this.lightSpring;
+        
+        // Damping
+        this.lightVelX *= this.lightDamping;
+        this.lightVelY *= this.lightDamping;
+        
+        // Update position
+        this.lightTiltX += this.lightVelX * dt * 60;
+        this.lightTiltY += this.lightVelY * dt * 60;
+        
+        // Clamp to prevent extreme tilts
+        this.lightTiltX = Math.max(-0.5, Math.min(0.5, this.lightTiltX));
+        this.lightTiltY = Math.max(-0.5, Math.min(0.5, this.lightTiltY));
+    }
+
+    addWobble(forceX, forceY) {
+        // Paint/jet impacts add velocity to wobble
+        this.lightVelX += forceX * 0.05;
+        this.lightVelY += forceY * 0.05;
     }
 
     splatVelocity(x, y, vx, vy, radius = 0.05) {
@@ -503,6 +550,10 @@ export default class Simulation {
         gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
         // Combine rotation sources
         this.rotationAmount = this.rotationBase + this.rotationDelta;
+        
+        // Update dynamic lighting (plate tilt from rotation + wobble)
+        this.updateLightTilt(dt);
+        
         if (this.water) this.water.update(dt);
         // Run oil after water velocity update (no coupling yet)
         if (this.useOil && this.oil) this.oil.update(dt);
