@@ -39,12 +39,21 @@ export default class Controller {
         this.currentColor = { r: 0.0, g: 0.5, b: 1.0 };  // Default: bright blue
         this.materials = [
             { name: 'Ink', palette: ['#0080FF', '#00D4FF', '#00FFB4', '#FFE000', '#FF00FF', '#FFFFFF', '#4169E1', '#00CED1', '#7FFF00'], preset: { agitation: 0.0, marangoniStrength: 0.4, marangoniKth: 0.6, marangoniEdgeBand: 2.5, marangoniThMin: 0.02, marangoniForceClamp: 0.10, marangoniAmp: 4.0 } },
-            { name: 'Mineral Oil', palette: ['#FFF3C4', '#FFD166', '#F6BD60', '#F7EDE2', '#F28482'], preset: { oilSmoothingRate: 0.75, oilViscosity: 0.25, oilViscosityIterations: 30, couplingStrength: 0.35, absorption: 1.8, paletteDom: 0.12, refractStrength: 0.025, fresnelPower: 2.5, oilOcclusion: 0.25, oilAlphaGamma: 1.20, oilTintStrength: 0.9, marangoniStrength: 1.2, marangoniKth: 1.5, marangoniEdgeBand: 3.0, marangoniThMin: 0.01, marangoniForceClamp: 0.15, marangoniAmp: 5.0, oilAttractionStrength: 0.0, surfaceTension: 75.0, oilOverflowUpper: 0.98, oilOverflowLower: 0.92, agitation: 0.005 } },
-            { name: 'Alcohol', palette: ['#BDE0FE', '#A2D2FF', '#CDB4DB', '#FFC8DD', '#FFAFCC'], preset: { oilSmoothingRate: 0.70, oilViscosity: 0.15, oilViscosityIterations: 20, couplingStrength: 0.30, absorption: 1.5, paletteDom: 0.20, refractStrength: 0.018, fresnelPower: 2.2, oilOcclusion: 0.15, oilAlphaGamma: 0.90, oilTintStrength: 0.9, marangoniKth: 0.4, marangoniEdgeBand: 1.5, oilAttractionStrength: 0.0, surfaceTension: 50.0, oilOverflowUpper: 0.96, oilOverflowLower: 0.88, agitation: 0.01 } },
+            { name: 'Mineral Oil', palette: ['#FFF3C4', '#FFD166', '#F6BD60', '#F7EDE2', '#F28482'], preset: { oilSmoothingRate: 0.75, oilViscosity: 0.25, oilViscosityIterations: 30, couplingStrength: 0.15, absorption: 1.8, paletteDom: 0.12, refractStrength: 0.025, fresnelPower: 2.5, oilOcclusion: 0.25, oilAlphaGamma: 1.20, oilTintStrength: 0.9, marangoniStrength: 1.2, marangoniKth: 1.5, marangoniEdgeBand: 3.0, marangoniThMin: 0.01, marangoniForceClamp: 0.15, marangoniAmp: 5.0, oilAttractionStrength: 0.0, surfaceTension: 75.0, oilOverflowUpper: 0.98, oilOverflowLower: 0.92, agitation: 0.005 } },
+            { name: 'Alcohol', palette: ['#BDE0FE', '#A2D2FF', '#CDB4DB', '#FFC8DD', '#FFAFCC'], preset: { oilSmoothingRate: 0.70, oilViscosity: 0.15, oilViscosityIterations: 20, couplingStrength: 0.12, absorption: 1.5, paletteDom: 0.20, refractStrength: 0.018, fresnelPower: 2.2, oilOcclusion: 0.15, oilAlphaGamma: 0.90, oilTintStrength: 0.9, marangoniKth: 0.4, marangoniEdgeBand: 1.5, oilAttractionStrength: 0.0, surfaceTension: 50.0, oilOverflowUpper: 0.96, oilOverflowLower: 0.88, agitation: 0.01 } },
             { name: 'Syrup', palette: ['#8B4513', '#D2691E', '#C97A36', '#F4A261', '#E76F51'], preset: { oilSmoothingRate: 0.80, oilViscosity: 0.6, oilViscosityIterations: 30, couplingStrength: 0.35, absorption: 2.0, paletteDom: 0.12, refractStrength: 0.030, fresnelPower: 2.8, oilOcclusion: 0.30, oilAlphaGamma: 1.20, oilTintStrength: 0.9, marangoniKth: 1.0, marangoniEdgeBand: 2.5, oilAttractionStrength: 0.0, surfaceTension: 90.0, oilOverflowUpper: 0.99, oilOverflowLower: 0.90, occupancyEveryN: 180, agitation: 0.002 } },
             { name: 'Glycerine', palette: ['#E0FBFC', '#98C1D9', '#3D5A80', '#EE6C4D', '#293241'], preset: { oilSmoothingRate: 0.75, oilViscosity: 0.4, oilViscosityIterations: 30, couplingStrength: 0.40, absorption: 2.2, paletteDom: 0.10, refractStrength: 0.028, fresnelPower: 2.6, oilOcclusion: 0.25, oilAlphaGamma: 1.30, oilTintStrength: 0.9, marangoniKth: 1.2, marangoniEdgeBand: 3.0, oilAttractionStrength: 0.0, surfaceTension: 80.0, oilOverflowUpper: 0.98, oilOverflowLower: 0.90, occupancyEveryN: 150, agitation: 0.001 } }
         ];
         this.currentMaterialIndex = 0;
+        
+        // Track last color used for each material (for UI memory)
+        this.materialColors = [
+            { r: 0.0, g: 0.5, b: 1.0 },  // Ink - default blue
+            { r: 1.0, g: 0.82, b: 0.4 }, // Mineral Oil - gold
+            { r: 0.74, g: 0.82, b: 1.0 }, // Alcohol - light blue
+            { r: 0.82, g: 0.48, b: 0.21 }, // Syrup - brown
+            { r: 0.88, g: 0.76, b: 0.99 }  // Glycerine - pale purple
+        ];
         
         // Track mouse position for velocity calculation
         this.lastMouseX = 0;
@@ -104,6 +113,9 @@ export default class Controller {
         
         // Create color wheel
         this.createColorWheel();
+        
+        // Create material selector circles
+        this.createMaterialSelectors();
 
         this.createMarangoniHUD();
 
@@ -112,6 +124,13 @@ export default class Controller {
 
     setMaterial(index, autoPick = true) {
         const prevMaterialIndex = this.currentMaterialIndex;
+        
+        // Save current color before switching
+        if (prevMaterialIndex !== index) {
+            this.materialColors[prevMaterialIndex] = { ...this.currentColor };
+            this.updateMaterialSelectorColor(prevMaterialIndex, this.currentColor);
+        }
+        
         const clamped = Math.max(0, Math.min(this.materials.length - 1, index));
         this.currentMaterialIndex = clamped;
 
@@ -134,6 +153,7 @@ export default class Controller {
         // Apply material preset (which includes useOil flag)
         this.applyMaterialPreset();
         this.updateMaterialReadout();
+        this.updateMaterialSelectorHighlight();
         console.log(`🧪 Material: ${this.materials[this.currentMaterialIndex].name}`);
     }
 
@@ -167,6 +187,11 @@ export default class Controller {
         const hex = mat.palette[Math.floor(Math.random() * mat.palette.length)];
         const rgb = this.hexToRgb01(hex);
         this.currentColor = this.toneColor(rgb);
+        
+        // Update material selector circle with new color
+        this.materialColors[this.currentMaterialIndex] = { ...this.currentColor };
+        this.updateMaterialSelectorColor(this.currentMaterialIndex, this.currentColor);
+        
         this.updateMaterialReadout();
         console.log(`🎨 Auto color for ${mat.name}: ${hex}`);
     }
@@ -275,6 +300,11 @@ export default class Controller {
             // Tone down saturation/value to avoid canvas washout
             const toned = this.toneColor({ r, g, b });
             this.currentColor = toned;
+            
+            // Update material selector circle with new color
+            this.materialColors[this.currentMaterialIndex] = { ...toned };
+            this.updateMaterialSelectorColor(this.currentMaterialIndex, toned);
+            
             this.updateMaterialReadout();
             console.log(`🎨 Color: hue ${Math.round(h)}°`);
         });
@@ -297,6 +327,103 @@ export default class Controller {
         `;
         this.updateMaterialReadout();
         document.body.appendChild(this.materialReadout);
+    }
+    
+    createMaterialSelectors() {
+        const isMobile = window.innerWidth <= 768;
+        const wheelSize = isMobile ? 60 : 80;
+        const wheelTop = isMobile ? 15 : 20;
+        const wheelLeft = isMobile ? 15 : 20;
+        
+        const circleSize = 24;
+        const wheelCenterX = wheelLeft + wheelSize / 2;
+        const wheelCenterY = wheelTop + wheelSize / 2;
+        
+        // Position circles on an arc to the right of the wheel
+        // Larger radius for the arc, squeezed on y-axis
+        const arcRadius = wheelSize / 2 + 32; // Slightly beyond wheel edge
+        const arcStartAngle = -50; // degrees (top-right)
+        const arcEndAngle = 50; // degrees (bottom-right)
+        const angleStep = (arcEndAngle - arcStartAngle) / 4; // 4 gaps for 5 circles
+        
+        this.materialSelectorCircles = [];
+        
+        for (let i = 0; i < 5; i++) {
+            const circle = document.createElement('div');
+            const materialNum = i + 1;
+            
+            // Calculate position on arc
+            const angle = (arcStartAngle + i * angleStep) * Math.PI / 180;
+            const x = wheelCenterX + arcRadius * Math.cos(angle);
+            const y = wheelCenterY + arcRadius * Math.sin(angle) * 0.85; // Squeeze y-axis by 15%
+            
+            const color = this.materialColors[i];
+            const rgb = `rgb(${Math.round(color.r * 255)}, ${Math.round(color.g * 255)}, ${Math.round(color.b * 255)})`;
+            
+            circle.style.cssText = `
+                position: fixed;
+                left: ${x - circleSize / 2}px;
+                top: ${y - circleSize / 2}px;
+                width: ${circleSize}px;
+                height: ${circleSize}px;
+                border-radius: 50%;
+                background: ${rgb};
+                border: 2px solid ${i === this.currentMaterialIndex ? 'white' : 'rgba(255, 255, 255, 0.4)'};
+                cursor: pointer;
+                z-index: 1000;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 9px;
+                font-weight: bold;
+                color: white;
+                text-shadow: 0 0 2px black;
+                user-select: none;
+                transition: border 0.2s, transform 0.1s;
+            `;
+            
+            circle.textContent = materialNum;
+            circle.dataset.materialIndex = i;
+            
+            circle.addEventListener('click', () => {
+                // Restore saved color for this material
+                this.currentColor = { ...this.materialColors[i] };
+                // Switch to this material
+                this.setMaterial(i, false); // Don't auto-pick from palette
+                this.updateMaterialReadout();
+                this.updateMaterialSelectorHighlight();
+                console.log(`🎨 Material ${materialNum}: ${this.materials[i].name}`);
+            });
+            
+            circle.addEventListener('mouseenter', () => {
+                if (i !== this.currentMaterialIndex) {
+                    circle.style.transform = 'scale(1.1)';
+                }
+            });
+            
+            circle.addEventListener('mouseleave', () => {
+                circle.style.transform = 'scale(1)';
+            });
+            
+            document.body.appendChild(circle);
+            this.materialSelectorCircles.push(circle);
+        }
+    }
+    
+    updateMaterialSelectorHighlight() {
+        if (!this.materialSelectorCircles) return;
+        
+        this.materialSelectorCircles.forEach((circle, i) => {
+            const isActive = i === this.currentMaterialIndex;
+            circle.style.border = `2px solid ${isActive ? 'white' : 'rgba(255, 255, 255, 0.4)'}`;
+        });
+    }
+    
+    updateMaterialSelectorColor(materialIndex, color) {
+        if (!this.materialSelectorCircles || !this.materialSelectorCircles[materialIndex]) return;
+        
+        const rgb = `rgb(${Math.round(color.r * 255)}, ${Math.round(color.g * 255)}, ${Math.round(color.b * 255)})`;
+        this.materialSelectorCircles[materialIndex].style.background = rgb;
     }
     
     createMarangoniHUD() {

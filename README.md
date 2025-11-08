@@ -15,6 +15,63 @@ A GPU-accelerated fluid simulation for VJ performance and digital art, built wit
 
 ---
 
+## 🌊 Getting Started: Groovy Fluids 101
+
+**First time?** Try this flow (pun intended):
+
+1. **🎨 Pick your vibe** - Press **1-5** to try different materials
+   - **1** = Ink (water-based, flows freely)
+   - **2** = Mineral Oil (thick, blobby goodness)  
+   - **3** = Alcohol (thin, ethereal)
+   - **4** = Syrup (viscous blobs)
+   - **5** = Glycerine (smooth operator)
+
+2. **🎨 Customize colors** - Click the **color wheel** (top-left) to pick your hue
+   - Each material remembers its color (see the numbered circles)
+   - Click circles **1-5** to quick-switch with saved colors
+
+3. **🌀 Add motion** - Click the **rotation button** (bottom-left) to spin the container
+   - Watch your fluids swirl and separate!
+
+4. **💡 Light it up** - Click the **light indicator** (bottom-right) to rotate colored light
+   - Press **C** to cycle rotation speeds
+
+**Pro tip:** Start with **Mineral Oil (#2)** for maximum blob satisfaction. It's got more surface tension than a first date! 🛢️✨
+
+---
+
+## 🎮 Controls (The Physics of Fun)
+
+### Essential Vibes
+| Action | Control | Effect |
+|--------|---------|--------|
+| **Paint colors** | Left-click + drag | Drop paint, make art |
+| **Create chaos** | Right-click + drag | Powerful jet stream (50,000× force!) |
+| **Spin container** | **A/D** or **←/→** | Rotate the whole universe |
+| **Switch materials** | **1-5** keys | Ink → Oils (each has personality) |
+| **Material memory** | Click circles **1-5** | Restore saved material + color |
+| **Pick colors** | Click color wheel | Choose your chakra |
+| **Toggle rotation** | Rotation button | Spin or chill |
+| **Light rotation** | Click light / **C** | Color wheel speed (0-5°/frame) |
+
+### Advanced Mojo ✨
+| Action | Control | What it does |
+|--------|---------|--------------|
+| **Viscosity** | **V** | Cycle flow resistance (thin → thicc) |
+| **Turbulence** | **T** | More chaos energy |
+| **Volumetric** | **L** | Beer-Lambert light absorption (ON by default) |
+| **Absorption** | **K** | How dark the centers get |
+| **Heat lamp** | Hamburger menu | Brightness + agitation (hippie lamp vibes) |
+| **Clear canvas** | **X** | Erase everything (fresh start) |
+| **Pause** | **P** | Freeze physics (inspect your art) |
+| **Velocity field** | **M** | See the force, Luke |
+
+**Physics pun quota:** We're conserving momentum AND good vibes. No dissipation of fun allowed! 🌈
+
+See [CONTROLS.md](CONTROLS.md) for the full manual (for when you're ready to ascend).
+
+---
+
 ## What's New (Nov 3, 2025)
 
 ### 🎨 Oil Rendering & Boundary Fixes
@@ -118,24 +175,7 @@ python3 -m http.server 8001
 http://localhost:8001
 ```
 
-### Controls
-- **Left-click + drag** - Paint colors
-- **Right-click + drag** - Create powerful jets
-- **A/D or Arrows** - Rotate container
-- **1–5** - Select material (Ink, Mineral Oil, Alcohol, Syrup, Glycerine). Non‑Ink enables Oil.
-- **Hamburger → Heat Lamp** - Toggle Heat Lamp (OFF, LOW, MEDIUM, HIGH)
-- **C** - Cycle RGB light rotation speed
-- **Click light indicator** - Toggle light rotation
-- **V** - Cycle viscosity
-- **T** - Cycle turbulence strength
-- **L** - Toggle volumetric rendering
-- **K** - Cycle absorption coefficient
-- **X** - Clear canvas
-- **P** - Pause/Resume
-- **M** - View velocity field
-- **Ctrl+Q** - Run quality tests
-
-See [CONTROLS.md](CONTROLS.md) for full reference.
+Then follow the [Getting Started](#-getting-started-groovy-fluids-101) guide above!
 
 ---
 
