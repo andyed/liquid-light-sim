@@ -272,14 +272,28 @@ The simulation now includes a separate oil layer, which is rendered on top of th
 **Root Cause Analysis**:
 The fundamental tension: oil needs to **move with water** (advection) but also **resist being torn apart** (surface tension/cohesion). Current approach uses reactive cleanup (smoothing after damage). May need proactive approach:
 
-**Potential Solutions** (next session):
-1. **Adaptive timesteps** - Oil updates slower than water (less tearing per frame)
-2. **Particle-based oil** - Track blobs as particles, not continuous field
-3. **Pre-advection cohesion** - Consolidate BEFORE movement, not after
-4. **Shear-limited advection** - Oil only follows water below certain velocity gradient
-5. **Explicit blob tracking** - Identify connected components, treat as rigid bodies
+**Attempted Solutions**:
+1. ❌ **Adaptive timesteps** - FAILED, causes mass accumulation
+   - Reduced advection dt to 0.20 (80% slower movement)
+   - Result: Unstoppable growth, oil ate entire canvas
+   - Root cause: Smoothing redistributes oil but can't destroy it
+   - Without full advection to spread oil, it accumulates in place
+   - **Critical learning**: Mass conservation requires ALL processes scale together
+   - Can't slow only advection without proportionally adjusting smoothing/overflow/cohesion
 
-**Key Insight**: Eulerian (grid-based) methods naturally create diffusion/dust. Lagrangian (particle) methods naturally preserve blobs. Hybrid approach may be needed.
+**Potential Solutions** (next session):
+1. **Pre-advection cohesion** ⭐ - Consolidate BEFORE movement, not after
+2. **Particle-hybrid system** - Track thick blobs (>0.3) as particles, thin oil stays grid-based
+3. **Shear-limited advection** - Oil resists following water when velocity gradient is high
+4. **Connected component tracking** - Identify blobs as regions, treat as semi-rigid bodies
+5. **Double-buffer cohesion** - Run cohesion on both textures simultaneously
+
+**Key Insights**: 
+- Eulerian (grid-based) methods naturally create diffusion/dust
+- Lagrangian (particle) methods naturally preserve blobs
+- **Mass conservation**: Smoothing + Cohesion + Advection form closed loop, must scale together
+- Slowing any ONE process breaks balance (accumulation or loss)
+- Hybrid approach (particles for thick blobs, grid for thin oil) likely needed
 
 ### Known Issues
 

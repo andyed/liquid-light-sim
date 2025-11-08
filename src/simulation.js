@@ -277,6 +277,12 @@ export default class Simulation {
             await loadShader('src/shaders/oil-sharpen.frag.glsl')
         );
 
+        // Clear region shader (for hybrid particle conversion)
+        this.clearRegionProgram = this.renderer.createProgram(
+            fullscreenVert,
+            await loadShader('src/shaders/clear-region.frag.glsl')
+        );
+
         // Splat per-pixel oil material properties
         this.splatOilPropsProgram = this.renderer.createProgram(
             fullscreenVert,

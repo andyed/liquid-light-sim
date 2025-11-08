@@ -214,11 +214,12 @@ See `OIL_OVERFLOW_FIX.md` for complete details.
    - Cohesion strength: 1.5 (configurable per material)
    - **Mental model**: After movement forces, particles snap together
 
-2. **Dynamic Lighting System** (90% complete)
+2. **Dynamic Lighting System** ✅ COMPLETE
    - Plate tilt tracks container rotation (visual lean during spin)
-   - Wobble physics: damped spring returns to neutral
-   - Ready for paint/jet impact wobbles
-   - **Still needs**: Volumetric shader integration, wobble triggers
+   - Wobble physics: damped spring returns to neutral  
+   - Jet impacts trigger wobble (creates dynamic light bounces)
+   - updateLightTilt() runs every frame
+   - Note: Volumetric shader integration deferred (effect subtle, not worth complexity)
 
 3. **Aggressive Dust Removal**
    - Two-pass smoothing with escalating thresholds (0.06 → 0.10)
@@ -227,6 +228,31 @@ See `OIL_OVERFLOW_FIX.md` for complete details.
 
 4. **Mobile UX**
    - Container radius reduced to 0.47 on mobile (prevents right-edge cropping)
+
+5. **Adaptive Timesteps** ❌ ATTEMPTED & REVERTED
+   - Reduced oil advection dt to 0.20 (80% slower)
+   - Goal: Less tearing per frame, better conservation
+   - Result: Unstoppable mass accumulation (oil ate canvas)
+   - Root cause: Smoothing redistributes without destroying
+   - Learning: Can't slow only advection, breaks mass balance
+
+6. **Hybrid Particle System** ⚠️ CONVERSION LOOP PROBLEM
+   - ✅ Created OilParticle class with physics (advection, buoyancy, merging)
+   - ✅ Integrated into OilLayer (particles array, update loop)
+   - ✅ Grid→Particle conversion with texture reading
+   - ✅ Grid clearing shader (clear-region.frag.glsl)
+   - ✅ Particle merging works correctly
+   - ❌ **CRITICAL BUG**: Conversion loop causes exponential growth
+     - Grid oil → converts to particles → clears grid
+     - Particles splat back to grid (for rendering)
+     - Next cycle: finds splatted oil → converts AGAIN
+     - Result: Exponential particle growth, fills screen in 5 seconds
+   - **Status**: DISABLED until rendering solved
+   - **Solution needed**: One of:
+     1. Separate particle texture (composite in final render)
+     2. Instanced particle rendering (WebGL2 points/quads)
+     3. Track converted regions (don't convert same spot twice)
+     4. Particles-only mode (no grid rendering at all)
 
 ---
 
@@ -304,10 +330,15 @@ Eulerian (grid-based) advection inherently creates diffusion. Oil is torn apart 
 
 **Next Approaches to Try:**
 
-1. **Adaptive Timesteps for Oil** ⭐ PROMISING
-   - Oil updates at 50% of water rate (less tearing per frame)
-   - Gives cohesion time to work between advection steps
-   - Implementation: `dt_oil = dt_water * 0.5`
+1. **Adaptive Timesteps for Oil** ❌ FAILED - CAUSES MASS ACCUMULATION
+   - **ATTEMPTED**: Reduced advection dt to 0.20 (80% slower movement)
+   - **RESULT**: Unstoppable growth, oil ate entire canvas
+   - **ROOT CAUSE**: Smoothing redistributes oil but can't destroy it
+   - Without full advection to spread oil, it accumulates in place infinitely
+   - **CRITICAL INSIGHT**: Mass conservation requires ALL processes scale together
+   - Can't slow only advection - creates imbalance in conservation
+   - Would need: slower advection + proportionally stronger overflow + adjusted cohesion
+   - **CONCLUSION**: Too complex, creates more problems than it solves
 
 2. **Pre-Advection Cohesion** 
    - Run cohesion BEFORE advection, not after
@@ -335,9 +366,18 @@ Eulerian (grid-based) advection inherently creates diffusion. Oil is torn apart 
    - Prevents "trailing dust" from alternating buffers
 
 **Recommended Order:**
-1. Try adaptive timesteps (easiest, might be enough)
-2. If still dusty: pre-advection cohesion
-3. If still failing: particle-hybrid (bigger change, but most realistic)
+1. ~~Try adaptive timesteps~~ ❌ FAILED (mass accumulation)
+2. **Try pre-advection cohesion** ⭐ NEXT BEST OPTION
+   - Consolidate before movement to prevent tearing at source
+3. If still failing: **particle-hybrid** (most realistic, bigger change)
+
+**Critical Mass Conservation Learning**:
+Smoothing, cohesion, and advection form a closed loop. Slowing any ONE process breaks the balance:
+- Slower advection = oil doesn't spread → accumulates
+- Faster smoothing alone = oil redistributes locally → still accumulates
+- The system needs ALL processes to scale proportionally OR active mass removal (overflow)
+
+This is why particle systems work better for blobs - each particle IS a blob, no conservation issues.
 
 ---
 

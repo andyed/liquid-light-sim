@@ -1,4 +1,5 @@
 import FluidLayer from './FluidLayer.js';
+import OilParticle from '../OilParticle.js';
 
 export default class OilLayer extends FluidLayer {
   constructor(simulation) {
@@ -16,6 +17,14 @@ export default class OilLayer extends FluidLayer {
     this.oilPropsTexture1 = null;
     this.oilPropsTexture2 = null;
     this.oilPropsFBO = null;
+    
+    // HYBRID PARTICLE SYSTEM for thick blobs
+    this.particles = [];
+    this.maxParticles = 500;
+    this.particleConversionThreshold = 0.35; // Thick oil (>35%) becomes particles
+    this.particleMergeDistance = 0.03; // Particles within 3% screen space merge
+    this.particleConversionInterval = 30; // Convert grid→particles every N frames
+    this.framesSinceConversion = 0;
   }
 
   async init() {
@@ -335,31 +344,7 @@ export default class OilLayer extends FluidLayer {
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         this.swapOilTextures();
         
-        // THIRD PASS (nuclear dust removal)
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this.oilTexture1);
-        gl.uniform1i(gl.getUniformLocation(sim.oilSmoothProgram, 'u_oil_texture'), 0);
-        
-        gl.uniform1f(gl.getUniformLocation(sim.oilSmoothProgram, 'u_smoothingRate'), sim.oilSmoothingRate * 2.0);
-        gl.uniform1f(gl.getUniformLocation(sim.oilSmoothProgram, 'u_thicknessThreshold'), 0.15);
-        
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
-        this.swapOilTextures();
-        
-        // FOURTH PASS (annihilate remaining dust)
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this.oilTexture1);
-        gl.uniform1i(gl.getUniformLocation(sim.oilSmoothProgram, 'u_oil_texture'), 0);
-        
-        gl.uniform1f(gl.getUniformLocation(sim.oilSmoothProgram, 'u_smoothingRate'), sim.oilSmoothingRate * 2.5);
-        gl.uniform1f(gl.getUniformLocation(sim.oilSmoothProgram, 'u_thicknessThreshold'), 0.20); // Kill anything < 20% thickness
-        
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
-        this.swapOilTextures();
+        // Passes 3-4 DISABLED: Particles handle blobs now, only need light smoothing for thin oil
     }
 
     // STEP 5: Apply cohesion force (snap thin particles to thick blobs, prevent dust)
@@ -427,6 +412,159 @@ export default class OilLayer extends FluidLayer {
       }
       gl.viewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
     }
+    
+    // STEP 7: HYBRID PARTICLE SYSTEM - DISABLED
+    // Problem: Particle→grid splatting creates conversion loop (exponential growth)
+    // Solution needed: Separate texture for particles OR instanced rendering
+    // this.updateParticleSystem(dt);
+  }
+  
+  updateParticleSystem(dt) {
+    const sim = this.sim;
+    
+    // Update existing particles
+    for (let i = this.particles.length - 1; i >= 0; i--) {
+      const particle = this.particles[i];
+      
+      // Sample water velocity at particle position (simplified - use center for now)
+      const waterVel = { x: 0, y: 0 }; // TODO: Sample from water velocity texture
+      
+      // Update particle (advection, buoyancy, damping)
+      const buoyancy = sim.buoyancyStrength || 0;
+      particle.update(dt, waterVel, buoyancy, 0.98);
+      
+      // Constrain to circular boundary
+      particle.constrainToCircle(0.5, 0.5, 0.47);
+      
+      // Remove old particles
+      if (particle.age > 60.0 || particle.thickness < 0.01) {
+        this.particles.splice(i, 1);
+      }
+    }
+    
+    // Merge nearby particles (blob coalescence!)
+    this.mergeParticles();
+    
+    // TODO: Particle→grid splatting creates conversion loop
+    // Grid oil → particles → splat to grid → convert to particles again → exponential growth
+    // Need separate particle rendering layer OR mark converted regions
+    // this.splatParticlesToGrid();
+    
+    // Periodically convert thick grid regions to particles
+    this.framesSinceConversion++;
+    if (this.framesSinceConversion >= this.particleConversionInterval) {
+      this.convertGridToParticles();
+      this.framesSinceConversion = 0;
+    }
+  }
+  
+  mergeParticles() {
+    // Simple N^2 merge (optimize later if needed)
+    for (let i = this.particles.length - 1; i >= 0; i--) {
+      for (let j = i - 1; j >= 0; j--) {
+        if (this.particles[i].shouldMerge(this.particles[j], this.particleMergeDistance)) {
+          // Merge j into i
+          this.particles[i].absorb(this.particles[j]);
+          this.particles.splice(j, 1);
+          i--; // Adjust index after removal
+          break;
+        }
+      }
+    }
+  }
+  
+  splatParticlesToGrid() {
+    const gl = this.gl;
+    const sim = this.sim;
+    
+    // Render each particle as a soft circle onto the oil texture
+    for (let particle of this.particles) {
+      const radius = Math.max(0.02, particle.thickness * 0.1); // Radius based on mass
+      this.splatColor(particle.x, particle.y, particle.color, radius);
+    }
+  }
+  
+  convertGridToParticles() {
+    const gl = this.gl;
+    const sim = this.sim;
+    const w = gl.canvas.width;
+    const h = gl.canvas.height;
+    
+    // Read oil texture (expensive, so we sample sparsely)
+    const pixels = new Float32Array(w * h * 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture1, 0);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.FLOAT, pixels);
+    
+    // Sample every N pixels for performance (lower resolution search)
+    const sampleStep = 8; // Sample every 8 pixels
+    let particlesSpawned = 0;
+    
+    for (let y = 0; y < h; y += sampleStep) {
+      for (let x = 0; x < w; x += sampleStep) {
+        const idx = (y * w + x) * 4;
+        const r = pixels[idx];
+        const g = pixels[idx + 1];
+        const b = pixels[idx + 2];
+        const thickness = pixels[idx + 3];
+        
+        // Found thick oil - convert to particle
+        if (thickness > this.particleConversionThreshold && 
+            this.particles.length < this.maxParticles) {
+          
+          // Normalized coordinates [0,1]
+          const px = x / w;
+          const py = y / h;
+          
+          // Create particle
+          const particle = new OilParticle(
+            px, py, 
+            0, 0, // Zero velocity initially
+            thickness * 0.5, // Radius proportional to thickness
+            { r, g, b }
+          );
+          this.particles.push(particle);
+          particlesSpawned++;
+          
+          // Clear this region from grid (prevent double-counting)
+          this.clearGridRegion(px, py, sampleStep / w);
+          
+          // Limit spawns per frame to prevent lag
+          if (particlesSpawned >= 10) break;
+        }
+      }
+      if (particlesSpawned >= 10) break;
+    }
+    
+    if (particlesSpawned > 0) {
+      console.log(`🔄 Converted ${particlesSpawned} grid regions → particles (total: ${this.particles.length})`);
+    }
+  }
+  
+  clearGridRegion(centerX, centerY, radius) {
+    const gl = this.gl;
+    const sim = this.sim;
+    
+    if (!sim.clearRegionProgram) return;
+    
+    gl.useProgram(sim.clearRegionProgram);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);
+    
+    gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
+    const pos = gl.getAttribLocation(sim.clearRegionProgram, 'a_position');
+    gl.enableVertexAttribArray(pos);
+    gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+    
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.oilTexture1);
+    gl.uniform1i(gl.getUniformLocation(sim.clearRegionProgram, 'u_oil_texture'), 0);
+    
+    gl.uniform2f(gl.getUniformLocation(sim.clearRegionProgram, 'u_center'), centerX, centerY);
+    gl.uniform1f(gl.getUniformLocation(sim.clearRegionProgram, 'u_radius'), radius);
+    
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    this.swapOilTextures();
   }
 
   splatColor(x, y, color, radius) {
@@ -434,6 +572,14 @@ export default class OilLayer extends FluidLayer {
     const sim = this.sim;
     
     console.log('🛢️ OilLayer.splatColor called:', {x: x.toFixed(2), y: y.toFixed(2), radius, color});
+    
+    // TODO: HYBRID particle spawning disabled until rendering works
+    // Need to implement proper particle→grid rendering without accumulation
+    // if (radius > 0.04 && this.particles.length < this.maxParticles) {
+    //   const particle = new OilParticle(x, y, 0, 0, radius * 5, color);
+    //   this.particles.push(particle);
+    //   console.log(`✨ Spawned particle at (${x.toFixed(2)}, ${y.toFixed(2)}), total: ${this.particles.length}`);
+    // }
 
     gl.useProgram(sim.splatProgram);
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);

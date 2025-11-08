@@ -997,6 +997,14 @@ export default class Controller {
             }
             this.didJetThisClick = true;
             this.lastJetTime = now;
+            
+            // Add wobble to lighting from jet impact
+            if (this.simulation.addWobble) {
+                const wobbleStrength = burstStrength * 50;
+                this.simulation.addWobble(this.mouseVelocityX * wobbleStrength, 
+                                         this.mouseVelocityY * wobbleStrength);
+            }
+            
             console.log(`🌊 Jet ring @(${x.toFixed(3)}, ${y.toFixed(3)})`, {strength: burstStrength, ringRadius, splatRadius, directions});
         }
     }
