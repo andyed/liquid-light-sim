@@ -36,13 +36,13 @@ export default class Controller {
         this.isMouseDown = false;
         this.isRightMouseDown = false;
         this.isSpacePressed = false;
-        this.currentColor = { r: 0.3, g: 0.898, b: 1.0 };  // Default: cyan (#4de5ff)
+        this.currentColor = { r: 0.0, g: 0.5, b: 1.0 };  // Default: bright blue
         this.materials = [
-            { name: 'Ink', palette: ['#4DE5FF', '#FF3B3B', '#FFD93B', '#9B59B6', '#2ECC71'], preset: { agitation: 0.0 } },
-            { name: 'Mineral Oil', palette: ['#FFF3C4', '#FFD166', '#F6BD60', '#F7EDE2', '#F28482'], preset: { oilSmoothingRate: 0.0, oilViscosity: 0.08, oilViscosityIterations: 40, couplingStrength: 0.7, absorption: 1.8, paletteDom: 0.12, refractStrength: 0.0075, fresnelPower: 3.0, oilOcclusion: 0.05, oilAlphaGamma: 1.80, marangoniStrength: 1.2, marangoniKth: 1.5, marangoniEdgeBand: 3.0, marangoniThMin: 0.01, marangoniForceClamp: 0.15, marangoniAmp: 5.0, oilAttractionStrength: 0.0, surfaceTension: 2.0, oilOverflowUpper: 0.93, oilOverflowLower: 0.78, agitation: 0.005 } },
-            { name: 'Alcohol', palette: ['#BDE0FE', '#A2D2FF', '#CDB4DB', '#FFC8DD', '#FFAFCC'], preset: { oilViscosity: 0.1, oilViscosityIterations: 20, couplingStrength: 0.6, absorption: 1.5, paletteDom: 0.20, refractStrength: 0.007, fresnelPower: 2.8, oilOcclusion: 0.10, oilAlphaGamma: 0.90, marangoniKth: 0.4, marangoniEdgeBand: 1.5, oilAttractionStrength: 0.0, surfaceTension: 1.0, oilOverflowUpper: 0.91, oilOverflowLower: 0.76, agitation: 0.01 } },
-            { name: 'Syrup', palette: ['#8B4513', '#D2691E', '#C97A36', '#F4A261', '#E76F51'], preset: { oilViscosity: 0.5, oilViscosityIterations: 60, couplingStrength: 0.7, absorption: 2.0, paletteDom: 0.12, refractStrength: 0.012, fresnelPower: 3.2, oilOcclusion: 0.15, oilAlphaGamma: 1.20, marangoniKth: 1.0, marangoniEdgeBand: 2.5, oilAttractionStrength: 0.0, surfaceTension: 5.0, oilOverflowUpper: 0.95, oilOverflowLower: 0.80, occupancyEveryN: 180, agitation: 0.002 } },
-            { name: 'Glycerine', palette: ['#E0FBFC', '#98C1D9', '#3D5A80', '#EE6C4D', '#293241'], preset: { oilViscosity: 0.3, oilViscosityIterations: 40, couplingStrength: 0.8, absorption: 2.2, paletteDom: 0.10, refractStrength: 0.015, fresnelPower: 3.5, oilOcclusion: 0.20, oilAlphaGamma: 1.30, marangoniKth: 1.2, marangoniEdgeBand: 3.0, oilAttractionStrength: 0.0, surfaceTension: 3.0, oilOverflowUpper: 0.92, oilOverflowLower: 0.77, occupancyEveryN: 150, agitation: 0.001 } }
+            { name: 'Ink', palette: ['#0080FF', '#00D4FF', '#00FFB4', '#FFE000', '#FF00FF', '#FFFFFF', '#4169E1', '#00CED1', '#7FFF00'], preset: { agitation: 0.0, marangoniStrength: 0.4, marangoniKth: 0.6, marangoniEdgeBand: 2.5, marangoniThMin: 0.02, marangoniForceClamp: 0.10, marangoniAmp: 4.0 } },
+            { name: 'Mineral Oil', palette: ['#FFF3C4', '#FFD166', '#F6BD60', '#F7EDE2', '#F28482'], preset: { oilSmoothingRate: 0.0, oilViscosity: 0.25, oilViscosityIterations: 30, couplingStrength: 0.7, absorption: 1.8, paletteDom: 0.12, refractStrength: 0.025, fresnelPower: 2.5, oilOcclusion: 0.25, oilAlphaGamma: 1.20, oilTintStrength: 0.9, marangoniStrength: 1.2, marangoniKth: 1.5, marangoniEdgeBand: 3.0, marangoniThMin: 0.01, marangoniForceClamp: 0.15, marangoniAmp: 5.0, oilAttractionStrength: 0.0, surfaceTension: 15.0, oilOverflowUpper: 0.93, oilOverflowLower: 0.78, agitation: 0.005 } },
+            { name: 'Alcohol', palette: ['#BDE0FE', '#A2D2FF', '#CDB4DB', '#FFC8DD', '#FFAFCC'], preset: { oilViscosity: 0.15, oilViscosityIterations: 20, couplingStrength: 0.6, absorption: 1.5, paletteDom: 0.20, refractStrength: 0.018, fresnelPower: 2.2, oilOcclusion: 0.15, oilAlphaGamma: 0.90, oilTintStrength: 0.9, marangoniKth: 0.4, marangoniEdgeBand: 1.5, oilAttractionStrength: 0.0, surfaceTension: 8.0, oilOverflowUpper: 0.91, oilOverflowLower: 0.76, agitation: 0.01 } },
+            { name: 'Syrup', palette: ['#8B4513', '#D2691E', '#C97A36', '#F4A261', '#E76F51'], preset: { oilViscosity: 0.6, oilViscosityIterations: 30, couplingStrength: 0.7, absorption: 2.0, paletteDom: 0.12, refractStrength: 0.030, fresnelPower: 2.8, oilOcclusion: 0.30, oilAlphaGamma: 1.20, oilTintStrength: 0.9, marangoniKth: 1.0, marangoniEdgeBand: 2.5, oilAttractionStrength: 0.0, surfaceTension: 25.0, oilOverflowUpper: 0.95, oilOverflowLower: 0.80, occupancyEveryN: 180, agitation: 0.002 } },
+            { name: 'Glycerine', palette: ['#E0FBFC', '#98C1D9', '#3D5A80', '#EE6C4D', '#293241'], preset: { oilViscosity: 0.4, oilViscosityIterations: 30, couplingStrength: 0.8, absorption: 2.2, paletteDom: 0.10, refractStrength: 0.028, fresnelPower: 2.6, oilOcclusion: 0.25, oilAlphaGamma: 1.30, oilTintStrength: 0.9, marangoniKth: 1.2, marangoniEdgeBand: 3.0, oilAttractionStrength: 0.0, surfaceTension: 18.0, oilOverflowUpper: 0.92, oilOverflowLower: 0.77, occupancyEveryN: 150, agitation: 0.001 } }
         ];
         this.currentMaterialIndex = 0;
         
@@ -197,13 +197,13 @@ export default class Controller {
     }
 
     toneColor({ r, g, b }) {
-        // Reduce value (brightness)
-        const vFactor = 0.85;
+        // Maintain brightness (increased from 0.85 to 1.0 for vivid look)
+        const vFactor = 1.0;
         let rr = r * vFactor;
         let gg = g * vFactor;
         let bb = b * vFactor;
-        // Reduce saturation by lerping toward luminance
-        const satFactor = 0.85;
+        // Maintain high saturation (increased from 0.85 to 1.0 for vivid look)
+        const satFactor = 1.0;
         const avg = (rr + gg + bb) / 3.0;
         rr = avg + (rr - avg) * satFactor;
         gg = avg + (gg - avg) * satFactor;

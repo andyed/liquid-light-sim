@@ -203,30 +203,35 @@ export default class OilLayer extends FluidLayer {
     this.swapOilVelocityTextures();
 
     // STEP 3: Apply oil viscosity (high viscosity = slow, smooth flow)
-    // TEMPORARILY DISABLED - viscosity was killing all velocity
-    // if (sim.oilViscosity > 0.0 && sim.oilViscosityIterations > 0) {
-    //   gl.useProgram(sim.viscosityProgram);
-    //   
-    //   for (let i = 0; i < sim.oilViscosityIterations; i++) {
-    //     gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilVelocityFBO);
-    //     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilVelocityTexture2, 0);
-    //
-    //     gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
-    //     const posVisc = gl.getAttribLocation(sim.viscosityProgram, 'a_position');
-    //     gl.enableVertexAttribArray(posVisc);
-    //     gl.vertexAttribPointer(posVisc, 2, gl.FLOAT, false, 0, 0);
-    //
-    //     gl.activeTexture(gl.TEXTURE0);
-    //     gl.bindTexture(gl.TEXTURE_2D, this.oilVelocityTexture1);
-    //     gl.uniform1i(gl.getUniformLocation(sim.viscosityProgram, 'u_velocity_texture'), 0);
-    //     gl.uniform1f(gl.getUniformLocation(sim.viscosityProgram, 'u_viscosity'), sim.oilViscosity);
-    //     gl.uniform1f(gl.getUniformLocation(sim.viscosityProgram, 'u_dt'), dt);
-    //     gl.uniform2f(gl.getUniformLocation(sim.viscosityProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
-    //
-    //     gl.drawArrays(gl.TRIANGLES, 0, 6);
-    //     this.swapOilVelocityTextures();
-    //   }
-    // }
+    // Re-enabled with proper tuning - oil should be thick and sluggish
+    if (sim.oilViscosity > 0.0 && sim.oilViscosityIterations > 0) {
+      gl.useProgram(sim.viscosityProgram);
+      
+      // Use fewer iterations but stronger effect per iteration
+      const effectiveIterations = Math.min(sim.oilViscosityIterations, 30);
+      
+      for (let i = 0; i < effectiveIterations; i++) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilVelocityFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilVelocityTexture2, 0);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
+        const posVisc = gl.getAttribLocation(sim.viscosityProgram, 'a_position');
+        gl.enableVertexAttribArray(posVisc);
+        gl.vertexAttribPointer(posVisc, 2, gl.FLOAT, false, 0, 0);
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.oilVelocityTexture1);
+        gl.uniform1i(gl.getUniformLocation(sim.viscosityProgram, 'u_velocity_texture'), 0);
+        
+        // Scale viscosity effect - oil should resist flow
+        gl.uniform1f(gl.getUniformLocation(sim.viscosityProgram, 'u_viscosity'), sim.oilViscosity * 0.15);
+        gl.uniform1f(gl.getUniformLocation(sim.viscosityProgram, 'u_dt'), dt);
+        gl.uniform2f(gl.getUniformLocation(sim.viscosityProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        this.swapOilVelocityTextures();
+      }
+    }
 
     // STEP 3.5: Apply surface tension force to velocity (creates blobby cohesion)
     if (sim.surfaceTension > 0.0) {

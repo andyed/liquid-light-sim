@@ -61,16 +61,26 @@ void main() {
         
         // Force magnitude: proportional to curvature and thickness
         // Higher tension = stronger pull, like tighter rubber band
-        // Strong multiplier needed to overcome shear forces
-        float forceMag = curvature * tension * 500.0;
+        // MUCH stronger multiplier for dramatic pooling and breakup
+        float forceMag = curvature * tension * 2000.0; // 4x stronger
+        
+        // Thin regions should break apart (negative force pushes)
+        // Thick regions should pool together (positive force pulls)
+        float thicknessBoost = smoothstep(0.01, 0.15, thickness); // Amplify in thick areas
+        forceMag *= (0.3 + thicknessBoost * 1.5);
         
         // Pull inward along normal (shrinks the blob into round shape)
         force = -normalDir * forceMag;
         
-        // Clamp for stability but allow strong cohesive forces
-        float maxForce = 0.5;  // High to allow blob formation
+        // Higher clamp for more dramatic cohesion, but still stable
+        float maxForce = 1.5;  // 3x higher for dramatic effects
         if (length(force) > maxForce) {
             force = normalize(force) * maxForce;
+        }
+        
+        // Add extra cohesion in thick regions (droplets want to ball up)
+        if (thickness > 0.1) {
+            force *= 1.3;
         }
     }
     

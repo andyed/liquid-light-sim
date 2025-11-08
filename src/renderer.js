@@ -15,22 +15,22 @@ export default class Renderer {
         }
         console.log('✓ Float texture extension enabled');
 
-        this.backgroundColor = { r: 0.0, g: 0.0, b: 0.0 };
+        this.backgroundColor = { r: 1.0, g: 0.35, b: 0.15 };
         this.debugMode = 0; // 0=color, 1=velocity, 2=concentration gradient, 3=oil thickness, 4=oil gradient, 5=occ split
         this.useVolumetric = true; // Beer-Lambert volumetric rendering
-        this.absorptionCoefficient = 1.5; // Lower = more vibrant centers (was 3.0, caused center washout)
+        this.absorptionCoefficient = 0.8; // Lower = more vibrant centers (reduced for brighter look)
         this.usePostProcessing = true; // Organic flow distortion (O key to toggle)
         this.distortionStrength = 0.4; // 0.0-1.0, tuned to break severe banding artifacts
         this.smoothingStrength = 0.5; // 0.0-1.0, bilateral blur strength
         this.paletteDominance = 0.3; // 0.0-1.0, winner-takes-all strength
         this.paletteSoftPower = 3.0; // softmax power; lower = softer, higher = snappier
-        // Oil composite defaults
-        this.oilRefractStrength = 0.010; // screen-UV scale
-        this.oilFresnelPower = 3.0;
-        this.oilOcclusion = 0.35; // 0..1
-        this.oilAlphaGamma = 1.0; // gamma for thickness→alpha
-        this.oilTintStrength = 0.8; // 0..1, how much oil color tints scene
-        this.brightnessGain = 1.0;
+        // Oil composite defaults - enhanced for realistic appearance
+        this.oilRefractStrength = 0.025; // screen-UV scale (increased for visible distortion)
+        this.oilFresnelPower = 2.5; // lower = more reflection at grazing angles
+        this.oilOcclusion = 0.25; // 0..1 (increased for variable density)
+        this.oilAlphaGamma = 1.2; // gamma for thickness→alpha (sharper transitions)
+        this.oilTintStrength = 0.9; // 0..1, how much oil color tints scene (high to preserve user color)
+        this.brightnessGain = 1.15; // Balanced brightness without washing out colors
 
         this.resize();
         window.addEventListener('resize', () => this.resize());

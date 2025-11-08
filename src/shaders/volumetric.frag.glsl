@@ -20,8 +20,8 @@ void main() {
     float totalConc = length(concentration.rgb);
     
     if (totalConc < 0.001) {
-        // No ink - output a very dark version of the light color
-        outColor = vec4(u_light_color * u_brightness_gain * 0.1, 1.0);
+        // No ink - output the bright orange background
+        outColor = vec4(u_light_color * u_brightness_gain, 1.0);
         return;
     }
     
@@ -32,20 +32,20 @@ void main() {
     // But we want it to glow, not just block light
     float opacity = 1.0 - exp(-u_absorption_coefficient * totalConc);
     
-    // Ink's inherent color (always visible)
-    vec3 inkBase = inkColor * opacity * 2.0; // Boost base brightness
+    // Ink's inherent color (always visible) - preserve user's selected color
+    vec3 inkBase = inkColor * opacity * 2.5; // Boost base brightness moderately
     
     // Add colored light as ADDITIVE component (doesn't change ink color)
     // Only add light if it's not black (light rotation is active)
     float lightStrength = length(u_light_color);
-    vec3 lightContribution = u_light_color * opacity * 0.8 * lightStrength; // Stronger light
+    vec3 lightContribution = u_light_color * opacity * 0.5 * lightStrength; // Subtle light
     
     // Final color: Ink's own color + additive colored light
     vec3 finalColor = inkBase + lightContribution;
     
-    // Boost saturation for vivid colors
+    // Boost saturation moderately to preserve color accuracy
     float luminance = dot(finalColor, vec3(0.299, 0.587, 0.114));
-    vec3 saturated = mix(vec3(luminance), finalColor, 1.4);
+    vec3 saturated = mix(vec3(luminance), finalColor, 1.5); // Balanced saturation
     
     outColor = vec4(saturated * u_brightness_gain, 1.0);
 }
