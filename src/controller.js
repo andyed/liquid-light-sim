@@ -27,6 +27,10 @@ export default class Controller {
             marangoniAmp: 3.0,
             oilAttractionStrength: 0.0,
             surfaceTension: 0.0,
+            viscosity: 0.03,
+            diffusionRate: 0.0,
+            vorticityStrength: 0.15,  // Reduced from 0.25 to let blobs form
+            rotationBase: 0.02,       // Reduced from 0.03 - gentler ambient flow
             oilOverflowUpper: 0.95,   // Default overflow threshold (HIGHER than water's 0.90)
             oilOverflowLower: 0.80,
             occupancyEveryN: 120,      // Default overflow check frequency
@@ -39,10 +43,10 @@ export default class Controller {
         this.currentColor = { r: 0.0, g: 0.5, b: 1.0 };  // Default: bright blue
         this.materials = [
             { name: 'Ink', palette: ['#0080FF', '#00D4FF', '#00FFB4', '#FFE000', '#FF00FF', '#FFFFFF', '#4169E1', '#00CED1', '#7FFF00'], preset: { agitation: 0.0, marangoniStrength: 0.4, marangoniKth: 0.6, marangoniEdgeBand: 2.5, marangoniThMin: 0.02, marangoniForceClamp: 0.10, marangoniAmp: 4.0, buoyancyStrength: 0.0 } },
-            { name: 'Mineral Oil', palette: ['#FFF3C4', '#FFD166', '#F6BD60', '#F7EDE2', '#F28482'], preset: { oilSmoothingRate: 0.75, oilViscosity: 0.25, oilViscosityIterations: 30, couplingStrength: 0.15, absorption: 1.8, paletteDom: 0.12, refractStrength: 0.025, fresnelPower: 2.5, oilOcclusion: 0.25, oilAlphaGamma: 1.20, oilTintStrength: 0.9, marangoniStrength: 1.2, marangoniKth: 1.5, marangoniEdgeBand: 3.0, marangoniThMin: 0.01, marangoniForceClamp: 0.15, marangoniAmp: 5.0, oilAttractionStrength: 0.0, surfaceTension: 75.0, oilOverflowUpper: 0.98, oilOverflowLower: 0.92, agitation: 0.005, buoyancyStrength: -8.0 } },
-            { name: 'Alcohol', palette: ['#BDE0FE', '#A2D2FF', '#CDB4DB', '#FFC8DD', '#FFAFCC'], preset: { oilSmoothingRate: 0.70, oilViscosity: 0.15, oilViscosityIterations: 20, couplingStrength: 0.12, absorption: 1.5, paletteDom: 0.20, refractStrength: 0.018, fresnelPower: 2.2, oilOcclusion: 0.15, oilAlphaGamma: 0.90, oilTintStrength: 0.9, marangoniKth: 0.4, marangoniEdgeBand: 1.5, oilAttractionStrength: 0.0, surfaceTension: 50.0, oilOverflowUpper: 0.96, oilOverflowLower: 0.88, agitation: 0.01, buoyancyStrength: -12.0 } },
-            { name: 'Syrup', palette: ['#8B4513', '#D2691E', '#C97A36', '#F4A261', '#E76F51'], preset: { oilSmoothingRate: 0.90, oilViscosity: 0.6, oilViscosityIterations: 30, couplingStrength: 0.35, absorption: 2.0, paletteDom: 0.12, refractStrength: 0.030, fresnelPower: 2.8, oilOcclusion: 0.30, oilAlphaGamma: 1.20, oilTintStrength: 0.9, marangoniKth: 1.0, marangoniEdgeBand: 2.5, oilAttractionStrength: 0.0, surfaceTension: 100.0, oilOverflowUpper: 1.20, oilOverflowLower: 0.95, occupancyEveryN: 300, agitation: 0.002, buoyancyStrength: 5.0 } },
-            { name: 'Glycerine', palette: ['#E0FBFC', '#98C1D9', '#3D5A80', '#EE6C4D', '#293241'], preset: { oilSmoothingRate: 0.75, oilViscosity: 0.4, oilViscosityIterations: 30, couplingStrength: 0.40, absorption: 2.2, paletteDom: 0.10, refractStrength: 0.028, fresnelPower: 2.6, oilOcclusion: 0.25, oilAlphaGamma: 1.30, oilTintStrength: 0.9, marangoniKth: 1.2, marangoniEdgeBand: 3.0, oilAttractionStrength: 0.0, surfaceTension: 80.0, oilOverflowUpper: 0.98, oilOverflowLower: 0.90, occupancyEveryN: 150, agitation: 0.001, buoyancyStrength: 2.0 } }
+            { name: 'Mineral Oil', palette: ['#FFF3C4', '#FFD166', '#F6BD60', '#F7EDE2', '#F28482'], preset: { oilSmoothingRate: 0.95, oilViscosity: 0.25, oilViscosityIterations: 30, couplingStrength: 0.08, absorption: 1.8, paletteDom: 0.12, refractStrength: 0.025, fresnelPower: 2.5, oilOcclusion: 0.25, oilAlphaGamma: 1.20, oilTintStrength: 0.9, marangoniStrength: 1.2, marangoniKth: 1.5, marangoniEdgeBand: 3.0, marangoniThMin: 0.01, marangoniForceClamp: 0.15, marangoniAmp: 5.0, oilAttractionStrength: 0.0, surfaceTension: 150.0, oilOverflowUpper: 0.98, oilOverflowLower: 0.92, agitation: 0.005, buoyancyStrength: -8.0 } },
+            { name: 'Alcohol', palette: ['#BDE0FE', '#A2D2FF', '#CDB4DB', '#FFC8DD', '#FFAFCC'], preset: { oilSmoothingRate: 0.90, oilViscosity: 0.15, oilViscosityIterations: 20, couplingStrength: 0.12, absorption: 1.5, paletteDom: 0.20, refractStrength: 0.018, fresnelPower: 2.2, oilOcclusion: 0.15, oilAlphaGamma: 0.90, oilTintStrength: 0.9, marangoniKth: 0.4, marangoniEdgeBand: 1.5, oilAttractionStrength: 0.0, surfaceTension: 50.0, oilOverflowUpper: 0.96, oilOverflowLower: 0.88, agitation: 0.01, buoyancyStrength: -12.0 } },
+            { name: 'Syrup', palette: ['#8B4513', '#D2691E', '#C97A36', '#F4A261', '#E76F51'], preset: { oilSmoothingRate: 0.98, oilViscosity: 0.6, oilViscosityIterations: 30, couplingStrength: 0.35, absorption: 2.0, paletteDom: 0.12, refractStrength: 0.030, fresnelPower: 2.8, oilOcclusion: 0.30, oilAlphaGamma: 1.20, oilTintStrength: 0.9, marangoniKth: 1.0, marangoniEdgeBand: 2.5, oilAttractionStrength: 0.0, surfaceTension: 200.0, oilOverflowUpper: 1.20, oilOverflowLower: 0.95, occupancyEveryN: 300, agitation: 0.002, buoyancyStrength: 5.0 } },
+            { name: 'Glycerine', palette: ['#E0FBFC', '#98C1D9', '#3D5A80', '#EE6C4D', '#293241'], preset: { oilSmoothingRate: 0.95, oilViscosity: 0.4, oilViscosityIterations: 30, couplingStrength: 0.40, absorption: 2.2, paletteDom: 0.10, refractStrength: 0.028, fresnelPower: 2.6, oilOcclusion: 0.25, oilAlphaGamma: 1.30, oilTintStrength: 0.9, marangoniKth: 1.2, marangoniEdgeBand: 3.0, oilAttractionStrength: 0.0, surfaceTension: 80.0, oilOverflowUpper: 0.98, oilOverflowLower: 0.90, occupancyEveryN: 150, agitation: 0.001, buoyancyStrength: 2.0 } }
         ];
         this.currentMaterialIndex = 0;
         
@@ -510,18 +514,18 @@ export default class Controller {
         `;
         
         this.rotationButton.addEventListener('click', () => {
-            // Reduced from 1.2 to 0.3 (75% reduction) to prevent ink disappearing in <3 rotations
-            const ROTATION_FORCE = 0.075;
-            const AMBIENT_FLOW = 0.12;
+            // Reduced further to let oil blobs form cleanly
+            const ROTATION_FORCE = 0.04;  // Gentle boost
+            const AMBIENT_FLOW = 0.02;     // Very gentle ambient
             
             if (this.simulation.rotationBase < ROTATION_FORCE) {
                 this.simulation.setRotation(ROTATION_FORCE);
                 this.rotationButton.style.background = 'rgba(0, 150, 255, 0.7)';
-                console.log('🔄 Rotation: BOOST (0.3)');
+                console.log('🔄 Rotation: BOOST (0.04)');
             } else {
                 this.simulation.setRotation(AMBIENT_FLOW);
                 this.rotationButton.style.background = 'rgba(0, 0, 0, 0.5)';
-                console.log('🔄 Rotation: AMBIENT (0.12)');
+                console.log('🔄 Rotation: AMBIENT (0.02)');
             }
         });
         

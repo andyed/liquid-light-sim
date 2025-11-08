@@ -287,24 +287,57 @@ See `OIL_OVERFLOW_FIX.md` for complete details.
 
 ---
 
-### Secondary: Cohesion Force Tuning
+### Critical: Blob Formation Problem (Still Unsolved)
 
-**Current Values:**
-- `oilCohesionStrength`: 1.5 (pull strength toward blobs)
-- `oilAbsorptionThreshold`: 0.08 (dust elimination threshold)
+**What We Tried This Session:**
+1. ✅ **Cohesion force** (3.0 strength, circular sampling)
+2. ✅ **4-pass smoothing** (escalating 0.06 → 0.20 threshold)
+3. ✅ **Massive surface tension** (up to 200.0)
+4. ✅ **Reduced forces** (vorticity, rotation, coupling)
+5. ✅ **Color visibility** (tint boost, minimal iridescence)
+6. ❌ **Edge sharpening** (created horizontal banding)
 
-**Test Approach:**
-1. Drop Syrup (#4), let it spread
-2. Watch for dust formation at edges
-3. If still dusty: increase cohesion to 2.0-3.0
-4. If blobs too sticky: reduce to 1.0
-5. If dust persists: raise absorption threshold to 0.10-0.12
+**Result**: Better color, some blob formation, BUT still too much pixel dust
 
-**Per-Material Tuning:**
-Could add cohesion to material presets:
-- Syrup/Glycerine: High cohesion (2.0-3.0)
-- Mineral Oil: Medium (1.5)
-- Alcohol: Lower (1.0) - thinner, flows more
+**Root Problem Identified**:
+Eulerian (grid-based) advection inherently creates diffusion. Oil is torn apart by water flow faster than cohesion/smoothing can consolidate it. We're fighting against the fundamental nature of the method.
+
+**Next Approaches to Try:**
+
+1. **Adaptive Timesteps for Oil** ⭐ PROMISING
+   - Oil updates at 50% of water rate (less tearing per frame)
+   - Gives cohesion time to work between advection steps
+   - Implementation: `dt_oil = dt_water * 0.5`
+
+2. **Pre-Advection Cohesion** 
+   - Run cohesion BEFORE advection, not after
+   - Consolidate first, then move
+   - May prevent tearing at source
+
+3. **Shear-Limited Advection**
+   - Oil only follows water when velocity gradient is low
+   - High shear = oil resists being pulled apart
+   - Needs velocity gradient calculation
+
+4. **Particle-Hybrid System** ⭐ MOST REALISTIC
+   - Track thick blobs (>0.3) as particles with position/radius
+   - Thin oil (<0.2) stays grid-based
+   - Particles advect without tearing
+   - Convert back to grid for rendering
+
+5. **Connected Component Tracking**
+   - Identify oil blobs as connected regions
+   - Treat each blob as semi-rigid body
+   - Resist deformation based on surface tension
+
+6. **Double-Buffer Cohesion**
+   - Run cohesion on both oil textures simultaneously
+   - Prevents "trailing dust" from alternating buffers
+
+**Recommended Order:**
+1. Try adaptive timesteps (easiest, might be enough)
+2. If still dusty: pre-advection cohesion
+3. If still failing: particle-hybrid (bigger change, but most realistic)
 
 ---
 

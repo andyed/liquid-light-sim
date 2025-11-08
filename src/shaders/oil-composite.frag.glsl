@@ -92,18 +92,18 @@ void main() {
     
     // 2. User's selected oil color (PRIMARY - this is what they painted!)
     vec3 userOilColor = oilTint;
-    vec3 tinted = mix(base, userOilColor, opacity * u_tint_strength);
+    vec3 tinted = mix(base, userOilColor, opacity * u_tint_strength * 1.5); // Boost tint visibility
     
-    // 3. VERY subtle iridescent highlights (only on extremely thin oil)
+    // 3. MINIMAL iridescent highlights (only on extremely thin oil edges)
     // Only show iridescence on very thin films (like real soap bubbles)
-    float thinness = smoothstep(0.15, 0.05, thickness); // Only when very thin
-    float iridescenceStrength = thinness * 0.08; // Reduced from 0.15
+    float thinness = smoothstep(0.12, 0.03, thickness); // Only when very thin
+    float iridescenceStrength = thinness * 0.02; // Drastically reduced from 0.08
     vec3 withIridescence = tinted + iridescence * iridescenceStrength;
     
-    // 4. Fresnel reflection (minimal, tinted with user color)
-    // Thick oil reflects its own color, not white
-    vec3 reflectionColor = mix(userOilColor * 1.2, vec3(1.0), 0.1); // More color, less white
-    float fresnelStrength = fresnelFactor * opacity * 0.1; // Reduced from 0.2
+    // 4. Fresnel reflection (barely visible, tinted with user color)
+    // Thick oil reflects its own color, NOT white
+    vec3 reflectionColor = mix(userOilColor * 1.3, vec3(1.0), 0.05); // Almost all color
+    float fresnelStrength = fresnelFactor * opacity * 0.03; // Drastically reduced from 0.1
     vec3 final = mix(withIridescence, reflectionColor, fresnelStrength);
     
     // 5. Edge glow using user's color (only on thick edges)

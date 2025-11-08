@@ -23,21 +23,25 @@ void main() {
         vec2 cohesionDir = vec2(0.0);
         float totalWeight = 0.0;
         
-        // Search 7x7 neighborhood for thick oil
-        for (int y = -3; y <= 3; y++) {
-            for (int x = -3; x <= 3; x++) {
-                if (x == 0 && y == 0) continue;
-                
-                vec2 offset = vec2(float(x), float(y)) * texelSize;
+        // Circular search pattern to avoid directional bias
+        const int SAMPLES = 16;
+        const float RADIUS = 5.0;
+        
+        for (int i = 0; i < SAMPLES; i++) {
+            float angle = float(i) * 6.2832 / float(SAMPLES); // 2*PI
+            vec2 dir = vec2(cos(angle), sin(angle));
+            
+            // Sample at multiple radii
+            for (float r = 1.0; r <= RADIUS; r += 1.0) {
+                vec2 offset = dir * r * texelSize;
                 vec4 neighbor = texture(u_oil_texture, v_texCoord + offset);
                 float neighborThickness = neighbor.a;
                 
                 // Only thick oil attracts
                 if (neighborThickness > u_absorptionThreshold * 2.0) {
-                    float dist = length(vec2(float(x), float(y)));
                     // Stronger pull from closer thick blobs
-                    float weight = neighborThickness / (dist * dist + 0.1);
-                    cohesionDir += vec2(float(x), float(y)) * weight;
+                    float weight = neighborThickness / (r * r + 0.1);
+                    cohesionDir += dir * r * weight;
                     totalWeight += weight;
                 }
             }

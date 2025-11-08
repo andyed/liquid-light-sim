@@ -204,30 +204,82 @@ The simulation now includes a separate oil layer, which is rendered on top of th
 
 ### Shaders
 - **`oil-coupling.frag.glsl`** – blends water velocity into oil velocity
+- **`buoyancy.frag.glsl`** – **NEW**: density-based vertical motion (lighter oils rise, heavier sink)
 - **`surface-tension-force.frag.glsl`** – applies surface tension force to velocity field (curvature-based)
-- **`oil-smooth.frag.glsl`** – **NEW**: thickness-weighted bilateral filter for pixel dust removal
-- **`oil-attraction.frag.glsl`** – applies cohesion force pulling oil towards denser regions
+- **`oil-smooth.frag.glsl`** – thickness-weighted bilateral filter (4-pass system with escalating thresholds)
+- **`oil-cohesion.frag.glsl`** – **NEW**: pulls thin oil toward thick blobs (circular sampling, 80 samples/pixel)
+- **`oil-sharpen.frag.glsl`** – **EXPERIMENTAL**: edge sharpening for blob boundaries (disabled - creates banding)
+- **`oil-attraction.frag.glsl`** – legacy cohesion (kept for compatibility)
 - **`curvature.frag.glsl`** – calculates Laplacian of oil thickness (legacy, for two-pass model)
 - **`apply-surface-tension.frag.glsl`** – legacy two-pass surface tension (deprecated)
-- **`oil-composite.frag.glsl`** – realistic optics: thin-film interference, Fresnel, chromatic aberration
+- **`oil-composite.frag.glsl`** – realistic optics: thin-film interference (minimal), Fresnel (colored), user color dominates
 
 ### Oil Parameters (Material Presets)
-- **Surface Tension**: 30.0-65.0 (was 8.0-25.0) - dramatically increased for blobby separation
-  - Mineral Oil: 50.0 (was 35.0)
-  - Alcohol: 30.0 (was 20.0)
-  - Syrup: 65.0 (was 45.0)
-  - Glycerine: 55.0 (was 38.0)
-- **Smoothing Rate**: 0.35-0.45 (was 0.20-0.30)
-  - Controls bilateral filter strength
-  - Higher viscosity materials = more smoothing
-  - Squared thinness factor for aggressive dust removal
-- **Dust Threshold**: 0.025 (was 0.015)
-  - Pixels below this thickness are eliminated
-  - More aggressive culling prevents grainy "pixel dust"
+- **Surface Tension**: 50.0-200.0 (dramatically increased for blob cohesion)
+  - Mineral Oil: 150.0
+  - Alcohol: 50.0
+  - Syrup: 200.0 (maximum cohesion)
+  - Glycerine: 80.0
+  - Resists shear from water flow
+  
+- **Smoothing Rate**: 0.90-0.98 (4-pass progressive system)
+  - Pass 1: base rate, threshold 0.06
+  - Pass 2: 1.5× rate, threshold 0.10
+  - Pass 3: 2.0× rate, threshold 0.15
+  - Pass 4: 2.5× rate, threshold 0.20 (nuclear dust removal)
+  - Syrup: 0.98 (near-maximum smoothing)
+  
+- **Cohesion Force**: NEW - pulls thin oil toward thick blobs
+  - Strength: 3.0 (was 1.5)
+  - Absorption threshold: 0.12 (oil < 12% gets absorbed)
+  - Circular sampling: 16 directions × 5 radii (80 samples)
+  - Prevents directional bias (no banding artifacts)
+  
+- **Reduced Forces** (let blobs form without tearing)
+  - Vorticity: 0.25 → 0.15 (-40%)
+  - Rotation ambient: 0.03 → 0.02 (-33%)
+  - Rotation boost: 0.075 → 0.04 (-47%)
+  - Oil-water coupling: 0.15-0.35 → 0.08-0.35 (mineral oil halved)
+  
+- **Color Visibility Improvements**
+  - Tint strength: boosted 50% in composite shader
+  - Iridescence: 0.08 → 0.02 (-75%, minimal)
+  - Fresnel reflection: 0.1 → 0.03 (-70%, colored not white)
+  - User-painted color now dominates, no white washout
+
 - **Overflow Conservation**: 0.05 max strength (water uses 0.20)
-  - 4x gentler damping for better oil conservation
-  - Higher thresholds: 0.96-0.99 upper, 0.88-0.92 lower
-  - Oil persists ~5x longer than ink
+  - 4× gentler damping for better oil conservation
+  - Higher thresholds: 0.98-1.20 upper, 0.88-0.95 lower
+  - Syrup: very high thresholds for minimal decay
+
+### Blob Formation Challenge (In Progress)
+
+**Goal**: Clean, blobby oil droplets like real liquid light shows
+
+**Attempted Solutions**:
+1. ✅ **Cohesion force** - Thin oil pulled toward thick blobs (isotropic sampling)
+2. ✅ **4-pass smoothing** - Progressive dust removal (0.06 → 0.20 threshold)
+3. ✅ **Massive surface tension** - Up to 200.0 to resist shear
+4. ✅ **Reduced external forces** - Less tearing from rotation/coupling
+5. ❌ **Edge sharpening** - Created horizontal banding artifacts (disabled)
+
+**Current Status**: 
+- Colors visible and vibrant ✓
+- Some blob formation ✓
+- BUT: Still too much "pixel dust" at edges ✗
+- Advection tears oil apart faster than cohesion consolidates it
+
+**Root Cause Analysis**:
+The fundamental tension: oil needs to **move with water** (advection) but also **resist being torn apart** (surface tension/cohesion). Current approach uses reactive cleanup (smoothing after damage). May need proactive approach:
+
+**Potential Solutions** (next session):
+1. **Adaptive timesteps** - Oil updates slower than water (less tearing per frame)
+2. **Particle-based oil** - Track blobs as particles, not continuous field
+3. **Pre-advection cohesion** - Consolidate BEFORE movement, not after
+4. **Shear-limited advection** - Oil only follows water below certain velocity gradient
+5. **Explicit blob tracking** - Identify connected components, treat as rigid bodies
+
+**Key Insight**: Eulerian (grid-based) methods naturally create diffusion/dust. Lagrangian (particle) methods naturally preserve blobs. Hybrid approach may be needed.
 
 ### Known Issues
 

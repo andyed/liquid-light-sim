@@ -27,8 +27,9 @@ export default class Simulation {
         this.diffusionRate = 0.0;  // Disable diffusion (was causing fading)
         this.oilSmoothingRate = 0.0; // Oil-only smoothing DISABLED - was dissipating thickness
         this.spreadStrength = 0.0;  // Concentration pressure (removed - not real physics)
-        this.oilCohesionStrength = 1.5;  // How strongly thin oil is pulled toward thick blobs
-        this.oilAbsorptionThreshold = 0.08;  // Oil thinner than this gets absorbed by neighbors
+        this.oilCohesionStrength = 3.0;  // Increased - stronger pull toward thick blobs
+        this.oilAbsorptionThreshold = 0.12;  // Increased - more aggressive dust removal
+        this.oilEdgeSharpness = 0.0;  // DISABLED - was creating banding artifacts
         this.rotationAmount = 0.0;  // Effective rotation force (base + delta)
         this.rotationBase = 0.03;    // Button/toggle driven rotation (default gentle flow like real shows)
         this.rotationDelta = 0.0;   // Transient input (keys/gestures)
@@ -268,6 +269,12 @@ export default class Simulation {
         this.oilCohesionProgram = this.renderer.createProgram(
             fullscreenVert,
             await loadShader('src/shaders/oil-cohesion.frag.glsl')
+        );
+
+        // Oil edge sharpening (creates distinct border layer for blobs)
+        this.oilSharpenProgram = this.renderer.createProgram(
+            fullscreenVert,
+            await loadShader('src/shaders/oil-sharpen.frag.glsl')
         );
 
         // Splat per-pixel oil material properties

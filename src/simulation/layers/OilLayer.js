@@ -334,6 +334,32 @@ export default class OilLayer extends FluidLayer {
         
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         this.swapOilTextures();
+        
+        // THIRD PASS (nuclear dust removal)
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.oilTexture1);
+        gl.uniform1i(gl.getUniformLocation(sim.oilSmoothProgram, 'u_oil_texture'), 0);
+        
+        gl.uniform1f(gl.getUniformLocation(sim.oilSmoothProgram, 'u_smoothingRate'), sim.oilSmoothingRate * 2.0);
+        gl.uniform1f(gl.getUniformLocation(sim.oilSmoothProgram, 'u_thicknessThreshold'), 0.15);
+        
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        this.swapOilTextures();
+        
+        // FOURTH PASS (annihilate remaining dust)
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.oilTexture1);
+        gl.uniform1i(gl.getUniformLocation(sim.oilSmoothProgram, 'u_oil_texture'), 0);
+        
+        gl.uniform1f(gl.getUniformLocation(sim.oilSmoothProgram, 'u_smoothingRate'), sim.oilSmoothingRate * 2.5);
+        gl.uniform1f(gl.getUniformLocation(sim.oilSmoothProgram, 'u_thicknessThreshold'), 0.20); // Kill anything < 20% thickness
+        
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        this.swapOilTextures();
     }
 
     // STEP 5: Apply cohesion force (snap thin particles to thick blobs, prevent dust)
@@ -354,6 +380,28 @@ export default class OilLayer extends FluidLayer {
         gl.uniform2f(gl.getUniformLocation(sim.oilCohesionProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
         gl.uniform1f(gl.getUniformLocation(sim.oilCohesionProgram, 'u_cohesionStrength'), sim.oilCohesionStrength);
         gl.uniform1f(gl.getUniformLocation(sim.oilCohesionProgram, 'u_absorptionThreshold'), sim.oilAbsorptionThreshold);
+
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        this.swapOilTextures();
+    }
+
+    // STEP 5.5: Apply edge sharpening (creates border layer for blobs)
+    if (sim.oilEdgeSharpness > 0.0 && sim.oilSharpenProgram) {
+        gl.useProgram(sim.oilSharpenProgram);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
+        const posSharpen = gl.getAttribLocation(sim.oilSharpenProgram, 'a_position');
+        gl.enableVertexAttribArray(posSharpen);
+        gl.vertexAttribPointer(posSharpen, 2, gl.FLOAT, false, 0, 0);
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.oilTexture1);
+        gl.uniform1i(gl.getUniformLocation(sim.oilSharpenProgram, 'u_oil_texture'), 0);
+
+        gl.uniform2f(gl.getUniformLocation(sim.oilSharpenProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+        gl.uniform1f(gl.getUniformLocation(sim.oilSharpenProgram, 'u_edgeSharpness'), sim.oilEdgeSharpness);
 
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         this.swapOilTextures();
