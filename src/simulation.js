@@ -22,14 +22,20 @@ export default class Simulation {
         this.renderer = renderer;
         this.gl = renderer.gl;
         
-        // Physics parameters - based on real fluid properties
+        // Physics parameters - back to working values after radical experiment
         this.viscosity = 0.03;  // Lower viscosity so momentum lingers longer
         this.diffusionRate = 0.0;  // Disable diffusion (was causing fading)
-        this.oilSmoothingRate = 0.0; // Oil-only smoothing DISABLED - was dissipating thickness
-        this.spreadStrength = 0.0;  // Concentration pressure (removed - not real physics)
-        this.oilCohesionStrength = 3.0;  // Increased - stronger pull toward thick blobs
-        this.oilAbsorptionThreshold = 0.12;  // Increased - more aggressive dust removal
+        this.oilSmoothingRate = 0.0; // Set per-material
+        this.spreadStrength = 0.0;  
+        this.oilCohesionStrength = 3.0;  // Cohesion force for dust cleanup
+        this.oilAbsorptionThreshold = 0.12;  // Absorb thin dust
         this.oilEdgeSharpness = 0.0;  // DISABLED - was creating banding artifacts
+        
+        // MetaBall rendering parameters (implicit surface blending)
+        this.metaballEnabled = true;       // Enable MetaBall rendering
+        this.metaballBlobThreshold = 0.08; // Thickness threshold (lowered to catch dust)
+        this.metaballRadius = 12.0;        // Influence radius in pixels (increased range)
+        this.metaballBulginess = 2.5;      // Blending exponent (higher = more aggressive merging)
         this.rotationAmount = 0.0;  // Effective rotation force (base + delta)
         this.rotationBase = 0.03;    // Button/toggle driven rotation (default gentle flow like real shows)
         this.rotationDelta = 0.0;   // Transient input (keys/gestures)
@@ -281,6 +287,12 @@ export default class Simulation {
         this.clearRegionProgram = this.renderer.createProgram(
             fullscreenVert,
             await loadShader('src/shaders/clear-region.frag.glsl')
+        );
+
+        // MetaBall rendering (implicit surface blending for organic blob appearance)
+        this.oilMetaballProgram = this.renderer.createProgram(
+            fullscreenVert,
+            await loadShader('src/shaders/oil-metaball.frag.glsl')
         );
 
         // Splat per-pixel oil material properties

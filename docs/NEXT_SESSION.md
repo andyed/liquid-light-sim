@@ -243,6 +243,17 @@ See `OIL_OVERFLOW_FIX.md` for complete details.
    - Creates subtle convection currents for more dynamic blobs
    - Aligns with external AI feedback on temperature-driven dynamics
 
+7. **MetaBall Rendering Integrated** ✅ NEW!
+   - oil-metaball.frag.glsl: Implicit surface blending for organic blob appearance
+   - Applied after cohesion, before edge sharpening
+   - Parameters:
+     - blobThreshold: 0.25 (thick oil becomes blobs)
+     - metaballRadius: 8.0 pixels (influence distance)
+     - bulginess: 2.0 (exaggerates merging, 1.0=linear, 3.0=very bulgy)
+   - **Key insight from analysis**: Don't fight grid physics, make rendering beautiful!
+   - Rendering-only solution (no physics changes needed)
+   - Compensates for grid diffusion with smooth visual blending
+
 7. **Hybrid Particle System** ⚠️ CONVERSION LOOP PROBLEM
    - ✅ Created OilParticle class with physics (advection, buoyancy, merging)
    - ✅ Integrated into OilLayer (particles array, update loop)
@@ -260,6 +271,32 @@ See `OIL_OVERFLOW_FIX.md` for complete details.
      2. Instanced particle rendering (WebGL2 points/quads)
      3. Track converted regions (don't convert same spot twice)
      4. Particles-only mode (no grid rendering at all)
+
+8. **Radical Blob Formation Experiment** ⚠️ CONFIRMS GRID LIMITS
+   **Goal**: Push grid-based surface tension to extreme to force blob formation
+   
+   **Changes made:**
+   - Surface tension: 10x increase (800-1500, was 50-200)
+   - Disabled: overflow, cleanup, cohesion, absorption
+   - Water coupling: minimized to 0.02-0.08 (was 0.08-0.40)
+   - Advection: perfect conservation (zero dissipation)
+   - Sub-stepped advection: 3x smaller timesteps
+   - MetaBall: only blends colors, preserves original thickness
+   
+   **Results:**
+   - ✅ Some consolidation visible (small clumps form)
+   - ✅ Mass conservation vastly improved
+   - ✅ Saturation fades naturally as oil thins
+   - ❌ Horizontal banding/stripes during rotation
+   - ❌ Oil tears into sheets faster than surface tension consolidates
+   - ❌ Grid diffusion still dominates at edges
+   
+   **Conclusion: Hit Grid-Based Limits**
+   - Explicit solver can't handle high surface tension stably
+   - Single advection step tears oil before tension can respond
+   - Sub-stepping helps but not enough
+   - **Analysis confirmed**: Implicit solver (SPH) required for true blobs
+   - Current approach: good for thin films, fails for cohesive blobs
 
 ---
 
@@ -394,12 +431,61 @@ Smoothing, cohesion, and advection form a closed loop. Slowing any ONE process b
 - Faster smoothing alone = oil redistributes locally → still accumulates
 - The system needs ALL processes to scale proportionally OR active mass removal (overflow)
 
-**External AI Insights**:
-- **MetaBalls solve rendering**: Implicit surfaces naturally blend blobs without tracking topology
-- **Temperature drives dynamics**: Density + viscosity variation creates lava lamp motion
-- **Surface tension = oscillation frequency**: How fast blobs try to become spheres
-- **Viscosity = damping**: How quickly motion dissipates
-- **Tuning knobs**: Bulginess parameter (1.0-3.0) for exaggerated liquid-light merging
+**External AI Insights (Deep Technical Analysis)**:
+
+**Root Cause Diagnosis**:
+- **The fundamental problem**: High interfacial tension (IFT/σ) requires implicit integration
+- **Why we're struggling**: Explicit time integration → CFL stability constraint → forced to use low σ → no cohesion
+- **The tension**: Need high σ for blobs BUT explicit solver becomes unstable with high σ
+
+**Key Physics Parameters** (from lava lamp analysis):
+1. **Interfacial Tension (σ)**: Minimizes surface area, creates spheres
+   - High σ = rapid spheroidization, robust merging
+   - Controls oscillation frequency (how fast blobs try to become spheres)
+   - **Our constraint**: Explicit solver limits how high we can go
+
+2. **Viscosity (μ)**: Internal resistance to deformation
+   - High μ = slow, syrupy movement (desired aesthetic!)
+   - Controls damping (how quickly motion dissipates)
+   - Temperature-dependent: μ(T) decreases as T rises
+
+3. **Thermal Convection**: Temperature → Density → Buoyancy
+   - Hot oil: lower density → rises
+   - Cool oil: higher density → sinks
+   - Creates chaotic, sustained motion (lava lamp effect)
+
+4. **Marangoni Effect**: Surface tension gradients drive flow
+   - Temperature differences create σ(T) gradients
+   - Induces small-scale surface swirling
+   - Already implemented! (marangoniStrength parameter)
+
+**Rendering Solution** (What We Just Implemented):
+- **MetaBalls**: Implicit surfaces blend smoothly without tracking topology
+- **Bulginess parameter**: Controls joining shape (P < 1.0 = bulgy merging)
+- **Visual shortcut**: Make rendering beautiful, let physics be approximate
+- **Compensates for**: Grid diffusion, low particle resolution, stability constraints
+
+**The Gold Standard** (For Future Major Rewrite):
+- **SPH (Smoothed Particle Hydrodynamics)**: Lagrangian, mesh-free
+  - Naturally handles topology changes (merging/splitting)
+  - GPU-friendly, highly parallelizable
+  - O(N log N) with spatial acceleration
+- **Implicit Cohesion Force**: Molecular-like pairwise attraction
+  - Linearized backward Euler method
+  - Bypasses CFL constraints, allows arbitrarily high σ
+  - Strongly couples surface tension with pressure/viscosity
+- **SPH + MetaBall Synergy**: SPH density field = MetaBall implicit field
+  - Perfect mathematical consistency
+  - Fastest pipeline for real-time blob visualization
+
+**What We're Doing Now** (Grid-Based Compromise):
+✅ MetaBall rendering (compensates for grid limitations)
+✅ Temperature-driven agitation (heat lamp)
+✅ Marangoni effect (surface tension gradients)
+✅ Buoyancy system (rise/sink dynamics)
+⚠️ Surface tension limited by explicit solver stability
+⚠️ Grid diffusion fights blob formation
+→ **Result**: Good enough for visual plausibility, not physically accurate
 
 ---
 

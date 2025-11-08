@@ -291,7 +291,6 @@ export default class OilLayer extends FluidLayer {
     gl.uniform1i(gl.getUniformLocation(sim.advectionProgram, 'u_color_texture'), 0);
 
     gl.activeTexture(gl.TEXTURE1);
-    // Use oil velocity (which should have water's velocity from coupling)
     const velocityTexture = sim.debugAdvectOilWithWaterVelocity ? sim.velocityTexture1 : this.oilVelocityTexture1;
     gl.bindTexture(gl.TEXTURE_2D, velocityTexture);
     gl.uniform1i(gl.getUniformLocation(sim.advectionProgram, 'u_velocity_texture'), 1);
@@ -299,10 +298,8 @@ export default class OilLayer extends FluidLayer {
     gl.uniform1f(gl.getUniformLocation(sim.advectionProgram, 'u_dt'), dt);
     gl.uniform2f(gl.getUniformLocation(sim.advectionProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
     gl.uniform1i(gl.getUniformLocation(sim.advectionProgram, 'u_isVelocity'), 0);
-    // Mark advection as oil so shader preserves alpha
     const isOilAdvLoc = gl.getUniformLocation(sim.advectionProgram, 'u_isOil');
     if (isOilAdvLoc) gl.uniform1i(isOilAdvLoc, 1);
-    // Disable rim absorption fade for oil (prevents gradual disappearing during tests)
     const oilRimAbsLoc = gl.getUniformLocation(sim.advectionProgram, 'u_oilRimAbsorptionScale');
     if (oilRimAbsLoc) gl.uniform1f(oilRimAbsLoc, 0.0);
 
@@ -319,7 +316,7 @@ export default class OilLayer extends FluidLayer {
         
         gl.uniform2f(gl.getUniformLocation(sim.oilSmoothProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
         gl.uniform1f(gl.getUniformLocation(sim.oilSmoothProgram, 'u_smoothingRate'), sim.oilSmoothingRate);
-        gl.uniform1f(gl.getUniformLocation(sim.oilSmoothProgram, 'u_thicknessThreshold'), 0.06); // Aggressive dust removal
+        gl.uniform1f(gl.getUniformLocation(sim.oilSmoothProgram, 'u_thicknessThreshold'), 0.06); // Dust removal
         
         // FIRST PASS
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
@@ -343,8 +340,6 @@ export default class OilLayer extends FluidLayer {
         
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         this.swapOilTextures();
-        
-        // Passes 3-4 DISABLED: Particles handle blobs now, only need light smoothing for thin oil
     }
 
     // STEP 5: Apply cohesion force (snap thin particles to thick blobs, prevent dust)
@@ -370,7 +365,31 @@ export default class OilLayer extends FluidLayer {
         this.swapOilTextures();
     }
 
-    // STEP 5.5: Apply edge sharpening (creates border layer for blobs)
+    // STEP 5.5: Apply MetaBall rendering (implicit surface blending for organic appearance)
+    if (sim.metaballEnabled && sim.oilMetaballProgram) {
+        gl.useProgram(sim.oilMetaballProgram);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
+        const posMetaball = gl.getAttribLocation(sim.oilMetaballProgram, 'a_position');
+        gl.enableVertexAttribArray(posMetaball);
+        gl.vertexAttribPointer(posMetaball, 2, gl.FLOAT, false, 0, 0);
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.oilTexture1);
+        gl.uniform1i(gl.getUniformLocation(sim.oilMetaballProgram, 'u_oil_texture'), 0);
+
+        gl.uniform2f(gl.getUniformLocation(sim.oilMetaballProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+        gl.uniform1f(gl.getUniformLocation(sim.oilMetaballProgram, 'u_blobThreshold'), sim.metaballBlobThreshold);
+        gl.uniform1f(gl.getUniformLocation(sim.oilMetaballProgram, 'u_metaballRadius'), sim.metaballRadius);
+        gl.uniform1f(gl.getUniformLocation(sim.oilMetaballProgram, 'u_bulginess'), sim.metaballBulginess);
+
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        this.swapOilTextures();
+    }
+
+    // STEP 5.75: Apply edge sharpening (creates border layer for blobs) - DISABLED
     if (sim.oilEdgeSharpness > 0.0 && sim.oilSharpenProgram) {
         gl.useProgram(sim.oilSharpenProgram);
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
@@ -397,12 +416,16 @@ export default class OilLayer extends FluidLayer {
         sim.applyOilAttraction(dt);
     }
 
-    // STEP 6: Oil overflow control (same cadence as water, independent thresholds)
-    // Use same frame counter as water (already incremented in WaterLayer.update)
-    if ((sim._frameCounter % sim.occupancyEveryN) === 0) {
-      const prevViewport = gl.getParameter(gl.VIEWPORT);
-      this.computeOccupancy();
-      if (sim.oilOccupancyPercent > sim.oilOverflowUpper) {
+    // STEP 6: Check for overflow and drain excess (prevents infinite accumulation)
+    if (gl.canvas.width === sim.renderer.simWidth) {
+      this.framesSinceOccupancy++;
+      if (this.framesSinceOccupancy >= this.occupancyCheckInterval) {
+        this.computeOccupancy();
+        this.framesSinceOccupancy = 0;
+      }
+      
+      // Aggressive overflow management if over threshold
+      if (sim.oilOccupancyPercent > sim.oilOverflowLower) {
         const excess = sim.oilOccupancyPercent - sim.oilOverflowLower;
         const range = Math.max(0.01, sim.oilOverflowUpper - sim.oilOverflowLower);
         // Much gentler overflow for oil conservation (0.05 vs water's 0.20)

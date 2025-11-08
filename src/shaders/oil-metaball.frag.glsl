@@ -37,15 +37,15 @@ void main() {
         
         for (float r = 1.0; r <= u_metaballRadius; r += 1.0) {
             vec2 samplePos = v_texCoord + dir * r * texelSize;
-            vec4 sample = texture(u_oil_texture, samplePos);
-            float sampleThickness = sample.a;
+            vec4 neighbor = texture(u_oil_texture, samplePos);
+            float neighborThickness = neighbor.a;
             
-            if (sampleThickness > u_blobThreshold) {
+            if (neighborThickness > u_blobThreshold) {
                 // Metaball contribution: 1/r^bulginess
                 // Higher bulginess = more exaggerated bulging at merge points
-                float contribution = sampleThickness / pow(r, u_bulginess);
+                float contribution = neighborThickness / pow(r, u_bulginess);
                 field += contribution;
-                blendedColor += sample.rgb * contribution;
+                blendedColor += neighbor.rgb * contribution;
                 totalWeight += contribution;
             }
         }
@@ -61,9 +61,7 @@ void main() {
         blendedColor /= totalWeight;
     }
     
-    // Enhanced thickness based on metaball field strength
-    // This creates the smooth, bulging surface at merge points
-    float enhancedThickness = min(1.0, field * 0.2); // Scale field to [0,1]
-    
-    outColor = vec4(blendedColor, enhancedThickness);
+    // Use ORIGINAL thickness - MetaBall only blends colors, doesn't inflate mass
+    // This ensures white reflection fades naturally as oil thins
+    outColor = vec4(blendedColor, thickness); // Keep original thickness!
 }

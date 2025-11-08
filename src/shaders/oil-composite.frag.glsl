@@ -100,15 +100,16 @@ void main() {
     float iridescenceStrength = thinness * 0.02; // Drastically reduced from 0.08
     vec3 withIridescence = tinted + iridescence * iridescenceStrength;
     
-    // 4. Fresnel reflection (barely visible, tinted with user color)
-    // Thick oil reflects its own color, NOT white
-    vec3 reflectionColor = mix(userOilColor * 1.3, vec3(1.0), 0.05); // Almost all color
-    float fresnelStrength = fresnelFactor * opacity * 0.03; // Drastically reduced from 0.1
+    // 4. Fresnel reflection (ONLY on thick oil, fades completely when thin)
+    // White reflection ONLY appears on thick oil (> 0.4 thickness)
+    float thicknessForReflection = smoothstep(0.3, 0.6, thickness); // Only thick oil gets white
+    vec3 reflectionColor = mix(userOilColor * 1.2, vec3(1.0), thicknessForReflection * 0.15); // White only if thick
+    float fresnelStrength = fresnelFactor * thicknessForReflection * 0.02; // Tied to thick regions
     vec3 final = mix(withIridescence, reflectionColor, fresnelStrength);
     
-    // 5. Edge glow using user's color (only on thick edges)
-    float thickEdge = smoothstep(0.1, 0.2, thickness) * edgeHighlight;
-    final += userOilColor * thickEdge * 0.3;
+    // 5. Edge glow using user's color (ONLY on thick blob edges, not thin spreading)
+    float thickEdge = smoothstep(0.35, 0.5, thickness) * edgeHighlight; // Higher threshold
+    final += userOilColor * thickEdge * 0.2; // Reduced strength
     
     // Variable density visualization: thicker = darker version of user color
     float densityDarken = smoothstep(0.3, 0.8, thickness) * 0.3;

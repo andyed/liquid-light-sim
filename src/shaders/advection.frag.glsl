@@ -68,9 +68,9 @@ void main() {
         vec4 minVal = min(min(min(n0, n1), min(n2, n3)), min(min(n4, n5), min(n6, min(n7, n8))));
         vec4 maxVal = max(max(max(n0, n1), max(n2, n3)), max(max(n4, n5), max(n6, max(n7, n8))));
 
-        float thickness = texture(u_color_texture, v_texCoord).a;
-        float dissipation = u_dissipation_strength * (1.0 - thickness);
-        outColor = mix(forward, clamp(forward, minVal, maxVal), 0.8 + dissipation);
+        // PERFECT CONSERVATION: No dissipation, no clamping artifacts
+        // Pure semi-Lagrangian with anti-diffusion sharpening
+        outColor = clamp(forward, minVal, maxVal); // Anti-diffusion only
         outColor.rgb = clamp(outColor.rgb, vec3(0.0), vec3(1.0));
         outColor.a = clamp(outColor.a, 0.0, 1.0);
         return;
