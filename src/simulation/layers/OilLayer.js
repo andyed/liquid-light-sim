@@ -271,25 +271,33 @@ export default class OilLayer extends FluidLayer {
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     this.swapOilTextures();
 
-    // STEP 4.5: Apply thickness smoothing (removes pixel dust, promotes droplets)
+    // STEP 4.5: Apply thickness smoothing TWICE (removes pixel dust, promotes droplets)
     if (sim.oilSmoothingRate > 0.0 && sim.oilSmoothProgram) {
         gl.useProgram(sim.oilSmoothProgram);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);
-
         gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
         const posSmooth = gl.getAttribLocation(sim.oilSmoothProgram, 'a_position');
         gl.enableVertexAttribArray(posSmooth);
         gl.vertexAttribPointer(posSmooth, 2, gl.FLOAT, false, 0, 0);
-
+        
+        gl.uniform2f(gl.getUniformLocation(sim.oilSmoothProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+        gl.uniform1f(gl.getUniformLocation(sim.oilSmoothProgram, 'u_smoothingRate'), sim.oilSmoothingRate);
+        gl.uniform1f(gl.getUniformLocation(sim.oilSmoothProgram, 'u_thicknessThreshold'), 0.06); // Aggressive dust removal
+        
+        // FIRST PASS
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, this.oilTexture1);
         gl.uniform1i(gl.getUniformLocation(sim.oilSmoothProgram, 'u_oil_texture'), 0);
-
-        gl.uniform2f(gl.getUniformLocation(sim.oilSmoothProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
-        gl.uniform1f(gl.getUniformLocation(sim.oilSmoothProgram, 'u_smoothingRate'), sim.oilSmoothingRate);
-        gl.uniform1f(gl.getUniformLocation(sim.oilSmoothProgram, 'u_thicknessThreshold'), 0.015); // Kill dust
-
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        this.swapOilTextures();
+        
+        // SECOND PASS (even more aggressive)
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.oilTexture1);
+        gl.uniform1i(gl.getUniformLocation(sim.oilSmoothProgram, 'u_oil_texture'), 0);
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         this.swapOilTextures();
     }
@@ -307,7 +315,8 @@ export default class OilLayer extends FluidLayer {
       if (sim.oilOccupancyPercent > sim.oilOverflowUpper) {
         const excess = sim.oilOccupancyPercent - sim.oilOverflowLower;
         const range = Math.max(0.01, sim.oilOverflowUpper - sim.oilOverflowLower);
-        const strength = Math.min(0.20, Math.max(0.0, excess / range));
+        // Much gentler overflow for oil conservation (0.05 vs water's 0.20)
+        const strength = Math.min(0.05, Math.max(0.0, excess / range));
         this.applyOverflow(strength);
         this.computeOccupancy(); // Re-measure after overflow
       }

@@ -212,17 +212,22 @@ The simulation now includes a separate oil layer, which is rendered on top of th
 - **`oil-composite.frag.glsl`** – realistic optics: thin-film interference, Fresnel, chromatic aberration
 
 ### Oil Parameters (Material Presets)
-- **Surface Tension**: 20.0-45.0 (was 8.0-25.0) - dramatically increased for droplet formation
-  - Mineral Oil: 35.0
-  - Alcohol: 20.0
-  - Syrup: 45.0
-  - Glycerine: 38.0
-- **Smoothing Rate**: 0.20-0.30 (new parameter)
+- **Surface Tension**: 30.0-65.0 (was 8.0-25.0) - dramatically increased for blobby separation
+  - Mineral Oil: 50.0 (was 35.0)
+  - Alcohol: 30.0 (was 20.0)
+  - Syrup: 65.0 (was 45.0)
+  - Glycerine: 55.0 (was 38.0)
+- **Smoothing Rate**: 0.35-0.45 (was 0.20-0.30)
   - Controls bilateral filter strength
   - Higher viscosity materials = more smoothing
-- **Dust Threshold**: 0.015 (hard-coded in shader)
+  - Squared thinness factor for aggressive dust removal
+- **Dust Threshold**: 0.025 (was 0.015)
   - Pixels below this thickness are eliminated
-  - Prevents grainy "pixel dust" artifacts
+  - More aggressive culling prevents grainy "pixel dust"
+- **Overflow Conservation**: 0.05 max strength (water uses 0.20)
+  - 4x gentler damping for better oil conservation
+  - Higher thresholds: 0.96-0.99 upper, 0.88-0.92 lower
+  - Oil persists ~5x longer than ink
 
 ### Known Issues
 

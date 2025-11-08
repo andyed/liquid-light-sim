@@ -22,9 +22,11 @@ void main() {
     }
     
     // Smoothing strength inversely proportional to thickness
-    // Thin oil = more smoothing (removes noise)
+    // Thin oil = AGGRESSIVE smoothing (removes noise)
     // Thick oil = less smoothing (preserves detail)
-    float thinnessFactor = 1.0 - smoothstep(0.0, 0.15, centerThickness);
+    // Wider range (0.0-0.20) and squared for more aggressive thinning
+    float thinnessFactor = 1.0 - smoothstep(0.0, 0.20, centerThickness);
+    thinnessFactor = thinnessFactor * thinnessFactor; // Square for stronger effect on thin areas
     float effectiveSmoothing = u_smoothingRate * thinnessFactor;
     
     if (effectiveSmoothing < 0.01) {
@@ -33,27 +35,27 @@ void main() {
         return;
     }
     
-    // 3x3 bilateral filter: smooth color and thickness separately
+    // 5x5 bilateral filter: aggressive smoothing for pixel dust removal
     vec2 texel = 1.0 / u_resolution;
     
     vec3 colorSum = vec3(0.0);
     float thicknessSum = 0.0;
     float weightSum = 0.0;
     
-    // Sample 3x3 neighborhood
-    for (int y = -1; y <= 1; y++) {
-        for (int x = -1; x <= 1; x++) {
+    // Sample 5x5 neighborhood (more aggressive smoothing)
+    for (int y = -2; y <= 2; y++) {
+        for (int x = -2; x <= 2; x++) {
             vec2 offset = vec2(float(x), float(y)) * texel;
             vec4 neighbor = texture(u_oil_texture, v_texCoord + offset);
             float neighborThickness = neighbor.a;
             
-            // Spatial weight (Gaussian-ish)
+            // Spatial weight (Gaussian-ish, broader for 5x5)
             float spatialDist = length(vec2(x, y));
-            float spatialWeight = exp(-spatialDist * spatialDist * 0.5);
+            float spatialWeight = exp(-spatialDist * spatialDist * 0.3); // Broader than 3x3
             
             // Range weight (preserve edges between thick and thin)
             float thicknessDiff = abs(neighborThickness - centerThickness);
-            float rangeWeight = exp(-thicknessDiff * 10.0);
+            float rangeWeight = exp(-thicknessDiff * 8.0); // Slightly more permissive
             
             float weight = spatialWeight * rangeWeight;
             
