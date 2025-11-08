@@ -123,7 +123,8 @@ export default class Controller {
 
         this.createMarangoniHUD();
 
-        this.heatLampLevel = 0; // 0: OFF, 1: LOW, 2: MEDIUM, 3: HIGH
+        this.heatLampLevel = 2; // 0: OFF, 1: LOW, 2: MEDIUM, 3: HIGH (default MEDIUM for temp dynamics)
+        this.applyHeatLampPreset(); // Apply default MEDIUM setting
     }
 
     setMaterial(index, autoPick = true) {
@@ -598,7 +599,7 @@ export default class Controller {
                 </div>
                 <div class="menu-action" data-action="heat" style="display: flex; justify-content: space-between; align-items: center; padding: 12px; margin-top: 8px; background: rgba(255,255,255,0.05); border-radius: 4px; cursor: pointer;">
                     <span>Heat Lamp</span>
-                    <span class="heat-value" style="opacity: 0.7; font-size: 12px;">OFF</span>
+                    <span class="heat-value" style="opacity: 0.7; font-size: 12px;">MEDIUM</span>
                 </div>
             </div>
             

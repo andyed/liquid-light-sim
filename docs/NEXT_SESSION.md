@@ -236,7 +236,14 @@ See `OIL_OVERFLOW_FIX.md` for complete details.
    - Root cause: Smoothing redistributes without destroying
    - Learning: Can't slow only advection, breaks mass balance
 
-6. **Hybrid Particle System** ⚠️ CONVERSION LOOP PROBLEM
+6. **Heat Lamp Defaults to MEDIUM** ✅
+   - Changed from OFF to MEDIUM (level 2)
+   - Provides baseline temperature variation (agitation: 0.002)
+   - Brightness boost: 1.2 (20% brighter)
+   - Creates subtle convection currents for more dynamic blobs
+   - Aligns with external AI feedback on temperature-driven dynamics
+
+7. **Hybrid Particle System** ⚠️ CONVERSION LOOP PROBLEM
    - ✅ Created OilParticle class with physics (advection, buoyancy, merging)
    - ✅ Integrated into OilLayer (particles array, update loop)
    - ✅ Grid→Particle conversion with texture reading
@@ -365,11 +372,21 @@ Eulerian (grid-based) advection inherently creates diffusion. Oil is torn apart 
    - Run cohesion on both oil textures simultaneously
    - Prevents "trailing dust" from alternating buffers
 
-**Recommended Order:**
+**Recommended Order (Updated with External Feedback):**
 1. ~~Try adaptive timesteps~~ ❌ FAILED (mass accumulation)
-2. **Try pre-advection cohesion** ⭐ NEXT BEST OPTION
-   - Consolidate before movement to prevent tearing at source
-3. If still failing: **particle-hybrid** (most realistic, bigger change)
+2. **MetaBall Rendering** ⭐⭐⭐ HIGHEST PRIORITY (external AI recommendation)
+   - Rendering-only solution (no physics changes needed!)
+   - Implicit surface blending creates smooth blob merging naturally
+   - Tunable "bulginess" parameter for liquid-light look
+   - Shader: oil-metaball.frag.glsl (created, ready to integrate)
+   - **Key insight**: Don't track blobs in physics, create them in rendering!
+3. **Temperature-Dependent Properties** ⭐⭐ (we're 80% there!)
+   - Heat lamp agitation already exists (material.agitation)
+   - Add: Temperature → density (buoyancy strength)
+   - Add: Temperature → viscosity (warmer = flows faster)
+   - Creates lava lamp effect (warm rises, cool sinks, continuous cycle)
+4. **Pre-advection cohesion** (fallback option)
+5. **Cahn-Hilliard Phase Field** (advanced - for topology changes)
 
 **Critical Mass Conservation Learning**:
 Smoothing, cohesion, and advection form a closed loop. Slowing any ONE process breaks the balance:
@@ -377,7 +394,12 @@ Smoothing, cohesion, and advection form a closed loop. Slowing any ONE process b
 - Faster smoothing alone = oil redistributes locally → still accumulates
 - The system needs ALL processes to scale proportionally OR active mass removal (overflow)
 
-This is why particle systems work better for blobs - each particle IS a blob, no conservation issues.
+**External AI Insights**:
+- **MetaBalls solve rendering**: Implicit surfaces naturally blend blobs without tracking topology
+- **Temperature drives dynamics**: Density + viscosity variation creates lava lamp motion
+- **Surface tension = oscillation frequency**: How fast blobs try to become spheres
+- **Viscosity = damping**: How quickly motion dissipates
+- **Tuning knobs**: Bulginess parameter (1.0-3.0) for exaggerated liquid-light merging
 
 ---
 
