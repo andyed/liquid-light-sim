@@ -44,21 +44,21 @@ void main() {
     for (int y = -1; y <= 1; y++) {
         for (int x = -1; x <= 1; x++) {
             vec2 offset = vec2(float(x), float(y)) * texel;
-            vec4 sample = texture(u_oil_texture, v_texCoord + offset);
-            float sampleThickness = sample.a;
+            vec4 neighbor = texture(u_oil_texture, v_texCoord + offset);
+            float neighborThickness = neighbor.a;
             
             // Spatial weight (Gaussian-ish)
             float spatialDist = length(vec2(x, y));
             float spatialWeight = exp(-spatialDist * spatialDist * 0.5);
             
             // Range weight (preserve edges between thick and thin)
-            float thicknessDiff = abs(sampleThickness - centerThickness);
+            float thicknessDiff = abs(neighborThickness - centerThickness);
             float rangeWeight = exp(-thicknessDiff * 10.0);
             
             float weight = spatialWeight * rangeWeight;
             
-            colorSum += sample.rgb * weight;
-            thicknessSum += sampleThickness * weight;
+            colorSum += neighbor.rgb * weight;
+            thicknessSum += neighborThickness * weight;
             weightSum += weight;
         }
     }

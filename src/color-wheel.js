@@ -202,8 +202,11 @@ export default class ColorWheel {
     
     handleWheelDrag(e) {
         const rect = this.wheelCanvas.getBoundingClientRect();
-        const x = e.clientX - rect.left - this.size / 2;
-        const y = e.clientY - rect.top - this.size / 2;
+        // Use rect dimensions (actual displayed size) instead of canvas internal size
+        const centerX = rect.width / 2;
+        const centerY = rect.height / 2;
+        const x = e.clientX - rect.left - centerX;
+        const y = e.clientY - rect.top - centerY;
         
         const angle = Math.atan2(y, x) * 180 / Math.PI;
         this.hue = (angle + 90 + 360) % 360;
@@ -215,11 +218,12 @@ export default class ColorWheel {
     
     handleSquareDrag(e) {
         const rect = this.squareCanvas.getBoundingClientRect();
-        const x = Math.max(0, Math.min(this.size, e.clientX - rect.left));
-        const y = Math.max(0, Math.min(this.size, e.clientY - rect.top));
+        // Use rect dimensions (actual displayed size) for accurate mapping
+        const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+        const y = Math.max(0, Math.min(rect.height, e.clientY - rect.top));
         
-        this.saturation = x / this.size;
-        this.value = 1 - (y / this.size);
+        this.saturation = x / rect.width;
+        this.value = 1 - (y / rect.height);
         
         this.drawSquare();
         this.updateColor();

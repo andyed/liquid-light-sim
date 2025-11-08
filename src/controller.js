@@ -319,10 +319,11 @@ export default class Controller {
 
     updateMarangoniHUD() {
         if (!this.marangoniHUD) return;
-        const modeNames = ['COLOR', 'VELOCITY', 'CONC GRAD', 'OIL THICK', 'OIL GRAD'];
+        const modeNames = ['', 'VELOCITY', 'CONC GRAD', 'OIL THICK', 'OIL GRAD'];
         const dm = this.renderer?.debugMode ?? 0;
-        const view = dm !== 0 ? ` | View: ${modeNames[dm]}` : '';
-        this.marangoniHUD.textContent = `Marangoni  S:${this.simulation.marangoniStrength.toFixed(2)}  k:${this.simulation.marangoniKth.toFixed(2)}  band:${this.simulation.marangoniEdgeBand.toFixed(2)}px${view}`;
+        this.marangoniHUD.textContent = modeNames[dm];
+        // Hide HUD when in default view (blank)
+        this.marangoniHUD.style.display = modeNames[dm] ? 'block' : 'none';
     }
     
     createLightIndicator() {
@@ -406,17 +407,22 @@ export default class Controller {
         this.menuButton.innerHTML = '☰';
         this.menuButton.style.cssText = `
             position: fixed;
-            top: 20px;
-            right: 20px;
-            width: 50px;
-            height: 50px;
+            top: -20px;
+            right: -20px;
+            width: 150px;
+            height: 150px;
             border: none;
             background: rgba(0, 0, 0, 0.7);
             color: white;
-            font-size: 28px;
+            font-size: 84px;
             cursor: pointer;
             z-index: 1001;
-            border-radius: 8px;
+            border-radius: 24px;
+            padding: 0;
+            line-height: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         `;
         
         // Menu panel
@@ -439,7 +445,7 @@ export default class Controller {
         `;
         
         this.menuPanel.innerHTML = `
-            <h2 style="margin: 0 0 20px 0; font-size: 24px;">Controls</h2>
+            <h2 style="margin: 0 0 0 0; font-size: 24px;">Controls</h2>
             
             <div style="margin-bottom: 30px;">
                 <h3 style="font-size: 16px; opacity: 0.7; margin: 0 0 10px 0;">Rendering</h3>

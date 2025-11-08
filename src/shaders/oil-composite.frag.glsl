@@ -28,7 +28,8 @@ vec3 thinFilmInterference(float thickness, float cosTheta) {
     // Modulate by viewing angle (Fresnel-like)
     float angleFactor = pow(1.0 - cosTheta, 0.8);
     
-    return vec3(r, g, b) * angleFactor * 1.5;
+    // Much more subtle - reduced from 1.5 to 0.6
+    return vec3(r, g, b) * angleFactor * 0.6;
 }
 
 // Schlick's approximation for Fresnel reflection
@@ -93,16 +94,21 @@ void main() {
     vec3 userOilColor = oilTint;
     vec3 tinted = mix(base, userOilColor, opacity * u_tint_strength);
     
-    // 3. Subtle iridescent highlights (ONLY on thin edges, not everywhere)
-    float iridescenceStrength = (1.0 - opacity) * 0.15; // Thin = more iridescence
+    // 3. VERY subtle iridescent highlights (only on extremely thin oil)
+    // Only show iridescence on very thin films (like real soap bubbles)
+    float thinness = smoothstep(0.15, 0.05, thickness); // Only when very thin
+    float iridescenceStrength = thinness * 0.08; // Reduced from 0.15
     vec3 withIridescence = tinted + iridescence * iridescenceStrength;
     
-    // 4. Fresnel reflection (subtle specular highlights)
-    vec3 reflectionColor = mix(userOilColor * 1.5, vec3(1.0), 0.3); // Tinted specular
-    vec3 final = mix(withIridescence, reflectionColor, fresnelFactor * opacity * 0.2);
+    // 4. Fresnel reflection (minimal, tinted with user color)
+    // Thick oil reflects its own color, not white
+    vec3 reflectionColor = mix(userOilColor * 1.2, vec3(1.0), 0.1); // More color, less white
+    float fresnelStrength = fresnelFactor * opacity * 0.1; // Reduced from 0.2
+    vec3 final = mix(withIridescence, reflectionColor, fresnelStrength);
     
-    // 5. Edge glow using user's color
-    final += userOilColor * edgeHighlight * opacity * 0.5;
+    // 5. Edge glow using user's color (only on thick edges)
+    float thickEdge = smoothstep(0.1, 0.2, thickness) * edgeHighlight;
+    final += userOilColor * thickEdge * 0.3;
     
     // Variable density visualization: thicker = darker version of user color
     float densityDarken = smoothstep(0.3, 0.8, thickness) * 0.3;
