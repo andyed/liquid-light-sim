@@ -6,7 +6,7 @@ Try it: https://andyed.github.io/liquid-light-sim/
 
 **Status:** Milestone 3 - Layered core + Oil persistence fixes ✅
 
-A GPU-accelerated fluid simulation for VJ performance and digital art, built with WebGL2. The core now uses a layered architecture (FluidLayer interface) with a WaterLayer and an alpha OilLayer (visual refraction, smoothing, presets).
+A GPU-accelerated fluid simulation for play, VJ performance and digital art, built with WebGL2. The core now uses a layered architecture (FluidLayer interface) with a WaterLayer and an alpha OilLayer (visual refraction, smoothing, presets).
 
 ![Circular Container](https://img.shields.io/badge/Container-Circular_Boundary-blue)
 ![Physics](https://img.shields.io/badge/Physics-Navier--Stokes-green)
@@ -323,15 +323,15 @@ liquid-light-sim/
 - Testing infrastructure
 - Circular container
 
-### 🔄 Phase 2: Dual-Fluid (Next)
-- [ ] Phase field advection
-- [ ] Buoyancy force
-- [ ] Capillary forces (surface tension)
-- [ ] Oil injection controls
+### ✅ Phase 2: Dual-Fluid (Complete)
+- ✅ **Layered architecture** - WaterLayer + OilLayer with independent advection (alternative to phase field)
+- ✅ **Capillary forces** - Surface tension (50-90) with curvature-based forces for blobby separation
+- ✅ **Oil injection controls** - 5 materials (Ink, Mineral Oil, Alcohol, Syrup, Glycerine) with full parameter control
+- ✅ **Buoyancy force** - Density-based vertical motion (lighter oils rise, heavier sink)
 
 ### ⏳ Phase 3: Polish
-- [ ] Material presets
-- [ ] Color palettes
+- ✅ **Material presets** - 5 materials with distinct physics parameters
+- ✅ **Color palettes** - Per-material color sets with memory
 - [ ] Performance profiles
 - [ ] MIDI control integration
 

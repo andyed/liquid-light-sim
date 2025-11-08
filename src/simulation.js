@@ -248,6 +248,12 @@ export default class Simulation {
             await loadShader('src/shaders/oil-smooth.frag.glsl')
         );
 
+        // Buoyancy force (density-based vertical motion for oil)
+        this.buoyancyProgram = this.renderer.createProgram(
+            fullscreenVert,
+            await loadShader('src/shaders/buoyancy.frag.glsl')
+        );
+
         // Splat per-pixel oil material properties
         this.splatOilPropsProgram = this.renderer.createProgram(
             fullscreenVert,

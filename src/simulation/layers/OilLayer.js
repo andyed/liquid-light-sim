@@ -202,6 +202,35 @@ export default class OilLayer extends FluidLayer {
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     this.swapOilVelocityTextures();
 
+    // STEP 2.5: Apply buoyancy force (density-based vertical motion)
+    if (sim.buoyancyStrength && sim.buoyancyStrength !== 0.0 && sim.buoyancyProgram) {
+        gl.useProgram(sim.buoyancyProgram);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilVelocityFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilVelocityTexture2, 0);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
+        const posBuoy = gl.getAttribLocation(sim.buoyancyProgram, 'a_position');
+        gl.enableVertexAttribArray(posBuoy);
+        gl.vertexAttribPointer(posBuoy, 2, gl.FLOAT, false, 0, 0);
+
+        // Oil velocity texture
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.oilVelocityTexture1);
+        gl.uniform1i(gl.getUniformLocation(sim.buoyancyProgram, 'u_velocity_texture'), 0);
+
+        // Oil thickness texture
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, this.oilTexture1);
+        gl.uniform1i(gl.getUniformLocation(sim.buoyancyProgram, 'u_oil_texture'), 1);
+
+        gl.uniform1f(gl.getUniformLocation(sim.buoyancyProgram, 'u_dt'), dt);
+        gl.uniform1f(gl.getUniformLocation(sim.buoyancyProgram, 'u_buoyancy_strength'), sim.buoyancyStrength);
+        gl.uniform2f(gl.getUniformLocation(sim.buoyancyProgram, 'u_gravity'), 0.0, 1.0); // Downward gravity
+
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        this.swapOilVelocityTextures();
+    }
+
     // STEP 3: Apply oil viscosity (high viscosity = slow, smooth flow)
     // Re-enabled with proper tuning - oil should be thick and sluggish
     if (sim.oilViscosity > 0.0 && sim.oilViscosityIterations > 0) {
