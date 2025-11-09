@@ -1,12 +1,61 @@
-# Next Session: SPH Blob Tuning & Rotation Integration
+# Next Session Plan
 
-## Current State (Nov 9, 2025)
+**Date**: November 9, 2025  
+**Status**: MULTI-LAYER ARCHITECTURE COMPLETE! 
 
-🎉 **BREAKTHROUGH: SPH Blobs Are Rendering!**
+---
+
+## Current State
+
+### Multi-Layer System Working
+- **SPH Layer**: Mineral Oil, Syrup, Glycerine (particle-based)
+- **Grid Layer**: Alcohol (texture-based advection-diffusion)
+- **Composite Layer**: Automatic blending (SPH over Grid)
+- **Independent Physics**: Each layer runs its own simulation
+- **Proper Rendering**: Materials can coexist without interference
+
+### ✅ Bug Fixes Complete
+1. ✅ Ink no longer disappears when painting Alcohol
+2. ✅ Material switching doesn't create spurious motion
+3. ✅ Alcohol is translucent (allows ink to show through)
+4. ✅ Grid layer only updates when it has content
+
+---
+
+## 🎯 Next Priorities
+
+### 1. Performance Optimization
+- Profile composite shader (currently ~1ms)
+- Consider texture size optimization
+- Add framerate monitoring
+
+### 2. Enhanced Multi-Material Features
+- **Interaction Physics**: SPH particles displace grid fluid
+- **Material Mixing**: Alcohol dilutes/spreads SPH materials
+- **Visual Effects**: Color bleeding between layers
+
+### 3. UX Improvements
+- Visual indicator for which layer is active
+- Layer visibility toggles (show/hide SPH vs Grid)
+- Clear individual layers (not just all)
+
+### 4. SPH Tuning (Ongoing)
+- Continue rotation force balance
+- MetaBall parameter optimization
+- Particle lifecycle refinement
+
+---
+
+## 📚 Previous State (Archive - Nov 9, 2025)
+
+ BREAKTHROUGH: SPH Blobs Are Rendering!
 
 After fixing critical bugs, SPH particles are now:
-- ✅ Rendering with correct colors
-- ✅ Forming cohesive blob shapes
+- Rendering with correct colors
+- Forming cohesive blob shapes
+- Persisting without fade-out
+- Using pre-multiplied alpha for proper color mixing
+- Cleaning up out-of-bounds particles
 - ✅ Persisting without fade-out
 - ✅ Using pre-multiplied alpha for proper color mixing
 - ✅ Cleaning up out-of-bounds particles

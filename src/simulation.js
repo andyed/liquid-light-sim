@@ -294,6 +294,13 @@ export default class Simulation {
             fullscreenVert,
             await loadShader('src/shaders/oil-metaball.frag.glsl')
         );
+        
+        // Oil Layer Compositor (blends SPH + Grid layers) - MULTI-LAYER ARCHITECTURE
+        this.oilLayerCompositeProgram = this.renderer.createProgram(
+            await loadShader('src/shaders/oil-layer-composite.vert.glsl'),
+            await loadShader('src/shaders/oil-layer-composite.frag.glsl')
+        );
+        console.log('✅ Oil layer composite shader loaded');
 
         // SPH particle rendering (NEW!)
         this.sphParticleSplatProgram = this.renderer.createProgram(

@@ -452,8 +452,8 @@ export default class SPHOilSystem {
     // Store rotation for force computation
     this.currentRotation = rotationAmount;
     
-    // Clamp timestep for stability
-    dt = Math.min(dt, 0.016); // Max 16ms (60fps)
+    // Clamp timestep for stability (REDUCED to prevent oscillations)
+    dt = Math.min(dt, 0.010); // Max 10ms (100fps) - prevents pressure overshooting
     
     // PHASE 1/2: SPH pipeline with optional implicit integration
     this.updateSpatialHash();
@@ -953,7 +953,7 @@ export default class SPHOilSystem {
    * Shared logic for applying damping, velocity caps, and updating positions
    */
   _updatePositions(dt) {
-    const damping = 0.95; // Lighter damping for lava lamp motion (was 0.80, too aggressive!)
+    const damping = 0.85; // STRONGER damping to prevent oscillations (was 0.95, too bouncy!)
     const maxSpeed = 1.0;  // High speed cap for visible rotation (was 0.3)
     
     for (let i = 0; i < this.particleCount; i++) {
