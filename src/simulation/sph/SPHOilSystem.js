@@ -339,7 +339,7 @@ export default class SPHOilSystem {
   /**
    * Write particle velocities back to grid texture (for continuity with grid-based rendering)
    * @param {WebGLTexture} oilVelocityTexture - Target velocity texture
-   * @param {number} gridWidth - Texture width  
+   * @param {number} gridWidth - Texture width
    * @param {number} gridHeight - Texture height
    */
   writeVelocitiesToGrid(oilVelocityTexture, gridWidth, gridHeight) {
@@ -438,12 +438,16 @@ export default class SPHOilSystem {
         console.log('🔧 Implicit solver initialized');
       }
       
-      // Solve: (M - dt*J) * v_new = M*v + dt*F_explicit
-      const converged = this.implicitSolver.solve(dt, gridVelocities);
+      // Solve for new velocities
+      const converged = this.implicitSolver.solve(dt);
       
       if (!converged && Math.random() < 0.1) {
         console.warn('⚠️ Implicit solver convergence issue');
       }
+      
+      // After solver, velocities are updated. Now update positions.
+      this._updatePositions(dt);
+
     } else {
       // PHASE 1: Explicit integration (standard SPH)
       this.integrate(dt);
@@ -888,16 +892,11 @@ export default class SPHOilSystem {
    * PHASE 1.7: With NaN guards and damping
    */
   integrate(dt) {
-    // Moderate damping - allow rotation to build momentum
-    const damping = 0.95; // Lighter damping for lava lamp motion (was 0.80, too aggressive!)
-    const maxSpeed = 1.0;  // High speed cap for visible rotation (was 0.3)
-    
+    // Update velocities from forces
     for (let i = 0; i < this.particleCount; i++) {
-      // Get forces
       const fx = this.forces[i * 2];
       const fy = this.forces[i * 2 + 1];
       
-      // NaN guard on forces
       if (isNaN(fx) || isNaN(fy) || !isFinite(fx) || !isFinite(fy)) {
         console.error(`❌ NaN force at particle ${i}, resetting to zero`);
         this.forces[i * 2] = 0;
@@ -905,10 +904,22 @@ export default class SPHOilSystem {
         continue;
       }
       
-      // v += (F/m) * dt
       this.velocities[i * 2] += (fx / this.particleMass) * dt;
       this.velocities[i * 2 + 1] += (fy / this.particleMass) * dt;
-      
+    }
+    
+    // Apply damping and update positions
+    this._updatePositions(dt);
+  }
+
+  /**
+   * Shared logic for applying damping, velocity caps, and updating positions
+   */
+  _updatePositions(dt) {
+    const damping = 0.95; // Lighter damping for lava lamp motion (was 0.80, too aggressive!)
+    const maxSpeed = 1.0;  // High speed cap for visible rotation (was 0.3)
+    
+    for (let i = 0; i < this.particleCount; i++) {
       // Apply damping
       this.velocities[i * 2] *= damping;
       this.velocities[i * 2 + 1] *= damping;

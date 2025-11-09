@@ -17,9 +17,13 @@ void main() {
     float thickness = oil.a;
     vec3 color = oil.rgb;
     
-    // Softer falloff to prevent "pixel eating" at the edges of blobs.
-    // This creates a smooth, anti-aliased edge instead of a sharp, noisy one.
-    float finalAlpha = smoothstep(u_blobThreshold * 0.7, u_blobThreshold * 1.2, thickness);
+    // Use a power function to "fatten" the blob and create a smoother, more organic edge.
+    // This makes lower thickness values contribute more to the alpha, reducing pixelation.
+    float alpha = thickness / u_blobThreshold; // Normalize thickness relative to threshold
+    float finalAlpha = pow(alpha, 0.5); // Apply power function (square root) for softening
+
+    // Clamp to 0-1 and apply a final smoothstep to ensure clean cutoff below threshold
+    finalAlpha = smoothstep(0.0, 1.0, finalAlpha); // Ensure smooth transition from 0 to 1
 
     if (finalAlpha < 0.001) {
         outColor = vec4(0.0);

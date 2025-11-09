@@ -18,7 +18,7 @@ export default class Renderer {
         this.backgroundColor = { r: 1.0, g: 0.35, b: 0.15 };
         this.debugMode = 0; // 0=color, 1=velocity, 2=concentration gradient, 3=oil thickness, 4=oil gradient, 5=occ split
         this.useVolumetric = true; // Beer-Lambert volumetric rendering
-        this.absorptionCoefficient = 0.8; // Lower = more vibrant centers (reduced for brighter look)
+        this.absorptionCoefficient = 0.8; // Lower = more vibrant centers (reverted)
         this.usePostProcessing = true; // Organic flow distortion (O key to toggle)
         this.distortionStrength = 0.4; // 0.0-1.0, tuned to break severe banding artifacts
         this.smoothingStrength = 0.5; // 0.0-1.0, bilateral blur strength
@@ -30,7 +30,7 @@ export default class Renderer {
         this.oilOcclusion = 0.25; // 0..1 (increased for variable density)
         this.oilAlphaGamma = 1.2; // gamma for thickness→alpha (sharper transitions)
         this.oilTintStrength = 0.9; // 0..1, how much oil color tints scene (high to preserve user color)
-        this.brightnessGain = 1.15; // Balanced brightness without washing out colors
+        this.brightnessGain = 1.5; // Increased for more vibrant ink
 
         this.resize();
         window.addEventListener('resize', () => this.resize());
