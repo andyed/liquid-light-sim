@@ -179,7 +179,28 @@ This document is a snapshot of the current simulation architecture, the major im
    - Real-time tracking of mixed/speckled pixels (coherence < 70%)
    - Logged alongside occupancy percentage for monitoring.
 
-## Oil Layer Implementation (In Progress)
+## Oil Layer Implementation (SPH-based)
+
+The simulation now uses a hybrid approach. While some fluids like ink remain on the grid, more viscous materials like oil and syrup are simulated using Smoothed Particle Hydrodynamics (SPH) for more realistic blob dynamics.
+
+### SPH Pipeline (per frame)
+1.  **Grid Coupling**: The SPH particles first sample the velocity from the underlying water grid. This allows the oil blobs to be carried along by the main fluid's rotation.
+2.  **Force Calculation**: All forces on the particles are computed. This includes:
+    *   Standard SPH forces (Pressure, Viscosity).
+    *   A strong, implicit cohesion force to form and maintain blobs.
+    *   A Marangoni force, driven by temperature gradients, to create surface swirling.
+    *   External forces like gravity and grid drag.
+3.  **Implicit Integration**: A Conjugate Gradient solver is used to solve the implicit system of equations `(M - dt*J)v_new = M*v_old + dt*F`. This is the key to allowing high-strength cohesion forces without numerical instability.
+4.  **Advection**: Particle positions are updated using the new velocities.
+
+### Visualization Pipeline
+The SPH particles are not rendered directly. Instead, they are converted into a smooth, organic surface on the GPU.
+1.  **Particle Splatting**: The SPH particles are rendered as point sprites into a texture. The alpha channel of this texture represents the fluid's density/thickness, and the color channels encode the tint and temperature.
+2.  **Metaball Pass**: A fullscreen shader (`oil-metaball.frag.glsl`) processes this texture, using the density field to generate a smooth, anti-aliased alpha mask that gives the blobs their characteristic "cellular" shape.
+3.  **Compositing**: A final shader (`oil-composite.frag.glsl`) combines the blob shape, color, and thermal data with the background scene, adding effects like refraction, iridescence, and a thermal glow.
+
+This SPH-based approach, while more computationally intensive, is essential for achieving the stable, cohesive, and high-surface-tension blobs that are characteristic of the liquid light show aesthetic.
+
 
 The simulation now includes a separate oil layer, which is rendered on top of the water layer. The oil has its own velocity field and is affected by the water's movement through a one-way coupling.
 

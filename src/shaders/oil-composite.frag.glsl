@@ -44,6 +44,8 @@ void main() {
     vec4 oilSample = texture(u_oil_texture, v_texCoord);
     float thickness = oilSample.a;
     vec3 oilTint = oilSample.rgb;
+    float temperature = oilSample.b; // Temperature encoded in blue channel
+    float heat = temperature * temperature; // Square for more pronounced effect
     
     // No oil - pass through
     if (thickness < 0.001) {
@@ -80,6 +82,7 @@ void main() {
     
     // Thickness-based opacity and color
     float opacity = clamp(pow(thickness * 1.5, u_oil_gamma), 0.0, 1.0);
+    opacity *= (1.0 - heat * 0.2); // Hotter areas are slightly less opaque
     
     // Edge highlighting (oil pools have bright rims)
     float edgeHighlight = smoothstep(0.0, 0.1, gradMag) * 0.3;
@@ -103,13 +106,17 @@ void main() {
     // 4. Fresnel reflection (ONLY on thick oil, fades completely when thin)
     // White reflection ONLY appears on thick oil (> 0.4 thickness)
     float thicknessForReflection = smoothstep(0.3, 0.6, thickness); // Only thick oil gets white
-    vec3 reflectionColor = mix(userOilColor * 1.2, vec3(1.0), thicknessForReflection * 0.15); // White only if thick
+    vec3 reflectionColor = userOilColor * (1.0 + thicknessForReflection * 0.5); // Brighten, don't whiten
     float fresnelStrength = fresnelFactor * thicknessForReflection * 0.02; // Tied to thick regions
     vec3 final = mix(withIridescence, reflectionColor, fresnelStrength);
     
     // 5. Edge glow using user's color (ONLY on thick blob edges, not thin spreading)
     float thickEdge = smoothstep(0.35, 0.5, thickness) * edgeHighlight; // Higher threshold
     final += userOilColor * thickEdge * 0.2; // Reduced strength
+    
+    // Add thermal glow for hot areas
+    vec3 glowColor = final * 1.5; // A brighter version of the color to glow with
+    final = mix(final, glowColor, heat * 0.3);
     
     // Variable density visualization: thicker = darker version of user color
     // float densityDarken = smoothstep(0.3, 0.8, thickness) * 0.3;

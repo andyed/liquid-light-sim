@@ -263,13 +263,15 @@ useImplicitIntegration = true
 - Improve preconditioner (Jacobi → SSOR)
 - Reduce timestep `dt`
 
-### Issue 2: Blobs Still Spread
-**Symptom**: Even with high σ, blobs spread apart
-**Cause**: Cohesion Jacobian not strong enough
+### Issue 2: Blobs Still Spread (FIXED)
+**Symptom**: Even with high σ, blobs would spread apart.
+**Cause**: **Root cause identified and fixed.** The implementation had two major errors:
+1.  **Incorrect RHS**: The right-hand side of the linear system (`M*v + dt*F`) was missing the explicit SPH forces (pressure, cohesion, viscosity).
+2.  **Incorrect Jacobian**: The Jacobian for the position-based cohesion force was mathematically incorrect, attempting to use a `∂F/∂v` formulation.
 **Solutions**:
-- Increase `cohesionStrength` in `buildRow()`
-- Check cohesion radius (should be ~1.5h)
-- Verify implicit cohesion is enabled
+- ✅ **RHS Fixed**: `buildRHS` now correctly uses the pre-computed total force `F_all`.
+- ✅ **Jacobian Fixed**: The cohesion Jacobian now uses the correct `-dt^2 * ∂F_c/∂x` formulation, approximated as a linear spring force.
+- ✅ **Pressure Jacobian Re-enabled**: The simplified pressure Jacobian was re-enabled for better incompressibility.
 
 ### Issue 3: Performance Degradation
 **Symptom**: FPS drops below 30
@@ -287,10 +289,10 @@ useImplicitIntegration = true
 - [x] Sparse matrix builds successfully
 - [x] CG solver converges
 - [x] Implicit integration replaces explicit
-- [ ] **σ = 1000 runs without instability** ← TEST THIS
-- [ ] **σ = 2000 even better** ← TEST THIS
-- [ ] **Blobs resist tearing during rotation** ← TEST THIS
-- [ ] **~60fps with 500 particles** ← TEST THIS
+- [x] **σ = 1000 runs without instability** - ✅
+- [x] **σ = 2000 even better** - ✅
+- [x] **Blobs resist tearing during rotation** - ✅ (Physics working, visuals need polish)
+- [x] **~60fps with 500 particles** - ✅
 
 ---
 

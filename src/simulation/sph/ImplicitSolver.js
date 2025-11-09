@@ -53,15 +53,15 @@ export default class ImplicitSolver {
    * @param {Float32Array} gridVelocities - External grid forces (optional)
    * @returns {boolean} - Success
    */
-  solve(dt, gridVelocities = null) {
+  solve(dt) {
     const startTime = performance.now();
     const N = this.sph.particleCount;
     const DOF = N * 2; // Degrees of freedom (2D: x, y per particle)
     
     if (N === 0) return true;
     
-    // 1. Build RHS: M*v + dt*F_explicit
-    this.buildRHS(dt, gridVelocities);
+    // 1. Build RHS: M*v + dt*F_all
+    this.buildRHS(dt);
     
     // 2. Build system matrix: A = M - dt*J
     const buildStart = performance.now();
@@ -114,9 +114,9 @@ export default class ImplicitSolver {
   }
   
   /**
-   * Build right-hand side: M*v + dt*F_explicit
+   * Build right-hand side: M*v_old + dt*F_all
    */
-  buildRHS(dt, gridVelocities) {
+  buildRHS(dt) {
     const N = this.sph.particleCount;
     const m = this.sph.particleMass;
     const DOF = N * 2;
@@ -125,40 +125,15 @@ export default class ImplicitSolver {
       this.rhs = new Float32Array(DOF);
     }
     
-    // RHS = M*v_old + dt*F_explicit
+    // RHS = M*v_old + dt*F_all
+    // F_all is pre-computed in SPHOilSystem.js and includes all forces
     for (let i = 0; i < N; i++) {
-      // M*v (mass matrix is diagonal)
-      let rhsX = m * this.sph.velocities[i * 2];
-      let rhsY = m * this.sph.velocities[i * 2 + 1];
-      
-      // Add explicit forces (gravity, buoyancy)
-      // Note: SPH forces are computed implicitly, so NOT included here
-      
-      // Gravity (radial)
-      const x = this.sph.positions[i * 2];
-      const y = this.sph.positions[i * 2 + 1];
-      const distFromCenter = Math.sqrt(x * x + y * y);
-      if (distFromCenter > 1e-6) {
-        const gravityMag = 0.02;
-        const dirX = -x / distFromCenter;
-        const dirY = -y / distFromCenter;
-        rhsX += dt * dirX * gravityMag * m;
-        rhsY += dt * dirY * gravityMag * m;
-      }
-      
-      // Grid drag forces (rotation coupling) - EXPLICIT
-      if (gridVelocities) {
-        const dragCoeff = 10.0;
-        const vGridX = gridVelocities[i * 2];
-        const vGridY = gridVelocities[i * 2 + 1];
-        const vParticleX = this.sph.velocities[i * 2];
-        const vParticleY = this.sph.velocities[i * 2 + 1];
-        rhsX += dt * dragCoeff * (vGridX - vParticleX);
-        rhsY += dt * dragCoeff * (vGridY - vParticleY);
-      }
-      
-      this.rhs[i * 2] = rhsX;
-      this.rhs[i * 2 + 1] = rhsY;
+      const forceX = this.sph.forces[i * 2];
+      const forceY = this.sph.forces[i * 2 + 1];
+
+      // M*v (mass matrix is diagonal) + dt*F
+      this.rhs[i * 2] = m * this.sph.velocities[i * 2] + dt * forceX;
+      this.rhs[i * 2 + 1] = m * this.sph.velocities[i * 2 + 1] + dt * forceY;
     }
   }
   
@@ -261,38 +236,34 @@ export default class ImplicitSolver {
       }
     }
     
-    // === COHESION JACOBIAN ===
+    // === COHESION JACOBIAN (POSITION-BASED) ===
     if (this.implicitCohesion) {
-      const cohesionStrength = 200.0; // ULTRA-STRONG to prevent spreading (was 50)
-      const cohesionRadius = h * 2.5; // Very wide pull (was 2.0h)
-      
+      // Based on the formula (M - dt^2 * J_pos), where J_pos = ∂F_c/∂x
+      // We approximate the cohesion force as a simple spring F = -k(xi - xj)
+      // The Jacobian ∂F_i/∂x_j = k*I, and ∂F_i/∂x_i = -k*I for each neighbor.
+      const k = 500.0; // Stiffness coefficient for implicit cohesion (increased from 200.0)
+      const dt2 = dt * dt;
+
       for (const j of neighbors) {
         if (j === particleIdx) continue;
         
         const xj = this.sph.positions[j * 2];
         const yj = this.sph.positions[j * 2 + 1];
-        const dx = xj - xi; // Attractive!
-        const dy = yj - yi;
+        const dx = xi - xj;
+        const dy = yi - yj;
         const distSq = dx * dx + dy * dy;
-        const dist = Math.sqrt(distSq);
         
-        if (dist < h * 0.3 || dist >= cohesionRadius) continue;
-        
-        // Cohesion Jacobian: ∂F_cohesion/∂x (position-based)
-        // Linearized: F ≈ strength * direction, so ∂F/∂v ≈ 0 (position-based force)
-        // For implicit integration, we need ∂F/∂v which requires velocity-form cohesion
-        // Simplified: treat as damping-like term
-        const q = dist / cohesionRadius;
-        const falloff = Math.exp(-q * q * 4.0);
-        const cohesionJac = dt * cohesionStrength * falloff * m / dist;
-        
-        if (component === 0) {
-          this.systemMatrix.addEntry(j * 2, cohesionJac * dx / dist);
-        } else {
-          this.systemMatrix.addEntry(j * 2 + 1, cohesionJac * dy / dist);
+        // Only apply to close neighbors, consistent with cohesion force kernels
+        if (distSq < h * h) {
+            // Contribution to A_ij from ∂F_i/∂x_j is k.
+            // The term added to the system matrix is -dt^2 * k.
+            const offDiag = -dt2 * k;
+            this.systemMatrix.addEntry(j * 2 + component, offDiag);
+
+            // Contribution to A_ii from ∂F_i/∂x_i is -k for this neighbor.
+            // The term added to the diagonal is -dt^2 * (-k) = dt^2 * k.
+            diagonal -= offDiag; // i.e., diagonal += dt^2 * k
         }
-        
-        diagonal -= cohesionJac * (component === 0 ? dx : dy) / dist;
       }
     }
     

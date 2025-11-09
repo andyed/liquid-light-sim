@@ -11,3 +11,7 @@ export async function loadShader(url) {
     const response = await fetch(path);
     return await response.text();
 }
+
+export function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+}

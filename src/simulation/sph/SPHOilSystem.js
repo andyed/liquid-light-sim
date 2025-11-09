@@ -13,6 +13,7 @@
 
 import SpatialHashGrid from './SpatialHashGrid.js';
 import ImplicitSolver from './ImplicitSolver.js';
+import { clamp } from '../../utils.js';
 
 export default class SPHOilSystem {
   constructor(maxParticles = 50000, containerRadius = 0.48) {
@@ -32,6 +33,7 @@ export default class SPHOilSystem {
     this.thermalExpansion = 0.001;    // α for ρ(T) = ρ₀(1 - α(T - T₀))
     this.thermalConductivity = 0.1;   // Heat diffusion rate
     this.roomTemperature = 20.0;      // Celsius
+    this.marangoniStrength = 5.0;     // Strength of surface tension gradient force
     
     // Particle data (Structure of Arrays for cache efficiency)
     // Each particle: [x, y, vx, vy, density, pressure, temperature, phase]
@@ -42,6 +44,7 @@ export default class SPHOilSystem {
     this.densities = new Float32Array(maxParticles);          // ρ
     this.pressures = new Float32Array(maxParticles);          // p
     this.temperatures = new Float32Array(maxParticles);       // T (Celsius)
+    this.nextTemperatures = new Float32Array(maxParticles); // Temp buffer for update
     this.phases = new Uint8Array(maxParticles);               // 0=water, 1=oil
     this.colors = new Float32Array(maxParticles * 3);         // [r, g, b]
     
@@ -55,7 +58,7 @@ export default class SPHOilSystem {
     this.neighborLists = Array.from({ length: maxParticles }, () => []);
     
     // Implicit solver (Phase 2)
-    this.useImplicitIntegration = false; // Enable for high surface tension
+    this.useImplicitIntegration = true; // Enable for high surface tension
     this.implicitSolver = null; // Initialized on first use
     
     // GPU resources (to be initialized)
@@ -103,9 +106,21 @@ export default class SPHOilSystem {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.particleVBO);
     gl.bufferData(gl.ARRAY_BUFFER, this.positions.subarray(0, this.particleCount * 2), gl.DYNAMIC_DRAW);
     
-    // Upload colors
+    // Create a temporary color buffer to include temperature
+    const tempColors = new Float32Array(this.particleCount * 3);
+    tempColors.set(this.colors.subarray(0, this.particleCount * 3));
+
+    // Encode temperature into the blue channel
+    const tempRange = 80.0 - 20.0; // e.g., 20C to 80C
+    for (let i = 0; i < this.particleCount; i++) {
+      const temp = this.temperatures[i];
+      const normalizedTemp = (temp - 20.0) / tempRange;
+      tempColors[i * 3 + 2] = clamp(normalizedTemp, 0.0, 1.0); // Store in blue channel
+    }
+
+    // Upload colors (with temperature in blue channel)
     gl.bindBuffer(gl.ARRAY_BUFFER, this.particleColorVBO);
-    gl.bufferData(gl.ARRAY_BUFFER, this.colors.subarray(0, this.particleCount * 3), gl.DYNAMIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, tempColors, gl.DYNAMIC_DRAW);
     
     // Upload densities
     gl.bindBuffer(gl.ARRAY_BUFFER, this.particleDensityVBO);
@@ -174,7 +189,7 @@ export default class SPHOilSystem {
   /**
    * Spawn new oil particles from paint/splat
    */
-  spawnParticles(centerX, centerY, count, color, temperature = 20.0) {
+  spawnParticles(centerX, centerY, count, color, temperature = 60.0) {
     // HARD LIMIT for CPU performance (Phase 1)
     const PHASE1_PARTICLE_LIMIT = 5000; // Conservative limit for 60fps
     
@@ -408,6 +423,13 @@ export default class SPHOilSystem {
     this.updateSpatialHash();
     this.computeDensities();
     this.computePressures();
+    this.computeTemperature(dt);
+    this.computeForces(); // Now computed for both explicit and implicit paths
+    
+    // Apply grid drag forces for rotation coupling (for both paths)
+    if (gridVelocities) {
+      this.applyGridDragForces(gridVelocities, 10.0);
+    }
     
     if (this.useImplicitIntegration) {
       // PHASE 2: Implicit integration (high surface tension)
@@ -424,13 +446,6 @@ export default class SPHOilSystem {
       }
     } else {
       // PHASE 1: Explicit integration (standard SPH)
-      this.computeForces(); // Gravity + Pressure + Cohesion + Rotation
-      
-      // Apply grid drag forces AFTER computing SPH forces (rotation coupling)
-      if (gridVelocities) {
-        this.applyGridDragForces(gridVelocities, 10.0); // Tune dragCoeff for swirling strength
-      }
-      
       this.integrate(dt);
     }
     
@@ -589,6 +604,51 @@ export default class SPHOilSystem {
       this.pressures[i] = Math.max(pressure, 0.0);
     }
   }
+
+  /**
+   * Compute temperature diffusion between particles
+   */
+  computeTemperature(dt) {
+    const h = this.smoothingRadius;
+    const K = this.thermalConductivity;
+
+    // First, copy current temperatures to the next state
+    this.nextTemperatures.set(this.temperatures);
+
+    for (let i = 0; i < this.particleCount; i++) {
+      const Ti = this.temperatures[i];
+      const rhoi = this.densities[i];
+      let tempChange = 0;
+
+      const neighbors = this.spatialHash.query(this.positions[i * 2], this.positions[i * 2 + 1], h);
+
+      for (const j of neighbors) {
+        if (i === j) continue;
+
+        const Tj = this.temperatures[j];
+        const rhoj = this.densities[j];
+        
+        const dx = this.positions[i * 2] - this.positions[j * 2];
+        const dy = this.positions[i * 2 + 1] - this.positions[j * 2 + 1];
+        const rSquared = dx * dx + dy * dy;
+
+        // Using viscosity kernel for Laplacian of temperature
+        const laplacian = this.viscosityLaplacianKernel(Math.sqrt(rSquared), h);
+        
+        // SPH formulation for heat equation
+        tempChange += (this.particleMass / rhoj) * (K / rhoi) * (Ti - Tj) * laplacian;
+      }
+      
+      this.nextTemperatures[i] += tempChange * dt;
+
+      // Also include simple cooling to room temperature
+      const coolingRate = 0.01; // Slow cooling
+      this.nextTemperatures[i] -= (this.temperatures[i] - this.roomTemperature) * coolingRate * dt;
+    }
+
+    // Swap buffers
+    [this.temperatures, this.nextTemperatures] = [this.nextTemperatures, this.temperatures];
+  }
   
   /**
    * SPH Pressure Gradient Kernel (Spiky kernel)
@@ -728,8 +788,47 @@ export default class SPHOilSystem {
         }
       }
     }
+
+    // STEP 3: MARANGONI FORCE (surface tension gradient)
+    if (this.marangoniStrength > 0) {
+        for (let i = 0; i < this.particleCount; i++) {
+            // Only apply to surface particles (heuristic: lower density)
+            if (this.densities[i] < this.restDensity * 0.9) {
+                const Ti = this.temperatures[i];
+                
+                let gradTx = 0;
+                let gradTy = 0;
+
+                const neighbors = this.spatialHash.query(this.positions[i * 2], this.positions[i * 2 + 1], h);
+
+                for (const j of neighbors) {
+                    if (i === j) continue;
+
+                    const Tj = this.temperatures[j];
+                    const rhoj = this.densities[j];
+                    
+                    const dx = this.positions[i * 2] - this.positions[j * 2];
+                    const dy = this.positions[i * 2 + 1] - this.positions[j * 2 + 1];
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+
+                    if (dist < h) {
+                        const grad = this.spikyGradientKernel(dx, dy, dist, h);
+                        const temp_diff = Tj - Ti;
+                        
+                        // SPH gradient of temperature
+                        gradTx += (this.particleMass / rhoj) * temp_diff * grad.x;
+                        gradTy += (this.particleMass / rhoj) * temp_diff * grad.y;
+                    }
+                }
+                
+                // Force is opposite to temperature gradient (hot to cold)
+                this.forces[i * 2] -= this.marangoniStrength * gradTx;
+                this.forces[i * 2 + 1] -= this.marangoniStrength * gradTy;
+            }
+        }
+    }
     
-    // STEP 3: Radial gravity (gentle drift toward center)
+    // STEP 4: Radial gravity (gentle drift toward center)
     const gravityMag = 0.02;
     for (let i = 0; i < this.particleCount; i++) {
       const x = this.positions[i * 2];
