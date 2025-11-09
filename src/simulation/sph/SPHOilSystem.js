@@ -24,9 +24,9 @@ export default class SPHOilSystem {
     this.smoothingRadius = 0.1;       // LARGE: Particles need long-range cohesion (was 0.05)
     this.restDensity = 1000.0;        // Rest density (ρ₀)
     this.particleMass = 0.02;         // Mass per particle
-    this.viscosity = 0.1;             // REDUCED: Lower viscosity to prevent NaN instability (was 2.0)
-    this.surfaceTension = 3000.0;     // Interfacial tension (σ) - ULTRA HIGH for blobs!
-    this.gravity = -0.1;              // VERY WEAK: Prevent spreading (was -0.5)
+    this.viscosity = 0.05;            // VERY LOW: Prevent NaN instability (was 0.1, originally 2.0)
+    this.surfaceTension = 50.0;       // DRASTICALLY REDUCED from 3000 - was causing NaN (was insane!)
+    this.gravity = -0.01;             // EXTREMELY WEAK: Prevent spreading (was -0.1)
     this.dt = 1/60;                   // Timestep
     
     // Temperature parameters
@@ -776,15 +776,21 @@ export default class SPHOilSystem {
         const fx_viscosity = viscFactor * (vxj - vxi);
         const fy_viscosity = viscFactor * (vyj - vyi);
         
-        // Accumulate combined forces
-        this.forces[i * 2] += fx_pressure + fx_viscosity;
-        this.forces[i * 2 + 1] += fy_pressure + fy_viscosity;
+        // NaN guards - prevent corrupting forces
+        const fx_total = fx_pressure + fx_viscosity;
+        const fy_total = fy_pressure + fy_viscosity;
+        
+        if (!isNaN(fx_total) && !isNaN(fy_total)) {
+          this.forces[i * 2] += fx_total;
+          this.forces[i * 2 + 1] += fy_total;
+        } else {
+          console.warn(`⚠️ NaN force at particle ${i} from neighbor ${j}`);
+        }
       }
     }
     
-    // STEP 2: EXPLICIT COHESION (Strong to resist shear forces)
-    // Need strong explicit forces to maintain cohesion during force computation
-    const shortCohesion = 20.0; // STRONG to resist water shear (was 5.0)
+    // STEP 2: EXPLICIT COHESION (Gentle to prevent NaN)
+    const shortCohesion = 5.0; // REDUCED from 20.0 to prevent instability
     const shortRadius = h * 2.0; // Wide range
     const minDist = h * 0.2; // Allow tight packing
     
