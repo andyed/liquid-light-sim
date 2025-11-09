@@ -60,6 +60,9 @@ export default class OilLayer extends FluidLayer {
     const w = gl.canvas.width;
     const h = gl.canvas.height;
 
+    // Verify Alcohol fix is loaded
+    console.log('✨ OilLayer.js: Alcohol fix LOADED (Nov 9, 3:33pm)');
+    
     // Initialize SPH system
     console.log('🚀 Initializing SPH Oil System...');
     this.sph.initGPU(gl, this.sim.sphParticleSplatProgram);
@@ -320,8 +323,8 @@ export default class OilLayer extends FluidLayer {
 
     gl.uniform2f(gl.getUniformLocation(sim.advectionProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
     gl.uniform1f(gl.getUniformLocation(sim.advectionProgram, 'u_dt'), dt);
-    // Higher dissipation for Alcohol so it fades and doesn't become opaque
-    gl.uniform1f(gl.getUniformLocation(sim.advectionProgram, 'u_dissipation'), 0.985); // Was 0.99
+    // High dissipation for Alcohol - it spreads and fades (surfactant effect)
+    gl.uniform1f(gl.getUniformLocation(sim.advectionProgram, 'u_dissipation'), 0.97); // Fades relatively quickly after application
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     this.swapGridTextures();
@@ -441,36 +444,43 @@ export default class OilLayer extends FluidLayer {
     const hasAnyOilContent = hasSPHParticles || this.hasGridContent;
     if (hasAnyOilContent) {
       this.compositeOilLayers();
+    }
+    
+    // LEGACY: Copy to oilTexture1 ONLY if there are SPH particles
+    // Alcohol (Grid layer only) should NOT be copied to oilTexture1
+    // This prevents Alcohol from darkening ink via the oil-composite shader
+    if (hasSPHParticles && this.compositedTexture) {
+      const prevFbo = gl.getParameter(gl.FRAMEBUFFER_BINDING);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture1, 0);
       
-      // LEGACY: Copy composited result to oilTexture1 for backwards compatibility
-      // This allows existing rendering code to work without changes
-      if (this.compositedTexture) {
-        const prevFbo = gl.getParameter(gl.FRAMEBUFFER_BINDING);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture1, 0);
-        
-        gl.useProgram(sim.renderer.copyProgram || this.createCopyProgram());
-        gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
-        const posLoc = gl.getAttribLocation(sim.renderer.copyProgram, 'a_position');
-        gl.enableVertexAttribArray(posLoc);
-        gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
-        
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this.compositedTexture);
-        gl.uniform1i(gl.getUniformLocation(sim.renderer.copyProgram, 'u_texture'), 0);
-        
-        gl.disable(gl.BLEND);
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, prevFbo);
-      }
+      gl.useProgram(sim.renderer.copyProgram || this.createCopyProgram());
+      gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
+      const posLoc = gl.getAttribLocation(sim.renderer.copyProgram, 'a_position');
+      gl.enableVertexAttribArray(posLoc);
+      gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+      
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.compositedTexture);
+      gl.uniform1i(gl.getUniformLocation(sim.renderer.copyProgram, 'u_texture'), 0);
+      
+      gl.disable(gl.BLEND);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, prevFbo);
     } else {
-      // No oil content - clear legacy oil texture so it doesn't block water/ink
+      // No SPH particles - clear legacy oil texture so it doesn't block water/ink
+      // This includes Alcohol-only state (Grid layer)
       const prevFbo = gl.getParameter(gl.FRAMEBUFFER_BINDING);
       gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture1, 0);
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT);
       gl.bindFramebuffer(gl.FRAMEBUFFER, prevFbo);
+      
+      // Debug: Confirm Alcohol isn't blocking ink
+      if (this.hasGridContent && Math.random() < 0.01) {
+        console.log('🍸 Alcohol active: oilTexture1 cleared to prevent ink blocking');
+      }
     }
   }
   
@@ -649,8 +659,8 @@ export default class OilLayer extends FluidLayer {
     gl.uniform1i(gl.getUniformLocation(sim.splatProgram, 'u_isOil'), 1);
     gl.uniform2f(gl.getUniformLocation(sim.splatProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
     
-    // Set oil strength - lower value means more transparent (Alcohol should be subtle)
-    const alcoholStrength = 0.25; // Moderate thickness - visible but allows ink to show through
+    // Set oil strength - Alcohol should be nearly invisible (surfactant effect, not visual)
+    const alcoholStrength = 0.15; // Very subtle - mainly affects physics, not visuals
     gl.uniform1f(gl.getUniformLocation(sim.splatProgram, 'u_oilStrength'), alcoholStrength);
     
     gl.drawArrays(gl.TRIANGLES, 0, 6);
@@ -731,6 +741,20 @@ export default class OilLayer extends FluidLayer {
   getOilTexture() {
     // Return composited texture if available, otherwise legacy texture
     return this.compositedTexture || this.oilTexture1;
+  }
+  
+  /**
+   * Check if there's visible oil content that should go through oil-composite shader
+   * Returns true only if there are SPH particles (Mineral Oil, Syrup, Glycerine)
+   * Alcohol in Grid layer should NOT trigger oil compositing
+   */
+  hasVisibleOilContent() {
+    const hasParticles = this.useSPH && this.sph.particleCount > 0;
+    // Debug: Log when called during critical moments
+    if (this.hasGridContent && !hasParticles && Math.random() < 0.02) {
+      console.log('🔍 hasVisibleOilContent() = false (Alcohol-only, no SPH particles)');
+    }
+    return hasParticles;
   }
   
   swapOilVelocityTextures() {

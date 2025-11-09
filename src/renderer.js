@@ -373,8 +373,17 @@ export default class Renderer {
             sourceTexture = this.postProcessTexture;
         }
         
-        // Step 2.5: Oil composite (if enabled)
-        if (this.simulation.useOil && this.simulation.oil && this.oilCompositeProgram) {
+        // Step 2.5: Oil composite (if enabled AND there's visible oil content)
+        // Skip for Alcohol-only (Grid layer) - it should not darken the scene
+        const hasVisibleOil = this.simulation.oil && this.simulation.oil.hasVisibleOilContent();
+        
+        // Debug: Log when skipping oil composite
+        if (this.simulation.useOil && this.simulation.oil && !hasVisibleOil && Math.random() < 0.02) {
+            const gridContent = this.simulation.oil.hasGridContent ? ' (Alcohol active)' : '';
+            console.log(`⏭️  Skipping oil-composite (no SPH particles)${gridContent} - Ink stays visible!`);
+        }
+        
+        if (this.simulation.useOil && hasVisibleOil && this.oilCompositeProgram) {
             gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilCompositeFBO);
             gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilCompositeTexture, 0);
             gl.clearColor(0.0, 0.0, 0.0, 1.0);

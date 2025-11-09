@@ -47,8 +47,9 @@ void main() {
     float temperature = oilSample.b; // Temperature encoded in blue channel
     float heat = temperature * temperature; // Square for more pronounced effect
     
-    // No oil - pass through
-    if (thickness < 0.001) {
+    // No oil or very thin oil - pass through to show ink
+    // Increased threshold from 0.001 to 0.01 so Alcohol doesn't darken the scene
+    if (thickness < 0.01) {
         fragColor = vec4(texture(u_scene, v_texCoord).rgb, 1.0);
         return;
     }

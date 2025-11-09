@@ -15,7 +15,6 @@
 - **Proper Rendering**: Materials can coexist without interference
 
 ### ✅ Bug Fixes Complete
-1. ✅ Ink no longer disappears when painting Alcohol
 2. ✅ Material switching doesn't create spurious motion
 3. ✅ Alcohol is translucent (allows ink to show through)
 4. ✅ Grid layer only updates when it has content

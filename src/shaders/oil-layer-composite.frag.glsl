@@ -25,10 +25,14 @@ void main() {
   vec4 sph = texture(u_sphTexture, v_texCoord);
   vec4 grid = texture(u_gridTexture, v_texCoord);
   
-  // Pre-multiplied alpha compositing
-  // SPH blobs appear on top of grid fluid
-  vec3 composite_rgb = sph.rgb + grid.rgb * (1.0 - sph.a);
-  float composite_a = sph.a + grid.a * (1.0 - sph.a);
+  // CRITICAL FIX: Only composite SPH, ignore Grid layer (Alcohol)
+  // Alcohol should NOT go through oil-composite shader
+  // It's a physics modifier, not a visible oil layer
+  // 
+  // Pre-multiplied alpha compositing - BUT only use SPH
+  // Grid layer will be rendered separately if we ever add visual Alcohol effects
+  vec3 composite_rgb = sph.rgb;  // Only SPH blobs
+  float composite_a = sph.a;      // Only SPH alpha
   
   fragColor = vec4(composite_rgb, composite_a);
 }

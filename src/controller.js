@@ -165,7 +165,13 @@ export default class Controller {
         this.applyMaterialPreset();
         this.updateMaterialReadout();
         this.updateMaterialSelectorHighlight();
-        console.log(`🧪 Material: ${this.materials[this.currentMaterialIndex].name}`);
+        
+        // Clear console feedback about material and rendering type
+        const matName = this.materials[this.currentMaterialIndex].name;
+        const renderType = ['Mineral Oil', 'Syrup', 'Glycerine'].includes(matName) ? 'SPH Particles' : 
+                          matName === 'Alcohol' ? 'Grid Layer' : 'Water Layer';
+        console.log(`🧪 MATERIAL: ${matName} (${renderType})`);
+        console.log(`   Key 1=Ink, 2=Mineral Oil, 3=Alcohol, 4=Syrup, 5=Glycerine`);
     }
 
     applyMaterialPreset() {
@@ -189,6 +195,8 @@ export default class Controller {
 
         // Menu reflects changes
         this.updateMarangoniHUD();
+        // Note: Changing parameters (agitation, coupling, etc.) may create transient forces
+        // in existing fluid. This is expected behavior when switching materials.
         console.log('Applying preset:', preset);
     }
 
