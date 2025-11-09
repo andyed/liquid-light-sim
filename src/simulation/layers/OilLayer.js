@@ -229,7 +229,8 @@ export default class OilLayer extends FluidLayer {
       }
       
       // Skip grid-based advection (particles handle their own motion)
-      // But continue to texture rotation/displacement below
+      // IMPORTANT: Skip ALL grid-based cleanup for SPH (including overflow)
+      return; // Exit early - SPH manages its own lifecycle
     }
     
     // === GRID-BASED PATH (Legacy) ===

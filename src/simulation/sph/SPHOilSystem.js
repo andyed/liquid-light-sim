@@ -12,6 +12,7 @@
  */
 
 import SpatialHashGrid from './SpatialHashGrid.js';
+import ImplicitSolver from './ImplicitSolver.js';
 
 export default class SPHOilSystem {
   constructor(maxParticles = 50000, containerRadius = 0.48) {
@@ -23,7 +24,7 @@ export default class SPHOilSystem {
     this.restDensity = 1000.0;        // Rest density (ρ₀)
     this.particleMass = 0.02;         // Mass per particle
     this.viscosity = 0.1;             // REDUCED: Lower viscosity to prevent NaN instability (was 2.0)
-    this.surfaceTension = 1000.0;     // Interfacial tension (σ) - HIGH!
+    this.surfaceTension = 3000.0;     // Interfacial tension (σ) - ULTRA HIGH for blobs!
     this.gravity = -0.5;              // Much weaker radial gravity (gentle slide to center)
     this.dt = 1/60;                   // Timestep
     
@@ -52,6 +53,10 @@ export default class SPHOilSystem {
     
     // Neighbor cache (reused each frame)
     this.neighborLists = Array.from({ length: maxParticles }, () => []);
+    
+    // Implicit solver (Phase 2)
+    this.useImplicitIntegration = true; // Enable for high surface tension
+    this.implicitSolver = null; // Initialized on first use
     
     // GPU resources (to be initialized)
     this.gl = null;
@@ -399,18 +404,36 @@ export default class SPHOilSystem {
     // Clamp timestep for stability
     dt = Math.min(dt, 0.016); // Max 16ms (60fps)
     
-    // PHASE 1.6: Full SPH pipeline with pressure
+    // PHASE 1/2: SPH pipeline with optional implicit integration
     this.updateSpatialHash();
     this.computeDensities();
     this.computePressures();
-    this.computeForces(); // Gravity + Pressure + Cohesion + Rotation
     
-    // Apply grid drag forces AFTER computing SPH forces (rotation coupling)
-    if (gridVelocities) {
-      this.applyGridDragForces(gridVelocities, 10.0); // Tune dragCoeff for swirling strength
+    if (this.useImplicitIntegration) {
+      // PHASE 2: Implicit integration (high surface tension)
+      if (!this.implicitSolver) {
+        this.implicitSolver = new ImplicitSolver(this);
+        console.log('🔧 Implicit solver initialized');
+      }
+      
+      // Solve: (M - dt*J) * v_new = M*v + dt*F_explicit
+      const converged = this.implicitSolver.solve(dt, gridVelocities);
+      
+      if (!converged && Math.random() < 0.1) {
+        console.warn('⚠️ Implicit solver convergence issue');
+      }
+    } else {
+      // PHASE 1: Explicit integration (standard SPH)
+      this.computeForces(); // Gravity + Pressure + Cohesion + Rotation
+      
+      // Apply grid drag forces AFTER computing SPH forces (rotation coupling)
+      if (gridVelocities) {
+        this.applyGridDragForces(gridVelocities, 10.0); // Tune dragCoeff for swirling strength
+      }
+      
+      this.integrate(dt);
     }
     
-    this.integrate(dt);
     this.enforceBoundaries();
     
     // Debug: Log density, pressure, and forces
@@ -554,7 +577,7 @@ export default class SPHOilSystem {
    * PHASE 1.6: Tension-free (clamp negative pressure to zero)
    */
   computePressures() {
-    const B = 50.0; // Higher stiffness for liquid incompressibility (was 10 for sparse gas)
+    const B = 20.0; // REDUCED: Lower pressure stiffness to let cohesion dominate (was 50)
     const gamma = 7.0;
     
     for (let i = 0; i < this.particleCount; i++) {
