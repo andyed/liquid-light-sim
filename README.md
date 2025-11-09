@@ -4,7 +4,7 @@ Try it: https://andyed.github.io/liquid-light-sim/
 
 ![Screenshot](https://raw.githubusercontent.com/andyed/liquid-light-sim/main/images/v01.png)
 
-**Status:** Milestone 3 - Layered core + Oil persistence fixes ✅
+**Status:** SPH Phase 2.1 - Implicit Solver + Thermal ✅
 
 A GPU-accelerated fluid simulation for play, VJ performance and digital art, built with WebGL2. The core now uses a layered architecture (FluidLayer interface) with a WaterLayer and an alpha OilLayer (visual refraction, smoothing, presets).
 
@@ -370,17 +370,13 @@ tester.checkForNaN()
 ## Known Issues
 
 ### Current Limitations
-- **Straight lines in velocity field** - MacCormack can create horizontal/vertical artifacts at high sharpness. Use Ctrl+Q to measure, increase turbulence (T key) if >15%
-- **Parameter Leakage** - Switching from "Mineral Oil" to "Ink" can cause the oil to shear away. This is a known bug that will be addressed in a future refactor.
-- Water layer only (oil/water pending phase field implementation)
-- No buoyancy or surface tension yet
-- Light rotation off by default (press C to enable)
+- **Pixelated Edges**: Oil blobs currently dissolve with noisy, pixelated edges instead of smoothly shrinking. This is a rendering artifact from the metaball shader.
+- **Rapid Dissolution**: While improved, oil blobs still dissolve visually faster than desired. This is related to the visual representation of particle density and temperature decay.
+- **Shape Maintenance**: Blobs do not consistently maintain a perfectly organic, cellular shape throughout their dissolution, though this has improved dramatically with the implicit solver.
 
 ### Workarounds
-- Press T to increase turbulence if seeing straight lines
-- Use Ctrl+Q to measure straightness % (target <5%)
-- Press M to visualize velocity field
-- Press P to pause and inspect state
+- These are primarily visual issues. The underlying SPH physics for blob formation and cohesion are now stable.
+- Further tuning of the `oil-metaball.frag.glsl` shader and particle rendering parameters is required.
 
 ---
 
