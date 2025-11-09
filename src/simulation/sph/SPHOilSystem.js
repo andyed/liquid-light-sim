@@ -58,7 +58,7 @@ export default class SPHOilSystem {
     this.neighborLists = Array.from({ length: maxParticles }, () => []);
     
     // Implicit solver (Phase 2)
-    this.useImplicitIntegration = true; // Enable for high surface tension
+    this.useImplicitIntegration = false; // DISABLED - causes NaN at high particle counts (was true)
     this.implicitSolver = null; // Initialized on first use
     
     // GPU resources (to be initialized)
