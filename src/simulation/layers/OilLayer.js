@@ -157,7 +157,17 @@ export default class OilLayer extends FluidLayer {
     const useSPHForMaterial = ['Mineral Oil', 'Syrup', 'Glycerine'].includes(currentMaterial);
     
     if (this.useSPH && useSPHForMaterial) {
-      // STEP 1: Update SPH particle physics
+      // STEP 1: Sample grid velocity from water layer (rotation + water coupling)
+      let gridVelocities = null;
+      if (this.sph.particleCount > 0) {
+        gridVelocities = this.sph.sampleVelocityGrid(
+          sim.velocityTexture1, 
+          gl.canvas.width, 
+          gl.canvas.height
+        );
+      }
+      
+      // STEP 2: Update SPH particle physics with grid coupling
       // Frame skip if too many particles (CPU bottleneck mitigation)
       if (!this.sphFrameSkip) this.sphFrameSkip = 0;
       this.sphFrameSkip++;
@@ -166,7 +176,16 @@ export default class OilLayer extends FluidLayer {
       const shouldSkipPhysics = this.sph.particleCount > 3000 && this.sphFrameSkip % 2 === 0;
       
       if (!shouldSkipPhysics) {
-        this.sph.update(dt, sim.rotationAmount); // Pass rotation for lava lamp motion
+        this.sph.update(dt, sim.rotationAmount, gridVelocities); // Pass grid velocities for rotation
+      }
+      
+      // STEP 3: Write SPH velocities back to grid (for texture rotation/displacement)
+      if (this.sph.particleCount > 0) {
+        this.sph.writeVelocitiesToGrid(
+          this.oilVelocityTexture1,
+          gl.canvas.width,
+          gl.canvas.height
+        );
       }
       
       // STEP 2: Render particles to oil texture

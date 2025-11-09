@@ -221,10 +221,175 @@ export default class SPHOilSystem {
   }
   
   /**
+   * Sample velocity from grid texture at particle positions (bilinear interpolation)
+   * Returns array of [vx, vy] for each particle
+   * @param {WebGLTexture} velocityTexture - Grid velocity texture (RG format)
+   * @param {number} gridWidth - Texture width
+   * @param {number} gridHeight - Texture height
+   */
+  sampleVelocityGrid(velocityTexture, gridWidth, gridHeight) {
+    if (!this.gl || !velocityTexture) return null;
+    
+    const gl = this.gl;
+    const gridVelocities = new Float32Array(this.particleCount * 2);
+    
+    // Read entire velocity texture (TODO: optimize with compute shader)
+    const pixels = new Float32Array(gridWidth * gridHeight * 4);
+    const tempFBO = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, tempFBO);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, velocityTexture, 0);
+    gl.readPixels(0, 0, gridWidth, gridHeight, gl.RGBA, gl.FLOAT, pixels);
+    gl.deleteFramebuffer(tempFBO);
+    
+    // Sample at each particle position
+    for (let i = 0; i < this.particleCount; i++) {
+      const x = this.positions[i * 2];
+      const y = this.positions[i * 2 + 1];
+      
+      // Convert world coords [-r, r] to texture coords [0, 1]
+      const u = (x / (this.containerRadius * 2)) + 0.5;
+      const v = (y / (this.containerRadius * 2)) + 0.5;
+      
+      // Clamp to valid range
+      const uc = Math.max(0, Math.min(1, u));
+      const vc = Math.max(0, Math.min(1, v));
+      
+      // Bilinear sample
+      const px = uc * (gridWidth - 1);
+      const py = vc * (gridHeight - 1);
+      const ix = Math.floor(px);
+      const iy = Math.floor(py);
+      const fx = px - ix;
+      const fy = py - iy;
+      
+      // Sample 4 neighbors
+      const ix1 = Math.min(ix + 1, gridWidth - 1);
+      const iy1 = Math.min(iy + 1, gridHeight - 1);
+      
+      const idx00 = (iy * gridWidth + ix) * 4;
+      const idx10 = (iy * gridWidth + ix1) * 4;
+      const idx01 = (iy1 * gridWidth + ix) * 4;
+      const idx11 = (iy1 * gridWidth + ix1) * 4;
+      
+      // Bilinear interpolation
+      const vx00 = pixels[idx00];
+      const vy00 = pixels[idx00 + 1];
+      const vx10 = pixels[idx10];
+      const vy10 = pixels[idx10 + 1];
+      const vx01 = pixels[idx01];
+      const vy01 = pixels[idx01 + 1];
+      const vx11 = pixels[idx11];
+      const vy11 = pixels[idx11 + 1];
+      
+      const vx = (1 - fx) * (1 - fy) * vx00 + fx * (1 - fy) * vx10 + (1 - fx) * fy * vx01 + fx * fy * vx11;
+      const vy = (1 - fx) * (1 - fy) * vy00 + fx * (1 - fy) * vy10 + (1 - fx) * fy * vy01 + fx * fy * vy11;
+      
+      gridVelocities[i * 2] = vx;
+      gridVelocities[i * 2 + 1] = vy;
+    }
+    
+    return gridVelocities;
+  }
+  
+  /**
+   * Apply grid velocities as drag forces on particles (rotation coupling)
+   * @param {Float32Array} gridVelocities - Sampled velocities [vx, vy] per particle
+   * @param {number} dragCoeff - Drag coefficient (tune for rotation strength)
+   */
+  applyGridDragForces(gridVelocities, dragCoeff = 5.0) {
+    if (!gridVelocities) return;
+    
+    for (let i = 0; i < this.particleCount; i++) {
+      const vGridX = gridVelocities[i * 2];
+      const vGridY = gridVelocities[i * 2 + 1];
+      
+      const vParticleX = this.velocities[i * 2];
+      const vParticleY = this.velocities[i * 2 + 1];
+      
+      // Drag toward grid velocity (rotation + water coupling)
+      const fx = dragCoeff * (vGridX - vParticleX);
+      const fy = dragCoeff * (vGridY - vParticleY);
+      
+      // Accumulate (don't overwrite existing forces)
+      this.forces[i * 2] += fx;
+      this.forces[i * 2 + 1] += fy;
+    }
+  }
+  
+  /**
+   * Write particle velocities back to grid texture (for continuity with grid-based rendering)
+   * @param {WebGLTexture} oilVelocityTexture - Target velocity texture
+   * @param {number} gridWidth - Texture width  
+   * @param {number} gridHeight - Texture height
+   */
+  writeVelocitiesToGrid(oilVelocityTexture, gridWidth, gridHeight) {
+    if (!this.gl || !oilVelocityTexture || this.particleCount === 0) return;
+    
+    const gl = this.gl;
+    
+    // Create temp buffer for grid
+    const gridData = new Float32Array(gridWidth * gridHeight * 4);
+    gridData.fill(0);
+    
+    // Splat particle velocities to grid with soft falloff
+    const splatRadius = 3; // pixels
+    
+    for (let i = 0; i < this.particleCount; i++) {
+      const x = this.positions[i * 2];
+      const y = this.positions[i * 2 + 1];
+      const vx = this.velocities[i * 2];
+      const vy = this.velocities[i * 2 + 1];
+      
+      // Convert world to grid coords
+      const u = (x / (this.containerRadius * 2)) + 0.5;
+      const v = (y / (this.containerRadius * 2)) + 0.5;
+      const gx = Math.floor(u * gridWidth);
+      const gy = Math.floor(v * gridHeight);
+      
+      // Splat with soft kernel
+      for (let dy = -splatRadius; dy <= splatRadius; dy++) {
+        for (let dx = -splatRadius; dx <= splatRadius; dx++) {
+          const nx = gx + dx;
+          const ny = gy + dy;
+          
+          if (nx >= 0 && nx < gridWidth && ny >= 0 && ny < gridHeight) {
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist <= splatRadius) {
+              const weight = Math.exp(-dist * dist / (splatRadius * splatRadius));
+              const idx = (ny * gridWidth + nx) * 4;
+              gridData[idx] += vx * weight;
+              gridData[idx + 1] += vy * weight;
+              gridData[idx + 3] += weight; // Accumulate weight in alpha
+            }
+          }
+        }
+      }
+    }
+    
+    // Normalize by accumulated weights
+    for (let i = 0; i < gridWidth * gridHeight; i++) {
+      const idx = i * 4;
+      const weight = gridData[idx + 3];
+      if (weight > 0.001) {
+        gridData[idx] /= weight;
+        gridData[idx + 1] /= weight;
+      }
+      gridData[idx + 2] = 0;
+      gridData[idx + 3] = 1;
+    }
+    
+    // Upload to texture
+    gl.bindTexture(gl.TEXTURE_2D, oilVelocityTexture);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 
+      gridWidth, gridHeight,
+      gl.RGBA, gl.FLOAT, gridData);
+  }
+  
+  /**
    * Main update loop: physics simulation step
    * PHASE 1.6: Add pressure forces for incompressibility
    */
-  update(dt, rotationAmount = 0.0) {
+  update(dt, rotationAmount = 0.0, gridVelocities = null) {
     // Early exit if no particles
     if (this.particleCount === 0) return;
     
@@ -238,7 +403,13 @@ export default class SPHOilSystem {
     this.updateSpatialHash();
     this.computeDensities();
     this.computePressures();
-    this.computeForces(); // Gravity + Pressure + Rotation
+    this.computeForces(); // Gravity + Pressure + Cohesion + Rotation
+    
+    // Apply grid drag forces AFTER computing SPH forces (rotation coupling)
+    if (gridVelocities) {
+      this.applyGridDragForces(gridVelocities, 10.0); // Tune dragCoeff for swirling strength
+    }
+    
     this.integrate(dt);
     this.enforceBoundaries();
     
