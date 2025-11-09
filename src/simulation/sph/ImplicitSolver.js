@@ -241,7 +241,7 @@ export default class ImplicitSolver {
       // Based on the formula (M - dt^2 * J_pos), where J_pos = ∂F_c/∂x
       // We approximate the cohesion force as a simple spring F = -k(xi - xj)
       // The Jacobian ∂F_i/∂x_j = k*I, and ∂F_i/∂x_i = -k*I for each neighbor.
-      const k = 500.0; // Stiffness coefficient for implicit cohesion (increased from 200.0)
+      const k = 750.0; // Stiffness coefficient for implicit cohesion (increased from 500.0)
       const dt2 = dt * dt;
 
       for (const j of neighbors) {

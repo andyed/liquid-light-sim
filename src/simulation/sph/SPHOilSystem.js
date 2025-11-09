@@ -171,7 +171,7 @@ export default class SPHOilSystem {
     // Set uniforms
     gl.uniform2f(gl.getUniformLocation(this.splatProgram, 'u_resolution'), canvasWidth, canvasHeight);
     gl.uniform1f(gl.getUniformLocation(this.splatProgram, 'u_containerRadius'), this.containerRadius);
-    gl.uniform1f(gl.getUniformLocation(this.splatProgram, 'u_particleRadius'), 38.0); // Need overlap for threshold (was 35)
+    gl.uniform1f(gl.getUniformLocation(this.splatProgram, 'u_particleRadius'), 45.0); // Increased for more overlap and smoother metaball input
     
     // Enable additive blending for MetaBall field accumulation
     gl.enable(gl.BLEND);
@@ -646,7 +646,7 @@ export default class SPHOilSystem {
       this.nextTemperatures[i] += tempChange * dt;
 
       // Also include simple cooling to room temperature
-      const coolingRate = 0.01; // Slow cooling
+      const coolingRate = 0.005; // Slower cooling for longer persistence
       this.nextTemperatures[i] -= (this.temperatures[i] - this.roomTemperature) * coolingRate * dt;
     }
 
