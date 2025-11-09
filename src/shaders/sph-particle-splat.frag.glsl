@@ -29,18 +29,18 @@ void main() {
         discard; // Outside circle
     }
     
-    // Gaussian-like falloff for MetaBall field (smoother accumulation)
-    // Use quadratic falloff instead of linear for better blending
-    float falloff = 1.0 - dist * dist; // Quadratic: [1.0 at center, 0.0 at edge]
+    // BALANCED exponential falloff: sharp but reachable
+    // Exponential with moderate steepness for clean edges while maintaining blob formation
+    float falloff = exp(-2.0 * dist * dist); // Less aggressive than -3.0
     falloff = clamp(falloff, 0.0, 1.0);
     
     // Edge fade: reduce alpha near container boundary to prevent glow
     float distFromCenter = length(v_worldPos);
     float edgeFade = 1.0 - smoothstep(u_containerRadius * 0.85, u_containerRadius * 0.95, distFromCenter);
     
-    // Very low alpha to prevent oversaturation during continuous painting
-    // With additive blending, many particles accumulate - keep each contribution small
-    float alpha = falloff * 0.15 * edgeFade; // Low per-particle (was 0.6, caused oversaturation)
+    // HIGH alpha for strong field contribution
+    // Need high values to reach MetaBall threshold with exponential falloff
+    float alpha = falloff * 0.8 * edgeFade; // High enough to form blobs
     
     // Output: RGB color with thickness-like alpha
     // Additive blending will accumulate to create MetaBall field

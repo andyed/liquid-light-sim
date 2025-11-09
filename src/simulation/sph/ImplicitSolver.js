@@ -263,8 +263,8 @@ export default class ImplicitSolver {
     
     // === COHESION JACOBIAN ===
     if (this.implicitCohesion) {
-      const cohesionStrength = 50.0; // MUCH STRONGER for implicit (was 8.0)
-      const cohesionRadius = h * 2.0; // Wider radius (was 1.5h)
+      const cohesionStrength = 200.0; // ULTRA-STRONG to prevent spreading (was 50)
+      const cohesionRadius = h * 2.5; // Very wide pull (was 2.0h)
       
       for (const j of neighbors) {
         if (j === particleIdx) continue;

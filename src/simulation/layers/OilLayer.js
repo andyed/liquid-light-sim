@@ -706,7 +706,7 @@ export default class OilLayer extends FluidLayer {
       const worldY = (0.5 - y) * 2 * this.sph.containerRadius; // FLIPPED: top of screen = +Y (up)
       
       // Moderate spawn rate - balanced between density and preventing oversaturation
-      const particlesPerSplat = 15; // Reduced from 25 to prevent continuous paint oversaturation
+      const particlesPerSplat = 50; // INCREASED: More particles = denser blobs (was 15)
       const temperature = 20.0; // Room temp for now
       
       const spawned = this.sph.spawnParticles(worldX, worldY, particlesPerSplat, color, temperature);

@@ -25,7 +25,7 @@ export default class SPHOilSystem {
     this.particleMass = 0.02;         // Mass per particle
     this.viscosity = 0.1;             // REDUCED: Lower viscosity to prevent NaN instability (was 2.0)
     this.surfaceTension = 3000.0;     // Interfacial tension (σ) - ULTRA HIGH for blobs!
-    this.gravity = -0.5;              // Much weaker radial gravity (gentle slide to center)
+    this.gravity = -0.1;              // VERY WEAK: Prevent spreading (was -0.5)
     this.dt = 1/60;                   // Timestep
     
     // Temperature parameters
@@ -156,7 +156,7 @@ export default class SPHOilSystem {
     // Set uniforms
     gl.uniform2f(gl.getUniformLocation(this.splatProgram, 'u_resolution'), canvasWidth, canvasHeight);
     gl.uniform1f(gl.getUniformLocation(this.splatProgram, 'u_containerRadius'), this.containerRadius);
-    gl.uniform1f(gl.getUniformLocation(this.splatProgram, 'u_particleRadius'), 28.0); // Balanced size for stable MetaBall field
+    gl.uniform1f(gl.getUniformLocation(this.splatProgram, 'u_particleRadius'), 38.0); // Need overlap for threshold (was 35)
     
     // Enable additive blending for MetaBall field accumulation
     gl.enable(gl.BLEND);
@@ -195,8 +195,8 @@ export default class SPHOilSystem {
     
     if (count <= 0) return 0;
     
-    // Spawn ULTRA-TIGHT for very dense liquid
-    const spawnRadius = this.smoothingRadius * 0.2; // Almost on top of each other (0.01 units)
+    // Spawn ULTRA-TIGHT for very dense liquid - even tighter!
+    const spawnRadius = this.smoothingRadius * 0.1; // Extremely tight (0.005 units)
     for (let i = 0; i < count; i++) {
       const idx = this.particleCount++;
       
@@ -577,7 +577,7 @@ export default class SPHOilSystem {
    * PHASE 1.6: Tension-free (clamp negative pressure to zero)
    */
   computePressures() {
-    const B = 20.0; // REDUCED: Lower pressure stiffness to let cohesion dominate (was 50)
+    const B = 10.0; // VERY LOW: Let cohesion dominate completely (was 20)
     const gamma = 7.0;
     
     for (let i = 0; i < this.particleCount; i++) {

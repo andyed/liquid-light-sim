@@ -17,13 +17,13 @@ void main() {
     float thickness = oil.a;
     vec3 color = oil.rgb;
     
-    // Smooth threshold transition to prevent flickering
-    // Instead of binary on/off, use smooth step near threshold
-    float thresholdFade = smoothstep(u_blobThreshold * 0.7, u_blobThreshold * 1.3, thickness);
+    // ULTRA-SHARP threshold cutoff to eliminate dust
+    // Almost binary cutoff with minimal fade
+    float thresholdFade = smoothstep(u_blobThreshold * 0.98, u_blobThreshold * 1.02, thickness);
     
-    if (thresholdFade < 0.01) {
-        // Well below threshold - no metaball
-        outColor = oil;
+    if (thresholdFade < 0.05) {
+        // Below threshold - CULL THE DUST (raised from 0.01 for harder cut)
+        outColor = vec4(0.0, 0.0, 0.0, 0.0);
         return;
     }
     
@@ -69,6 +69,8 @@ void main() {
     // This eliminates hard edges and flickering near threshold
     vec3 finalColor = mix(color, blendedColor, thresholdFade);
     
-    // Use ORIGINAL thickness - MetaBall only blends colors, doesn't inflate mass
-    outColor = vec4(finalColor, thickness);
+    // IMPORTANT: Fade alpha with threshold to create clean edges (no dust corona)
+    // Below threshold = transparent, above = opaque
+    float finalAlpha = thickness * thresholdFade;
+    outColor = vec4(finalColor, finalAlpha);
 }
