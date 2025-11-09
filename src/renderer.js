@@ -414,6 +414,21 @@ export default class Renderer {
             gl.uniform1f(gl.getUniformLocation(this.oilCompositeProgram, 'u_oil_gamma'), this.oilAlphaGamma);
             gl.uniform1f(gl.getUniformLocation(this.oilCompositeProgram, 'u_tint_strength'), this.oilTintStrength);
 
+            // Set material-specific iridescence
+            let iridescence = 0.0;
+            const matName = this.simulation.controller?.materials[this.simulation.controller.currentMaterialIndex]?.name || '';
+
+            if (matName === 'Mineral Oil') {
+                iridescence = 0.1;
+            } else if (matName === 'Syrup') {
+                iridescence = 0.0; // Syrup is not iridescent
+            } else if (matName === 'Glycerine') {
+                iridescence = 0.2; // Glycerine can have some sheen
+            } else if (matName === 'Ink') {
+                iridescence = 0.3; // Ink can have a colorful, pearlescent sheen
+            }
+            gl.uniform1f(gl.getUniformLocation(this.oilCompositeProgram, 'u_iridescence_strength'), iridescence);
+
             gl.drawArrays(gl.TRIANGLES, 0, 6);
 
             // After compositing, the source becomes oilCompositeTexture

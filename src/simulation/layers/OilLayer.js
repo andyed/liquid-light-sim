@@ -230,7 +230,7 @@ export default class OilLayer extends FluidLayer {
       
       // Skip grid-based advection (particles handle their own motion)
       // IMPORTANT: Skip ALL grid-based cleanup for SPH (including overflow)
-      return; // Exit early - SPH manages its own lifecycle
+      // return; // Exit early - SPH manages its own lifecycle - DISABLED to allow overflow checks etc.
     }
     
     // === GRID-BASED PATH (Legacy) ===
@@ -403,6 +403,35 @@ export default class OilLayer extends FluidLayer {
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     this.swapOilTextures();
+
+    // STEP 4.2: Apply diffusion to oil thickness to allow it to thin out
+    const oilDiffusion = sim.oilDiffusion === undefined ? 0.02 : sim.oilDiffusion;
+    const oilDiffusionIterations = sim.oilDiffusionIterations === undefined ? 2 : sim.oilDiffusionIterations;
+
+    if (oilDiffusion > 0.0 && sim.diffusionProgram) {
+        gl.useProgram(sim.diffusionProgram);
+        
+        for (let i = 0; i < oilDiffusionIterations; i++) {
+            gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
+            const pos = gl.getAttribLocation(sim.diffusionProgram, 'a_position');
+            gl.enableVertexAttribArray(pos);
+            gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, this.oilTexture1);
+            gl.uniform1i(gl.getUniformLocation(sim.diffusionProgram, 'u_texture'), 0);
+            
+            gl.uniform1f(gl.getUniformLocation(sim.diffusionProgram, 'u_diffusion_rate'), oilDiffusion);
+            gl.uniform1f(gl.getUniformLocation(sim.diffusionProgram, 'u_dt'), dt);
+            gl.uniform1i(gl.getUniformLocation(sim.diffusionProgram, 'u_preserveAlpha'), 0); // 0 = false, diffuse thickness
+
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+            this.swapOilTextures();
+        }
+    }
 
     // STEP 4.5: Apply thickness smoothing TWICE (removes pixel dust, promotes droplets)
     if (sim.oilSmoothingRate > 0.0 && sim.oilSmoothProgram) {

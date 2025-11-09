@@ -55,7 +55,7 @@ export default class SPHOilSystem {
     this.neighborLists = Array.from({ length: maxParticles }, () => []);
     
     // Implicit solver (Phase 2)
-    this.useImplicitIntegration = true; // Enable for high surface tension
+    this.useImplicitIntegration = false; // Enable for high surface tension
     this.implicitSolver = null; // Initialized on first use
     
     // GPU resources (to be initialized)
@@ -677,12 +677,12 @@ export default class SPHOilSystem {
     
     // STEP 2: COHESION (Two-scale: short-range + long-range)
     // Short-range: Prevents blob spreading (holds dense liquid together)
-    const shortCohesion = 8.0; // STRONG (was 2.0) - dense liquid needs more cohesion!
-    const shortRadius = h * 1.5;
-    const minDist = h * 0.3; // Smaller cutoff for denser packing
+    const shortCohesion = 16.0; // STRONGER (was 8.0) - dense liquid needs more cohesion!
+    const shortRadius = h * 2.0; // INCREASED (was h * 1.5) - wider range for strong cohesion
+    const minDist = h * 0.5; // SLIGHTLY LARGER (was h * 0.3) - prevent over-packing
     
     // Long-range: Pulls distant blobs together for merging
-    const longCohesion = 0.2; // Stronger (was 0.05) for faster merging
+    const longCohesion = 0.4; // STRONGER (was 0.2) for faster merging
     const longRadius = 0.3;
     
     for (let i = 0; i < this.particleCount; i++) {

@@ -13,6 +13,7 @@ uniform float u_tint_strength;
 uniform float u_refract_strength;
 uniform float u_fresnel_power;
 uniform float u_occlusion;
+uniform float u_iridescence_strength;
 
 // Thin-film interference for iridescence (soap bubble effect)
 vec3 thinFilmInterference(float thickness, float cosTheta) {
@@ -92,13 +93,12 @@ void main() {
     
     // 2. User's selected oil color (PRIMARY - this is what they painted!)
     vec3 userOilColor = oilTint;
-    vec3 tinted = mix(base, userOilColor, opacity * u_tint_strength * 1.5); // Boost tint visibility
+    vec3 tinted = mix(base, userOilColor, opacity * u_tint_strength * 2.5); // Boost tint visibility
     
-    // 3. MINIMAL iridescent highlights (only on extremely thin oil edges)
-    // Only show iridescence on very thin films (like real soap bubbles)
-    float thinness = smoothstep(0.12, 0.03, thickness); // Only when very thin
-    float iridescenceStrength = thinness * 0.02; // Drastically reduced from 0.08
-    vec3 withIridescence = tinted + iridescence * iridescenceStrength;
+    // 3. Material-dependent iridescence
+    // This adds a colorful, pearlescent sheen to the oil.
+    // The strength is controlled by a uniform to give each material a unique look.
+    vec3 withIridescence = tinted + iridescence * u_iridescence_strength;
     
     // 4. Fresnel reflection (ONLY on thick oil, fades completely when thin)
     // White reflection ONLY appears on thick oil (> 0.4 thickness)
@@ -112,8 +112,8 @@ void main() {
     final += userOilColor * thickEdge * 0.2; // Reduced strength
     
     // Variable density visualization: thicker = darker version of user color
-    float densityDarken = smoothstep(0.3, 0.8, thickness) * 0.3;
-    final *= (1.0 - densityDarken);
+    // float densityDarken = smoothstep(0.3, 0.8, thickness) * 0.3;
+    // final *= (1.0 - densityDarken);
     
     fragColor = vec4(final, 1.0);
 }
