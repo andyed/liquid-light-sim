@@ -98,7 +98,7 @@ export default class Controller {
         this.didJetThisClick = false; // kept for initial state logging
         this.lastJetTime = 0;
         this.jetIntervalMs = 250; // safe sustained repeat cadence
-        this.injectEveryN = 2; // throttle paint injection to every N frames
+        this.injectEveryN = 1; // EVERY FRAME for continuous pooling (was 2, felt sluggish)
         this.maxJetDurationMs = 2000; // hard cap per click
         this.jetHoldStart = 0;
         
