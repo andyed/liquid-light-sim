@@ -228,7 +228,7 @@ export default class SPHOilSystem {
       this.forces[idx * 2 + 1] = 0;
       this.densities[idx] = this.restDensity;
       this.pressures[idx] = 0;
-      this.temperatures[idx] = temperature;
+      this.temperatures[idx] = 60.0; // Default room temperature (was parameter)
       this.phases[idx] = 1; // Oil
       this.colors[idx * 3] = color.r;
       this.colors[idx * 3 + 1] = color.g;
