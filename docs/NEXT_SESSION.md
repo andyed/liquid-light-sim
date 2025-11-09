@@ -298,6 +298,53 @@ See `OIL_OVERFLOW_FIX.md` for complete details.
    - **Analysis confirmed**: Implicit solver (SPH) required for true blobs
    - Current approach: good for thin films, fails for cohesive blobs
 
+9. **SPH IMPLEMENTATION - PHASE 1 FAILED** ❌ DISABLED
+   **Goal**: Replace grid-based oil with SPH particles for true blob physics
+   
+   **What Was Built (Session Nov 8):**
+   - ✅ `SpatialHashGrid.js` - O(N log N) neighbor search
+   - ✅ `SPHOilSystem.js` - Main SPH controller (50k particles max)
+   - ✅ Particle data structures (positions, velocities, densities, colors)
+   - ✅ Spatial hashing working (efficient neighbor queries)
+   - ✅ SPH kernels: Poly6 (density), Spiky (pressure), Viscosity
+   - ✅ Density calculation (ρ_i = Σ_j m_j * W(r_ij, h))
+   - ✅ Pressure from density (Tait equation of state)
+   - ✅ Pressure gradient force (symmetric formulation)
+   - ✅ Viscosity force (standard SPH Laplacian)
+   - ✅ Time integration (symplectic Euler)
+   - ✅ Boundary conditions (circular container with bounce)
+   
+   **Critical Failures:**
+   - ❌ **Wrong gravity model** - assumed side-view, not top-down concave plate
+   - ❌ **Motion blur artifacts** - particle size too large (150px)
+   - ❌ **Performance issues** - app freeze during continuous paint
+   - ❌ **Coordinate confusion** - screen Y vs world Y inversion
+   - ❌ **"Bolt" streaks** - particles shooting to center instead of drifting
+   - ❌ **Rendering issues** - MetaBall threshold and edge glow artifacts
+   
+   **New Files (NOT PRODUCTION READY):**
+   - `src/simulation/sph/SpatialHashGrid.js` (122 lines) 
+   - `src/simulation/sph/SPHOilSystem.js` (510 lines)
+   - `src/shaders/sph-particle-splat.vert.glsl` 
+   - `src/shaders/sph-particle-splat.frag.glsl`
+   
+   **Status**: **DISABLED** - Reverted to grid-based oil (useSPH = false)
+   - Developer did not understand application architecture
+   - Multiple failed "fix" attempts (6 iterations)
+   - 90 minutes wasted on fundamentally flawed approach
+   - Grid-based oil restored and working
+   
+   **Lessons Learned:**
+   - Must understand domain before coding
+   - SPH requires careful design, not rush implementation
+   - Grid-based system works adequately
+   - Don't fix what isn't broken without clear requirements
+   
+   **Recommendation**: 
+   - **DO NOT re-enable SPH** until full code review of existing system
+   - Focus on polishing grid-based oil instead
+   - Document why blobs are actually needed (current system may be sufficient)
+
 ---
 
 ## Start Next Session

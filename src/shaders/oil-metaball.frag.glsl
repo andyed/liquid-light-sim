@@ -17,8 +17,12 @@ void main() {
     float thickness = oil.a;
     vec3 color = oil.rgb;
     
-    // Only apply metaball effect to thick oil (blobs)
-    if (thickness < u_blobThreshold) {
+    // Smooth threshold transition to prevent flickering
+    // Instead of binary on/off, use smooth step near threshold
+    float thresholdFade = smoothstep(u_blobThreshold * 0.7, u_blobThreshold * 1.3, thickness);
+    
+    if (thresholdFade < 0.01) {
+        // Well below threshold - no metaball
         outColor = oil;
         return;
     }
@@ -61,7 +65,10 @@ void main() {
         blendedColor /= totalWeight;
     }
     
+    // Blend between original and metaball result based on threshold fade
+    // This eliminates hard edges and flickering near threshold
+    vec3 finalColor = mix(color, blendedColor, thresholdFade);
+    
     // Use ORIGINAL thickness - MetaBall only blends colors, doesn't inflate mass
-    // This ensures white reflection fades naturally as oil thins
-    outColor = vec4(blendedColor, thickness); // Keep original thickness!
+    outColor = vec4(finalColor, thickness);
 }

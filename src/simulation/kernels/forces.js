@@ -1,4 +1,9 @@
 export function applyForces(gl, renderer, forcesProgram, simulation, dt) {
+    // Debug: Log water rotation occasionally
+    if (Math.abs(simulation.rotationAmount) > 0.01 && Math.random() < 0.01) {
+        console.log(`💧 Water Rotation: ${simulation.rotationAmount.toFixed(3)}`);
+    }
+    
     // Update central spiral power accumulation
     if (Math.abs(simulation.rotationAmount) > 0.01) {
         // Build up power when rotating

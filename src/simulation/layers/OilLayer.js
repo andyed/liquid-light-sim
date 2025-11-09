@@ -1,9 +1,17 @@
 import FluidLayer from './FluidLayer.js';
 import OilParticle from '../OilParticle.js';
+import SPHOilSystem from '../sph/SPHOilSystem.js';
 
 export default class OilLayer extends FluidLayer {
   constructor(simulation) {
     super(simulation);
+    
+    // SPH PARTICLE SYSTEM (PHASE 1: INCREMENTAL REBUILD)
+    this.useSPH = true; // RE-ENABLED: Starting from scratch, testing each piece
+    this.sph = new SPHOilSystem(5000, 0.48); // REDUCED: 5k max for Phase 1 testing
+    // NOTE: Physics disabled until validated step-by-step
+    
+    // GRID TEXTURES (Legacy - kept for hybrid testing)
     this.oilTexture1 = null;
     this.oilTexture2 = null;
     this.oilFBO = null;
@@ -18,12 +26,12 @@ export default class OilLayer extends FluidLayer {
     this.oilPropsTexture2 = null;
     this.oilPropsFBO = null;
     
-    // HYBRID PARTICLE SYSTEM for thick blobs
+    // Old hybrid particle system (DISABLED)
     this.particles = [];
     this.maxParticles = 500;
-    this.particleConversionThreshold = 0.35; // Thick oil (>35%) becomes particles
-    this.particleMergeDistance = 0.03; // Particles within 3% screen space merge
-    this.particleConversionInterval = 30; // Convert grid→particles every N frames
+    this.particleConversionThreshold = 0.35;
+    this.particleMergeDistance = 0.03;
+    this.particleConversionInterval = 30;
     this.framesSinceConversion = 0;
   }
 
@@ -32,7 +40,12 @@ export default class OilLayer extends FluidLayer {
     const w = gl.canvas.width;
     const h = gl.canvas.height;
 
-    // Oil thickness/tint field (RGBA16F)
+    // Initialize SPH system
+    console.log('🚀 Initializing SPH Oil System...');
+    this.sph.initGPU(gl, this.sim.sphParticleSplatProgram);
+    console.log(`✅ SPH initialized: max ${this.sph.maxParticles} particles`);
+
+    // Oil thickness/tint field (RGBA16F) - still needed for MetaBall rendering
     this.oilTexture1 = this.sim.createTexture(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
     this.oilTexture2 = this.sim.createTexture(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
     this.oilFBO = this.sim.createFBO(this.oilTexture1);
@@ -138,10 +151,75 @@ export default class OilLayer extends FluidLayer {
     const sim = this.sim;
     if (!sim.ready || !sim.renderer.ready || sim.paused) return;
 
+    // === SPH PATH (NEW!) ===
+    // Only use SPH for thick, viscous materials (not ink or alcohol)
+    const currentMaterial = sim.controller?.materials[sim.controller?.currentMaterialIndex]?.name || '';
+    const useSPHForMaterial = ['Mineral Oil', 'Syrup', 'Glycerine'].includes(currentMaterial);
+    
+    if (this.useSPH && useSPHForMaterial) {
+      // STEP 1: Update SPH particle physics
+      // Frame skip if too many particles (CPU bottleneck mitigation)
+      if (!this.sphFrameSkip) this.sphFrameSkip = 0;
+      this.sphFrameSkip++;
+      
+      // Skip physics every other frame if > 3000 particles
+      const shouldSkipPhysics = this.sph.particleCount > 3000 && this.sphFrameSkip % 2 === 0;
+      
+      if (!shouldSkipPhysics) {
+        this.sph.update(dt, sim.rotationAmount); // Pass rotation for lava lamp motion
+      }
+      
+      // STEP 2: Render particles to oil texture
+      // Clear oil texture first
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      
+      // Rasterize SPH particles to texture
+      this.sph.renderParticles(this.oilFBO, gl.canvas.width, gl.canvas.height);
+      this.swapOilTextures();
+      
+      // STEP 3: Apply MetaBall rendering for smooth blending (optional)
+      if (sim.metaballEnabled && sim.oilMetaballProgram) {
+        // Debug: log once to confirm MetaBall is running
+        if (!this._metaballLogged) {
+          console.log('🎱 MetaBall pass running on SPH particles');
+          this._metaballLogged = true;
+        }
+        
+        gl.useProgram(sim.oilMetaballProgram);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);
+        
+        gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
+        const posMetaball = gl.getAttribLocation(sim.oilMetaballProgram, 'a_position');
+        gl.enableVertexAttribArray(posMetaball);
+        gl.vertexAttribPointer(posMetaball, 2, gl.FLOAT, false, 0, 0);
+        
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.oilTexture1);
+        gl.uniform1i(gl.getUniformLocation(sim.oilMetaballProgram, 'u_oil_texture'), 0);
+        gl.uniform2f(gl.getUniformLocation(sim.oilMetaballProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+        gl.uniform1f(gl.getUniformLocation(sim.oilMetaballProgram, 'u_blobThreshold'), sim.metaballBlobThreshold);
+        gl.uniform1f(gl.getUniformLocation(sim.oilMetaballProgram, 'u_metaballRadius'), sim.metaballRadius);
+        gl.uniform1f(gl.getUniformLocation(sim.oilMetaballProgram, 'u_bulginess'), sim.metaballBulginess);
+        
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        this.swapOilTextures();
+      }
+      
+      // Skip grid-based advection (particles handle their own motion)
+      // But continue to texture rotation/displacement below
+    }
+    
+    // === GRID-BASED PATH (Legacy) ===
     // Ensure oil passes render at full canvas size (avoid stale viewport from other stages)
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-
-    // STEP 1: Apply coupling from water velocity
+    
+    // Skip coupling/advection if SPH is active (particles move themselves)
+    if (!useSPHForMaterial) {
+      // STEP 1: Apply coupling from water velocity
     gl.useProgram(sim.oilCouplingProgram);
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilVelocityFBO);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilVelocityTexture2, 0);
@@ -364,9 +442,11 @@ export default class OilLayer extends FluidLayer {
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         this.swapOilTextures();
     }
+    } // End if (!this.useSPH) - grid-based physics complete
 
     // STEP 5.5: Apply MetaBall rendering (implicit surface blending for organic appearance)
-    if (sim.metaballEnabled && sim.oilMetaballProgram) {
+    // Note: SPH already applied MetaBall above, this is for grid-based oil only
+    if (!useSPHForMaterial && sim.metaballEnabled && sim.oilMetaballProgram) {
         gl.useProgram(sim.oilMetaballProgram);
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);
@@ -594,16 +674,32 @@ export default class OilLayer extends FluidLayer {
     const gl = this.gl;
     const sim = this.sim;
     
-    console.log('🛢️ OilLayer.splatColor called:', {x: x.toFixed(2), y: y.toFixed(2), radius, color});
+    // === SPH PATH (PHASE 1: INCREMENTAL TESTING) ===
+    // Only use SPH for thick, viscous materials (not ink or alcohol)
+    const currentMaterial = this.sim.controller?.materials[this.sim.controller?.currentMaterialIndex]?.name || '';
+    const useSPHForMaterial = ['Mineral Oil', 'Syrup', 'Glycerine'].includes(currentMaterial);
     
-    // TODO: HYBRID particle spawning disabled until rendering works
-    // Need to implement proper particle→grid rendering without accumulation
-    // if (radius > 0.04 && this.particles.length < this.maxParticles) {
-    //   const particle = new OilParticle(x, y, 0, 0, radius * 5, color);
-    //   this.particles.push(particle);
-    //   console.log(`✨ Spawned particle at (${x.toFixed(2)}, ${y.toFixed(2)}), total: ${this.particles.length}`);
-    // }
-
+    if (this.useSPH && useSPHForMaterial) {
+      // Convert normalized coords to world coords (centered at origin)
+      // NOTE: Y is INVERTED! Screen Y=0 is top, but world Y=0 is center with +Y = up
+      const worldX = (x - 0.5) * 2 * this.sph.containerRadius;
+      const worldY = (0.5 - y) * 2 * this.sph.containerRadius; // FLIPPED: top of screen = +Y (up)
+      
+      // Moderate spawn rate - balanced between density and preventing oversaturation
+      const particlesPerSplat = 15; // Reduced from 25 to prevent continuous paint oversaturation
+      const temperature = 20.0; // Room temp for now
+      
+      const spawned = this.sph.spawnParticles(worldX, worldY, particlesPerSplat, color, temperature);
+      
+      // Log occasionally
+      if (Math.random() < 0.2) {
+        console.log(`✅ 1.2: Spawned ${spawned} at (${worldX.toFixed(2)}, ${worldY.toFixed(2)}), Total: ${this.sph.particleCount}`);
+      }
+      
+      return; // Skip grid splatting
+    }
+    
+    // === GRID-BASED SPLATTING (Legacy) ===
     gl.useProgram(sim.splatProgram);
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);

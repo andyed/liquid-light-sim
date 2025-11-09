@@ -32,12 +32,12 @@ export default class Simulation {
         this.oilEdgeSharpness = 0.0;  // DISABLED - was creating banding artifacts
         
         // MetaBall rendering parameters (implicit surface blending)
-        this.metaballEnabled = true;       // Enable MetaBall rendering
-        this.metaballBlobThreshold = 0.08; // Thickness threshold (lowered to catch dust)
-        this.metaballRadius = 12.0;        // Influence radius in pixels (increased range)
-        this.metaballBulginess = 2.5;      // Blending exponent (higher = more aggressive merging)
-        this.rotationAmount = 0.0;  // Effective rotation force (base + delta)
-        this.rotationBase = 0.03;    // Button/toggle driven rotation (default gentle flow like real shows)
+        this.metaballEnabled = true;       // PHASE 1.9: ENABLED - Turn particles into blobs!
+        this.metaballBlobThreshold = 0.4;  // Lower to match reduced particle alpha (was 0.6)
+        this.metaballRadius = 23.0;        // Medium radius for smooth stable field
+        this.metaballBulginess = 2.5;      // Bulginess (higher = smoother merging)
+        this.rotationAmount = 0.0;   // Start at 0, controlled by user (A/D keys or buttons)
+        this.rotationBase = 0.0;     // No baseline rotation - user controls via rotationDelta
         this.rotationDelta = 0.0;   // Transient input (keys/gestures)
         this.jetForce = {x: 0, y: 0, strength: 0};  // Jet impulse tool
         
@@ -295,6 +295,12 @@ export default class Simulation {
             await loadShader('src/shaders/oil-metaball.frag.glsl')
         );
 
+        // SPH particle rendering (NEW!)
+        this.sphParticleSplatProgram = this.renderer.createProgram(
+            await loadShader('src/shaders/sph-particle-splat.vert.glsl'),
+            await loadShader('src/shaders/sph-particle-splat.frag.glsl')
+        );
+
         // Splat per-pixel oil material properties
         this.splatOilPropsProgram = this.renderer.createProgram(
             fullscreenVert,
@@ -410,6 +416,7 @@ export default class Simulation {
     }
 
     setRotationDelta(amount) {
+        console.log(`🎚️ setRotationDelta called: ${amount.toFixed(3)} (was ${this.rotationDelta.toFixed(3)})`);
         this.rotationDelta = amount;
     }
 
@@ -575,6 +582,11 @@ export default class Simulation {
         gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
         // Combine rotation sources
         this.rotationAmount = this.rotationBase + this.rotationDelta;
+        
+        // Debug: Log when rotation is active
+        if (Math.abs(this.rotationAmount) > 0.01 && Math.random() < 0.01) {
+            console.log(`🎯 Main loop: rotationAmount=${this.rotationAmount.toFixed(3)}, base=${this.rotationBase}, delta=${this.rotationDelta.toFixed(3)}`);
+        }
         
         // Update dynamic lighting (plate tilt from rotation + wobble)
         this.updateLightTilt(dt);

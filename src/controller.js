@@ -30,7 +30,7 @@ export default class Controller {
             viscosity: 0.03,
             diffusionRate: 0.0,
             vorticityStrength: 0.15,  // Reduced from 0.25 to let blobs form
-            rotationBase: 0.02,       // Reduced from 0.03 - gentler ambient flow
+            rotationBase: 0.0,        // No baseline - let user control via keys/buttons
             oilOverflowUpper: 0.95,   // Default overflow threshold (HIGHER than water's 0.90)
             oilOverflowLower: 0.80,
             occupancyEveryN: 120,      // Default overflow check frequency
