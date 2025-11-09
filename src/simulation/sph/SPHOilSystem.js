@@ -178,7 +178,7 @@ export default class SPHOilSystem {
   /**
    * Spawn new oil particles from paint/splat
    */
-  spawnParticles(centerX, centerY, count, color, temperature = 60.0) {
+  spawnParticles(centerX, centerY, count, color, spawnRadiusPixels = 20.0) {
     // HARD LIMIT for CPU performance (Phase 1)
     const PHASE1_PARTICLE_LIMIT = 5000; // Conservative limit for 60fps
     
@@ -199,8 +199,9 @@ export default class SPHOilSystem {
     
     if (count <= 0) return 0;
     
-    // Spawn at MODERATE density to avoid pressure explosion
-    const spawnRadius = this.smoothingRadius * 0.5; // Moderate (was 0.1*h, too tight!)
+    // Convert pixel radius to world space
+    const spawnRadius = (spawnRadiusPixels / 1000.0) * this.containerRadius;
+    
     for (let i = 0; i < count; i++) {
       const idx = this.particleCount++;
       
@@ -213,9 +214,14 @@ export default class SPHOilSystem {
       // Set particle data
       this.positions[idx * 2] = x;
       this.positions[idx * 2 + 1] = y;
-      // Add tiny random velocity to break symmetry, but keep it small
-      const vx = (Math.random() - 0.5) * 0.01;
-      const vy = (Math.random() - 0.5) * 0.01;
+      
+      // Add radial velocity variance for splitting/recombining behavior
+      // Particles near edge spawn with outward velocity, center with random
+      const radiusFraction = r / spawnRadius; // 0 at center, 1 at edge
+      const baseSpeed = 0.05 + radiusFraction * 0.10; // 0.05-0.15 range
+      const vx = Math.cos(angle) * baseSpeed * (0.5 + Math.random() * 0.5);
+      const vy = Math.sin(angle) * baseSpeed * (0.5 + Math.random() * 0.5);
+      
       this.velocities[idx * 2] = vx;
       this.velocities[idx * 2 + 1] = vy;
       this.forces[idx * 2] = 0;
@@ -462,10 +468,10 @@ export default class SPHOilSystem {
     this.computeTemperature(dt);
     this.computeForces(); // Now computed for both explicit and implicit paths
     
-    // Apply MODERATE grid drag forces - balance rotation vs blob integrity
-    // Too strong = tears blobs apart, too weak = no rotation
+    // Apply LIGHT grid drag forces - oil should move slower than ink
+    // Lower drag = oil lags behind water movement (more realistic)
     if (gridVelocities) {
-      this.applyGridDragForces(gridVelocities, 3.0); // BALANCED (was 1.0, originally 10.0)
+      this.applyGridDragForces(gridVelocities, 1.5); // REDUCED from 3.0 - oil moves slower than ink
     }
     
     if (this.useImplicitIntegration) {
@@ -953,7 +959,7 @@ export default class SPHOilSystem {
    * Shared logic for applying damping, velocity caps, and updating positions
    */
   _updatePositions(dt) {
-    const damping = 0.85; // STRONGER damping to prevent oscillations (was 0.95, too bouncy!)
+    const damping = 0.92; // Lighter damping - allows more independent particle movement (was 0.85)
     const maxSpeed = 1.0;  // High speed cap for visible rotation (was 0.3)
     
     for (let i = 0; i < this.particleCount; i++) {
