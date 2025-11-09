@@ -178,9 +178,9 @@ export default class OilLayer extends FluidLayer {
       );
     }
     
-    // STEP 2: Update SPH particle physics (only if painting SPH material)
-    // If user switched to Alcohol, particles freeze but stay visible
-    if (useSPHForMaterial && this.sph.particleCount > 0) {
+    // STEP 2: Update SPH particle physics (always if particles exist!)
+    // Particles should continue moving even when user switches to Ink/Alcohol
+    if (this.sph.particleCount > 0) {
       // Frame skip if too many particles (CPU bottleneck mitigation)
       if (!this.sphFrameSkip) this.sphFrameSkip = 0;
       this.sphFrameSkip++;
@@ -616,7 +616,27 @@ export default class OilLayer extends FluidLayer {
       const worldX = (x - 0.5) * 2 * this.sph.containerRadius;
       const worldY = (0.5 - y) * 2 * this.sph.containerRadius;
       
-      this.sph.spawnParticles(worldX, worldY, 50, color, 20.0);
+      // Material-specific spawning parameters
+      let particleCount = 50;
+      let spawnRadius = 20.0;
+      
+      switch(currentMaterial) {
+        case 'Mineral Oil':
+          particleCount = 40;   // Medium amount
+          spawnRadius = 15.0;   // Medium spread
+          break;
+        case 'Syrup':
+          particleCount = 80;   // MORE particles for thick, viscous look
+          spawnRadius = 12.0;   // Tighter spread (doesn't disperse as much)
+          break;
+        case 'Glycerine':
+          particleCount = 60;   // Medium-high amount
+          spawnRadius = 18.0;   // Medium-wide spread
+          break;
+      }
+      
+      this.sph.spawnParticles(worldX, worldY, particleCount, color, spawnRadius);
+      console.log(`🎨 Spawned ${particleCount} ${currentMaterial} particles (radius=${spawnRadius})`);
       return;
     }
     
