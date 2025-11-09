@@ -33,9 +33,9 @@ export default class Simulation {
         
         // MetaBall rendering parameters (implicit surface blending)
         this.metaballEnabled = true;       // PHASE 1.9: ENABLED - Turn particles into blobs!
-        this.metaballBlobThreshold = 0.70; // Raised to cut more dust (was 0.65)
-        this.metaballRadius = 20.0;        // Moderate for smooth blobs (was 18)
-        this.metaballBulginess = 3.0;      // Round blobs (was 3.5)
+        this.metaballBlobThreshold = 0.4;  // LOWERED to include more particles (was 0.70)
+        this.metaballRadius = 25.0;        // WIDER for better merging (was 20)
+        this.metaballBulginess = 2.5;      // SOFTER merging (was 3.0)
         this.rotationAmount = 0.0;   // Start at 0, controlled by user (A/D keys or buttons)
         this.rotationBase = 0.0;     // No baseline rotation - user controls via rotationDelta
         this.rotationDelta = 0.0;   // Transient input (keys/gestures)

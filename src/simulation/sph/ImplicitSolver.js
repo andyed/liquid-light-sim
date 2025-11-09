@@ -241,7 +241,8 @@ export default class ImplicitSolver {
       // Based on the formula (M - dt^2 * J_pos), where J_pos = ∂F_c/∂x
       // We approximate the cohesion force as a simple spring F = -k(xi - xj)
       // The Jacobian ∂F_i/∂x_j = k*I, and ∂F_i/∂x_i = -k*I for each neighbor.
-      const k = 750.0; // Stiffness coefficient for implicit cohesion (increased from 500.0)
+      // CRITICAL: k must be MUCH larger than ALL forces (pressure + shear) for blobs!
+      const k = 20000.0; // EXTREME stiffness (was 5000) - must resist water shear
       const dt2 = dt * dt;
 
       for (const j of neighbors) {

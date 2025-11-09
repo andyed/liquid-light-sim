@@ -153,7 +153,9 @@ export default class OilLayer extends FluidLayer {
 
     // === SPH PATH (NEW!) ===
     // Only use SPH for thick, viscous materials (not ink or alcohol)
-    const currentMaterial = sim.controller?.materials[sim.controller?.currentMaterialIndex]?.name || '';
+    // FIX: Use window.controller directly since sim.controller may not be set yet
+    const controller = window.controller || sim.controller;
+    const currentMaterial = controller?.materials[controller?.currentMaterialIndex]?.name || '';
     const useSPHForMaterial = ['Mineral Oil', 'Syrup', 'Glycerine'].includes(currentMaterial);
     
     if (this.useSPH && useSPHForMaterial) {
@@ -176,17 +178,23 @@ export default class OilLayer extends FluidLayer {
       const shouldSkipPhysics = this.sph.particleCount > 3000 && this.sphFrameSkip % 2 === 0;
       
       if (!shouldSkipPhysics) {
+        // Debug rotation
+        if (Math.abs(sim.rotationAmount) > 0.01 && Math.random() < 0.05) {
+          console.log(`🛢️ OilLayer passing rotation to SPH: ${sim.rotationAmount.toFixed(3)}, particles: ${this.sph.particleCount}`);
+        }
         this.sph.update(dt, sim.rotationAmount, gridVelocities); // Pass grid velocities for rotation
       }
       
-      // STEP 3: Write SPH velocities back to grid (for texture rotation/displacement)
-      if (this.sph.particleCount > 0) {
-        this.sph.writeVelocitiesToGrid(
-          this.oilVelocityTexture1,
-          gl.canvas.width,
-          gl.canvas.height
-        );
-      }
+      // STEP 3: DISABLED - Write-back causes massive canvas disruption
+      // SPH particles writing velocities to grid creates large vortices
+      // For stable visualization, keep particles and grid decoupled
+      // if (this.sph.particleCount > 0) {
+      //   this.sph.writeVelocitiesToGrid(
+      //     this.oilVelocityTexture1,
+      //     gl.canvas.width,
+      //     gl.canvas.height
+      //   );
+      // }
       
       // STEP 2: Render particles to oil texture
       // Clear oil texture first
@@ -230,7 +238,7 @@ export default class OilLayer extends FluidLayer {
       
       // Skip grid-based advection (particles handle their own motion)
       // IMPORTANT: Skip ALL grid-based cleanup for SPH (including overflow)
-      // return; // Exit early - SPH manages its own lifecycle - DISABLED to allow overflow checks etc.
+      return; // Exit early - SPH manages its own lifecycle - MUST BE ENABLED!
     }
     
     // === GRID-BASED PATH (Legacy) ===
@@ -404,11 +412,13 @@ export default class OilLayer extends FluidLayer {
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     this.swapOilTextures();
 
-    // STEP 4.2: Apply diffusion to oil thickness to allow it to thin out
-    const oilDiffusion = sim.oilDiffusion === undefined ? 0.02 : sim.oilDiffusion;
-    const oilDiffusionIterations = sim.oilDiffusionIterations === undefined ? 2 : sim.oilDiffusionIterations;
+    // STEP 4.2: DIFFUSION DISABLED FOR SPH BLOBS
+    // Oil diffusion actively SPREADS particles - opposite of cohesion!
+    // For blobs, we need ANTI-diffusion (strong cohesion forces)
+    const oilDiffusion = 0.0; // DISABLED - was destroying blob formation
+    const oilDiffusionIterations = 0;
 
-    if (oilDiffusion > 0.0 && sim.diffusionProgram) {
+    if (false && oilDiffusion > 0.0 && sim.diffusionProgram) {
         gl.useProgram(sim.diffusionProgram);
         
         for (let i = 0; i < oilDiffusionIterations; i++) {
@@ -725,7 +735,9 @@ export default class OilLayer extends FluidLayer {
     
     // === SPH PATH (PHASE 1: INCREMENTAL TESTING) ===
     // Only use SPH for thick, viscous materials (not ink or alcohol)
-    const currentMaterial = this.sim.controller?.materials[this.sim.controller?.currentMaterialIndex]?.name || '';
+    // FIX: Use window.controller directly since this.sim.controller may not be set yet
+    const controller = window.controller || this.sim.controller;
+    const currentMaterial = controller?.materials[controller?.currentMaterialIndex]?.name || '';
     const useSPHForMaterial = ['Mineral Oil', 'Syrup', 'Glycerine'].includes(currentMaterial);
     
     if (this.useSPH && useSPHForMaterial) {
@@ -734,15 +746,17 @@ export default class OilLayer extends FluidLayer {
       const worldX = (x - 0.5) * 2 * this.sph.containerRadius;
       const worldY = (0.5 - y) * 2 * this.sph.containerRadius; // FLIPPED: top of screen = +Y (up)
       
-      // Moderate spawn rate - balanced between density and preventing oversaturation
-      const particlesPerSplat = 50; // INCREASED: More particles = denser blobs (was 15)
+      // MODERATE spawn rate - balance visibility vs accumulation
+      const particlesPerSplat = 50; // Reduced from 100 to prevent fill-up
       const temperature = 20.0; // Room temp for now
       
       const spawned = this.sph.spawnParticles(worldX, worldY, particlesPerSplat, color, temperature);
       
       // Log occasionally
       if (Math.random() < 0.2) {
-        console.log(`✅ 1.2: Spawned ${spawned} at (${worldX.toFixed(2)}, ${worldY.toFixed(2)}), Total: ${this.sph.particleCount}`);
+        console.log(`✅ SPH: Spawned ${spawned} particles at (${worldX.toFixed(2)}, ${worldY.toFixed(2)})`);
+        console.log(`🎨 Color: r=${color.r.toFixed(2)}, g=${color.g.toFixed(2)}, b=${color.b.toFixed(2)}`);
+        console.log(`📊 Total: ${this.sph.particleCount} particles`);
       }
       
       return; // Skip grid splatting

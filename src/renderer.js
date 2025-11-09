@@ -148,33 +148,25 @@ export default class Renderer {
         const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
         const viewportWidth = Math.max(1, window.innerWidth);
         const viewportHeight = Math.max(1, window.innerHeight);
-        const viewportAspect = viewportWidth / viewportHeight;
 
-        // CSS size in CSS pixels
-        let cssW, cssH;
-        if (viewportAspect < 1.0) {
-            // Portrait: square CSS canvas to ensure full circle fits
-            cssW = viewportWidth;
-            cssH = viewportWidth;
-        } else {
-            // Landscape: fill viewport
-            cssW = viewportWidth;
-            cssH = viewportHeight;
-        }
+        // ALWAYS SQUARE: Canvas is inside circular border container
+        // Use smallest viewport dimension to ensure it fits
+        const squareSize = Math.min(viewportWidth, viewportHeight);
+        const cssW = squareSize;
+        const cssH = squareSize;
 
-        // Apply CSS size
+        // Apply CSS size (but CSS has 100% with circular-border parent, so this is backup)
         const canvasEl = this.gl.canvas;
         canvasEl.style.width = cssW + 'px';
         canvasEl.style.height = cssH + 'px';
 
-        // Compute drawing buffer size in device pixels, cap by MAX_TEXTURE_SIZE
+        // Compute SQUARE drawing buffer size in device pixels
         const maxTex = this._maxTextureSize || (this._maxTextureSize = this.gl.getParameter(this.gl.MAX_TEXTURE_SIZE));
-        const targetW = Math.min(maxTex, Math.max(1, Math.floor(cssW * dpr)));
-        const targetH = Math.min(maxTex, Math.max(1, Math.floor(cssH * dpr)));
+        const targetSize = Math.min(maxTex, Math.max(1, Math.floor(squareSize * dpr)));
 
-        // Set drawing buffer
-        this.gl.canvas.width = targetW;
-        this.gl.canvas.height = targetH;
+        // Set drawing buffer to SQUARE (critical for circular display)
+        this.gl.canvas.width = targetSize;
+        this.gl.canvas.height = targetSize;
 
         this.gl.viewport(0, 0, this.gl.canvas.width, this.gl.canvas.height);
 

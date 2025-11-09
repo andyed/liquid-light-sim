@@ -21,7 +21,7 @@ export default class SPHOilSystem {
     this.containerRadius = containerRadius;
     
     // SPH parameters (will be tuned per material)
-    this.smoothingRadius = 0.05;      // INCREASED: Kernel support radius (h) - was 0.01, too small!
+    this.smoothingRadius = 0.1;       // LARGE: Particles need long-range cohesion (was 0.05)
     this.restDensity = 1000.0;        // Rest density (ρ₀)
     this.particleMass = 0.02;         // Mass per particle
     this.viscosity = 0.1;             // REDUCED: Lower viscosity to prevent NaN instability (was 2.0)
@@ -106,21 +106,9 @@ export default class SPHOilSystem {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.particleVBO);
     gl.bufferData(gl.ARRAY_BUFFER, this.positions.subarray(0, this.particleCount * 2), gl.DYNAMIC_DRAW);
     
-    // Create a temporary color buffer to include temperature
-    const tempColors = new Float32Array(this.particleCount * 3);
-    tempColors.set(this.colors.subarray(0, this.particleCount * 3));
-
-    // Encode temperature into the blue channel
-    const tempRange = 80.0 - 20.0; // e.g., 20C to 80C
-    for (let i = 0; i < this.particleCount; i++) {
-      const temp = this.temperatures[i];
-      const normalizedTemp = (temp - 20.0) / tempRange;
-      tempColors[i * 3 + 2] = clamp(normalizedTemp, 0.0, 1.0); // Store in blue channel
-    }
-
-    // Upload colors (with temperature in blue channel)
+    // Upload colors directly (no temperature encoding - it was overwriting colors!)
     gl.bindBuffer(gl.ARRAY_BUFFER, this.particleColorVBO);
-    gl.bufferData(gl.ARRAY_BUFFER, tempColors, gl.DYNAMIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, this.colors.subarray(0, this.particleCount * 3), gl.DYNAMIC_DRAW);
     
     // Upload densities
     gl.bindBuffer(gl.ARRAY_BUFFER, this.particleDensityVBO);
@@ -171,11 +159,12 @@ export default class SPHOilSystem {
     // Set uniforms
     gl.uniform2f(gl.getUniformLocation(this.splatProgram, 'u_resolution'), canvasWidth, canvasHeight);
     gl.uniform1f(gl.getUniformLocation(this.splatProgram, 'u_containerRadius'), this.containerRadius);
-    gl.uniform1f(gl.getUniformLocation(this.splatProgram, 'u_particleRadius'), 45.0); // Increased for more overlap and smoother metaball input
+    gl.uniform1f(gl.getUniformLocation(this.splatProgram, 'u_particleRadius'), 60.0); // LARGE for strong field (was 45)
     
-    // Enable additive blending for MetaBall field accumulation
+    // Enable pre-multiplied alpha blending for proper color mixing
+    // This prevents white accumulation - colors blend like translucent layers
     gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); // Pre-multiplied alpha
     
     // Render particles as point sprites
     gl.drawArrays(gl.POINTS, 0, this.particleCount);
@@ -210,8 +199,8 @@ export default class SPHOilSystem {
     
     if (count <= 0) return 0;
     
-    // Spawn ULTRA-TIGHT for very dense liquid - even tighter!
-    const spawnRadius = this.smoothingRadius * 0.1; // Extremely tight (0.005 units)
+    // Spawn at MODERATE density to avoid pressure explosion
+    const spawnRadius = this.smoothingRadius * 0.5; // Moderate (was 0.1*h, too tight!)
     for (let i = 0; i < count; i++) {
       const idx = this.particleCount++;
       
@@ -224,8 +213,11 @@ export default class SPHOilSystem {
       // Set particle data
       this.positions[idx * 2] = x;
       this.positions[idx * 2 + 1] = y;
-      this.velocities[idx * 2] = 0;
-      this.velocities[idx * 2 + 1] = 0;
+      // Add tiny random velocity to break symmetry, but keep it small
+      const vx = (Math.random() - 0.5) * 0.01;
+      const vy = (Math.random() - 0.5) * 0.01;
+      this.velocities[idx * 2] = vx;
+      this.velocities[idx * 2 + 1] = vy;
       this.forces[idx * 2] = 0;
       this.forces[idx * 2 + 1] = 0;
       this.densities[idx] = this.restDensity;
@@ -406,12 +398,56 @@ export default class SPHOilSystem {
   }
   
   /**
+   * Remove particles that are outside the container
+   */
+  removeOutOfBoundsParticles() {
+    let writeIdx = 0;
+    const threshold = this.containerRadius * 1.1; // 10% buffer
+    
+    for (let readIdx = 0; readIdx < this.particleCount; readIdx++) {
+      const x = this.positions[readIdx * 2];
+      const y = this.positions[readIdx * 2 + 1];
+      const distFromCenter = Math.sqrt(x * x + y * y);
+      
+      // Keep particle if inside container
+      if (distFromCenter < threshold) {
+        if (writeIdx !== readIdx) {
+          // Copy particle data to compacted position
+          this.positions[writeIdx * 2] = this.positions[readIdx * 2];
+          this.positions[writeIdx * 2 + 1] = this.positions[readIdx * 2 + 1];
+          this.velocities[writeIdx * 2] = this.velocities[readIdx * 2];
+          this.velocities[writeIdx * 2 + 1] = this.velocities[readIdx * 2 + 1];
+          this.forces[writeIdx * 2] = this.forces[readIdx * 2];
+          this.forces[writeIdx * 2 + 1] = this.forces[readIdx * 2 + 1];
+          this.densities[writeIdx] = this.densities[readIdx];
+          this.pressures[writeIdx] = this.pressures[readIdx];
+          this.temperatures[writeIdx] = this.temperatures[readIdx];
+          this.phases[writeIdx] = this.phases[readIdx];
+          this.colors[writeIdx * 3] = this.colors[readIdx * 3];
+          this.colors[writeIdx * 3 + 1] = this.colors[readIdx * 3 + 1];
+          this.colors[writeIdx * 3 + 2] = this.colors[readIdx * 3 + 2];
+        }
+        writeIdx++;
+      }
+    }
+    
+    const removed = this.particleCount - writeIdx;
+    if (removed > 0) {
+      console.log(`🗑️ Removed ${removed} out-of-bounds particles, ${writeIdx} remain`);
+    }
+    this.particleCount = writeIdx;
+  }
+  
+  /**
    * Main update loop: physics simulation step
    * PHASE 1.6: Add pressure forces for incompressibility
    */
   update(dt, rotationAmount = 0.0, gridVelocities = null) {
     // Early exit if no particles
     if (this.particleCount === 0) return;
+    
+    // STEP 0: Remove particles outside container
+    this.removeOutOfBoundsParticles();
     
     // Store rotation for force computation
     this.currentRotation = rotationAmount;
@@ -426,9 +462,10 @@ export default class SPHOilSystem {
     this.computeTemperature(dt);
     this.computeForces(); // Now computed for both explicit and implicit paths
     
-    // Apply grid drag forces for rotation coupling (for both paths)
+    // Apply MODERATE grid drag forces - balance rotation vs blob integrity
+    // Too strong = tears blobs apart, too weak = no rotation
     if (gridVelocities) {
-      this.applyGridDragForces(gridVelocities, 10.0);
+      this.applyGridDragForces(gridVelocities, 3.0); // BALANCED (was 1.0, originally 10.0)
     }
     
     if (this.useImplicitIntegration) {
@@ -596,7 +633,7 @@ export default class SPHOilSystem {
    * PHASE 1.6: Tension-free (clamp negative pressure to zero)
    */
   computePressures() {
-    const B = 10.0; // VERY LOW: Let cohesion dominate completely (was 20)
+    const B = 2.0; // MINIMAL: Let cohesion completely dominate (was 5)
     const gamma = 7.0;
     
     for (let i = 0; i < this.particleCount; i++) {
@@ -646,7 +683,7 @@ export default class SPHOilSystem {
       this.nextTemperatures[i] += tempChange * dt;
 
       // Also include simple cooling to room temperature
-      const coolingRate = 0.005; // Slower cooling for longer persistence
+      const coolingRate = 0.001; // VERY SLOW cooling (was 0.005) - blobs need to persist
       this.nextTemperatures[i] -= (this.temperatures[i] - this.roomTemperature) * coolingRate * dt;
     }
 
@@ -739,15 +776,15 @@ export default class SPHOilSystem {
       }
     }
     
-    // STEP 2: COHESION (Two-scale: short-range + long-range)
-    // Short-range: Prevents blob spreading (holds dense liquid together)
-    const shortCohesion = 16.0; // STRONGER (was 8.0) - dense liquid needs more cohesion!
-    const shortRadius = h * 2.0; // INCREASED (was h * 1.5) - wider range for strong cohesion
-    const minDist = h * 0.5; // SLIGHTLY LARGER (was h * 0.3) - prevent over-packing
+    // STEP 2: EXPLICIT COHESION (Strong to resist shear forces)
+    // Need strong explicit forces to maintain cohesion during force computation
+    const shortCohesion = 20.0; // STRONG to resist water shear (was 5.0)
+    const shortRadius = h * 2.0; // Wide range
+    const minDist = h * 0.2; // Allow tight packing
     
-    // Long-range: Pulls distant blobs together for merging
-    const longCohesion = 0.4; // STRONGER (was 0.2) for faster merging
-    const longRadius = 0.3;
+    // Long-range: Pull distant particles together
+    const longCohesion = 1.0; // STRONGER for blob formation (was 0.2)
+    const longRadius = h * 4.0; // Long range attraction
     
     for (let i = 0; i < this.particleCount; i++) {
       const xi = this.positions[i * 2];
@@ -832,8 +869,8 @@ export default class SPHOilSystem {
         }
     }
     
-    // STEP 4: Radial gravity (gentle drift toward center)
-    const gravityMag = 0.02;
+    // STEP 4: Radial gravity (MINIMAL - just enough to prevent floating away)
+    const gravityMag = 0.001; // MINIMAL (was 0.005) - cohesion must dominate
     for (let i = 0; i < this.particleCount; i++) {
       const x = this.positions[i * 2];
       const y = this.positions[i * 2 + 1];
@@ -878,8 +915,8 @@ export default class SPHOilSystem {
           const tangentX = -y / distFromCenter;
           const tangentY = x / distFromCenter;
           
-          // Apply rotation force (VERY strong to overcome pressure in dense blobs)
-          const forceMag = rotation * distFromCenter * this.particleMass * 50.0; // 10× stronger! (was 5.0)
+          // Apply rotation force (balanced for k=20000 cohesion)
+          const forceMag = rotation * distFromCenter * this.particleMass * 500.0; // Strong but stable (was 5000)
           this.forces[i * 2] += tangentX * forceMag;
           this.forces[i * 2 + 1] += tangentY * forceMag;
         }

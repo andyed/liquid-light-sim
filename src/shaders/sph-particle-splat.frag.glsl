@@ -38,11 +38,15 @@ void main() {
     float distFromCenter = length(v_worldPos);
     float edgeFade = 1.0 - smoothstep(u_containerRadius * 0.85, u_containerRadius * 0.95, distFromCenter);
     
-    // HIGH alpha for strong field contribution
-    // Need high values to reach MetaBall threshold with exponential falloff
-    float alpha = falloff * 0.8 * edgeFade; // High enough to form blobs
+    // VERY HIGH alpha for strong field contribution
+    // Each particle needs to contribute significantly to reach threshold
+    float alpha = falloff * 1.0 * edgeFade; // MAXED for visibility (was 0.8)
     
-    // Output: RGB color with thickness-like alpha
-    // Additive blending will accumulate to create MetaBall field
-    fragColor = vec4(v_color, alpha);
+    // PRE-MULTIPLY color by alpha for proper pigment mixing
+    // This prevents white accumulation - colors will blend like translucent layers
+    vec3 premultiplied = v_color * alpha;
+    
+    // Output: Pre-multiplied color + alpha channel
+    // Alpha blending will now mix colors properly instead of making white
+    fragColor = vec4(premultiplied, alpha);
 }

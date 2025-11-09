@@ -17,23 +17,60 @@ void main() {
     float thickness = oil.a;
     vec3 color = oil.rgb;
     
-    // Use a power function to "fatten" the blob and create a smoother, more organic edge.
-    // This makes lower thickness values contribute more to the alpha, reducing pixelation.
-    float alpha = thickness / u_blobThreshold; // Normalize thickness relative to threshold
-    float finalAlpha = pow(alpha, 0.5); // Apply power function (square root) for softening
-
-    // Clamp to 0-1 and apply a final smoothstep to ensure clean cutoff below threshold
-    finalAlpha = smoothstep(0.0, 1.0, finalAlpha); // Ensure smooth transition from 0 to 1
-
-    if (finalAlpha < 0.001) {
+    // Early cull for completely empty regions
+    if (thickness < u_blobThreshold * 0.5) {
         outColor = vec4(0.0);
         return;
     }
     
-    // The neighborhood sampling for color blending is complex and might not be
-    // necessary if we are just fixing the shape. For now, we will simplify
-    // and just use the center color, as the main issue is the alpha channel.
-    vec3 finalColor = color;
+    // Sample surrounding oil to create implicit metaball field
+    vec2 texelSize = 1.0 / u_resolution;
+    float field = 0.0;
+    vec3 blendedColor = vec3(0.0);
+    float totalWeight = 0.0;
     
-    outColor = vec4(finalColor, finalAlpha);
+    // Circular sampling for isotropic influence
+    const int SAMPLES = 8;
+    for (int i = 0; i < SAMPLES; i++) {
+        float angle = float(i) * 6.2832 / float(SAMPLES);
+        vec2 dir = vec2(cos(angle), sin(angle));
+        
+        for (float r = 1.0; r <= u_metaballRadius; r += 1.0) {
+            vec2 samplePos = v_texCoord + dir * r * texelSize;
+            vec4 neighbor = texture(u_oil_texture, samplePos);
+            float neighborThickness = neighbor.a;
+            
+            if (neighborThickness > u_blobThreshold * 0.5) {
+                // Metaball contribution: 1/r^bulginess
+                float contribution = neighborThickness / pow(r, u_bulginess);
+                field += contribution;
+                blendedColor += neighbor.rgb * contribution;
+                totalWeight += contribution;
+            }
+        }
+    }
+    
+    // Add center contribution
+    field += thickness;
+    blendedColor += color * thickness;
+    totalWeight += thickness;
+    
+    // Normalize
+    if (totalWeight > 0.0) {
+        blendedColor /= totalWeight;
+    }
+    
+    // Threshold fade for anti-aliasing
+    float thresholdFade = smoothstep(u_blobThreshold * 0.9, u_blobThreshold * 1.1, field);
+    
+    if (thresholdFade < 0.01) {
+        outColor = vec4(0.0);
+        return;
+    }
+    
+    // Final alpha based on field strength
+    float finalAlpha = field * thresholdFade / u_blobThreshold;
+    finalAlpha = clamp(finalAlpha, 0.0, 1.0);
+    
+    outColor = vec4(blendedColor, finalAlpha);
 }

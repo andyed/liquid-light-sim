@@ -1,36 +1,83 @@
-# Next Session: Rendering Polish & Final Blob Tuning
+# Next Session: SPH Blob Tuning & Rotation Integration
 
-## Current State (Nov 8, 2025)
+## Current State (Nov 9, 2025)
 
-The core physics of the SPH simulation are now working correctly. The implicit solver is stable and provides strong cohesion, and a thermal layer with Marangoni effects is active.
+🎉 **BREAKTHROUGH: SPH Blobs Are Rendering!**
 
-The primary remaining issues are in the **visualization pipeline**. The physics are creating blobs, but the rendering is not displaying them correctly.
+After fixing critical bugs, SPH particles are now:
+- ✅ Rendering with correct colors
+- ✅ Forming cohesive blob shapes
+- ✅ Persisting without fade-out
+- ✅ Using pre-multiplied alpha for proper color mixing
+- ✅ Cleaning up out-of-bounds particles
 
-## Problems to Solve
+### Key Fixes Applied:
+1. **Material Name Lookup Bug** - Fixed `window.controller` access
+2. **Color Preservation** - Removed temperature encoding from blue channel
+3. **Blending Model** - Changed from additive to pre-multiplied alpha
+4. **Overflow System** - Disabled for SPH (was destroying blobs)
+5. **Particle Cleanup** - Added `removeOutOfBoundsParticles()`
+6. **Force Balance** - Cohesion k=20,000, Pressure B=2, Drag=3
 
-1.  **Pixelated Edges ("Pixel Eaten"):** Blobs dissolve with noisy, pixelated edges instead of smoothly shrinking. This is caused by sharp thresholding in the metaball shader.
-2.  **Rapid Dissolution:** The visual representation of blobs dissolves too quickly, even if the underlying particles are still present.
-3.  **Shape Maintenance:** Blobs don't maintain a convincing "cellular" shape throughout their lifetime.
+## Remaining Issues
 
-## Plan
+1.  **Rotation Broken** - Water stops rotating after mineral oil is painted
+2.  **Particle Trails** - Need better lifecycle management (partially fixed)
+3.  **Blob Spheroidization** - Not fully round yet (needs more time/tuning)
 
-The goal of this session is to fix the visualization pipeline to accurately and aesthetically represent the underlying SPH simulation.
+## Next Session Priority: Rotation & Blob Physics Tuning
 
-### 1. Refine the Metaball Shader (`oil-metaball.frag.glsl`)
-This is the highest priority. The current shader is too aggressive.
--   **Action:** Replace the sharp `smoothstep` cutoff with a smoother falloff function. A power function (`pow(alpha, 0.5)`) or a wider `smoothstep` can be used to create a "fatter" blob with a soft, anti-aliased edge.
--   **Goal:** Eliminate the "pixel eaten" look and have blobs that smoothly shrink.
+### 1. Fix Rotation Integration (CRITICAL)
+**Problem**: Water layer stops rotating after SPH particles are spawned.
+-   **Investigate**: Check if early return in OilLayer is preventing water updates
+-   **Action**: Debug rotation force propagation through the update pipeline
+-   **Test**: Ensure water + SPH particles both rotate together
+-   **Tune**: Balance drag coefficient (currently 3.0) and rotation force (500.0)
 
-### 2. Tune Particle Rendering (`sph-particle-splat.frag.glsl`)
-The input to the metaball shader is the texture created by splatting particles. The quality of this input matters.
--   **Action:** Adjust the `u_particleRadius` uniform used when rendering SPH particles. A larger radius will create a denser, more overlapping field, which can help the metaball shader produce a more coherent shape.
--   **Goal:** Reduce "holes" in the density field that contribute to pixel dust.
+### 2. Refine Force Balance
+**Goal**: Blobs should be round, cohesive, and respond to rotation without tearing.
 
-### 3. Balance Physics and Rendering
-The final appearance is a result of the interplay between the physics (cohesion) and the rendering (metaballs).
--   **Action:** Once the metaball shader is improved, we may need to slightly re-tune the implicit cohesion stiffness (`k` in `ImplicitSolver.js`). A stronger visual "surface" from the metaball shader might allow for slightly weaker physical cohesion, improving performance or stability.
--   **Goal:** Find the optimal balance where blobs look cohesive and organic without putting unnecessary strain on the physics solver.
+Current settings:
+```javascript
+// ImplicitSolver.js
+k = 20000.0;           // Cohesion (VERY HIGH)
 
-### 4. Address Dissolution Speed
--   **Action:** The "dissolving" is a visual effect of the particle density and temperature decreasing. The new metaball shader should already improve this by not making blobs "pop" out of existence. If they still fade too fast, we can adjust the `coolingRate` in `SPHOilSystem.js::computeTemperature` to keep them "hot" and visually prominent for longer.
--   **Goal:** Blobs should have a satisfying lifetime, gradually cooling and shrinking rather than abruptly disappearing.
+// SPHOilSystem.js
+B = 2.0;               // Pressure (MINIMAL)
+gravityMag = 0.001;    // Gravity (MINIMAL)
+dragCoeff = 3.0;       // Water coupling (MODERATE)
+rotationForce = 500.0; // Rotation (STRONG)
+```
+
+**Tuning Tasks**:
+- [ ] Increase rotation force if blobs don't swirl (currently 500)
+- [ ] Reduce cohesion if blobs are too rigid (currently 20000)
+- [ ] Adjust drag if blobs tear during rotation (currently 3.0)
+- [ ] Lower gravity more if blobs sink too fast (currently 0.001)
+
+### 3. Improve Spheroidization
+**Goal**: Blobs should become spherical within 2-5 seconds.
+
+**Experiment with**:
+- Cooling rate (currently 0.001) - slower = more time to spheroidize
+- MetaBall radius (currently 25.0) - affects smoothness
+- MetaBall threshold (currently 0.4) - affects visible size
+
+### 4. Optimize Particle Management
+**Current**: `removeOutOfBoundsParticles()` cleans up escapees.
+
+**Additional cleanup needed**:
+- [ ] Age-based removal (old particles fade/disappear)
+- [ ] Density-based merging (sparse regions consolidate)
+- [ ] Smart spawning (don't spawn if at limit, remove oldest first)
+
+### 5. Performance Monitoring
+With 50 particles/splat, monitor:
+- Frame rate with 500 particles: Should be 60fps
+- Frame rate with 2000 particles: Target 30fps+
+- Frame rate with 5000 particles: Acceptably >15fps
+
+If too slow:
+- Reduce smoothing radius (less neighbor checks)
+- Increase frame skip threshold (currently >3000)
+- Consider spatial hash optimization

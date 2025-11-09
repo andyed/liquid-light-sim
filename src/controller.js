@@ -141,6 +141,9 @@ export default class Controller {
 
         const prevMaterial = this.materials[prevMaterialIndex];
         const newMaterial = this.materials[this.currentMaterialIndex];
+        
+        console.log(`🎨 setMaterial: ${newMaterial.name}, autoPick=${autoPick}`);
+        console.log(`🎨 Before color: r=${this.currentColor.r.toFixed(2)}, g=${this.currentColor.g.toFixed(2)}, b=${this.currentColor.b.toFixed(2)}`);
 
         // Multi-material support: Don't clear oil when switching materials
         // Per-pixel properties texture stores individual material properties for each blob
@@ -155,6 +158,9 @@ export default class Controller {
         if (autoPick) {
             this.autoPickColorForMaterial();
         }
+        
+        console.log(`🎨 After color: r=${this.currentColor.r.toFixed(2)}, g=${this.currentColor.g.toFixed(2)}, b=${this.currentColor.b.toFixed(2)}`);
+        
         // Apply material preset (which includes useOil flag)
         this.applyMaterialPreset();
         this.updateMaterialReadout();
