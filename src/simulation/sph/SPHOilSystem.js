@@ -215,10 +215,10 @@ export default class SPHOilSystem {
       this.positions[idx * 2] = x;
       this.positions[idx * 2 + 1] = y;
       
-      // Add radial velocity variance for splitting/recombining behavior
-      // Particles near edge spawn with outward velocity, center with random
+      // Add TINY radial velocity variance for splitting/recombining behavior
+      // Particles near edge spawn with slight outward velocity, center nearly stationary
       const radiusFraction = r / spawnRadius; // 0 at center, 1 at edge
-      const baseSpeed = 0.05 + radiusFraction * 0.10; // 0.05-0.15 range
+      const baseSpeed = 0.005 + radiusFraction * 0.015; // 0.005-0.02 range (was 0.05-0.15, WAY too fast!)
       const vx = Math.cos(angle) * baseSpeed * (0.5 + Math.random() * 0.5);
       const vy = Math.sin(angle) * baseSpeed * (0.5 + Math.random() * 0.5);
       
