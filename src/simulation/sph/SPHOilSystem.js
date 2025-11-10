@@ -57,9 +57,11 @@ export default class SPHOilSystem {
     // Neighbor cache (reused each frame)
     this.neighborLists = Array.from({ length: maxParticles }, () => []);
     
-    // Implicit solver (Phase 2)
-    this.useImplicitIntegration = true; // Enable for high surface tension
-    this.implicitSolver = null; // Initialized on first use
+    // Implicit solver (Phase 2) - DISABLED due to instability
+    // Matrix becomes ill-conditioned (16M non-zeros), residual explodes
+    // Causes "dancing" particles instead of smooth flow
+    this.useImplicitIntegration = false;
+    this.implicitSolver = null; // Not used in explicit mode
     
     // GPU resources (to be initialized)
     this.gl = null;

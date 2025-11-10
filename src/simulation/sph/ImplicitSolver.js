@@ -25,13 +25,13 @@ export default class ImplicitSolver {
     this.sph = sphSystem;
     
     // Solver parameters
-    this.maxIterations = 50;
-    this.tolerance = 1e-4;
+    this.maxIterations = 100; // Increased from 50 - give solver more time
+    this.tolerance = 1e-3; // Relaxed from 1e-4 - converge faster
     
     // Implicit forces configuration
     this.implicitPressure = true;
     this.implicitViscosity = true;
-    this.implicitCohesion = true;
+    this.implicitCohesion = false; // DISABLED - cohesion is position-based, not velocity-based!
     
     // Working arrays
     this.rhs = null;
@@ -199,8 +199,8 @@ export default class ImplicitSolver {
     const m = this.sph.particleMass;
     const h = this.sph.smoothingRadius;
     
-    // Diagonal: mass matrix
-    let diagonal = m;
+    // Diagonal: mass matrix + damping for better conditioning
+    let diagonal = m * 1.1; // Add 10% damping to diagonal
     
     // Get neighbors
     const xi = this.sph.positions[particleIdx * 2];
