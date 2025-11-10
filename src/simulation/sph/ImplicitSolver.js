@@ -96,10 +96,24 @@ export default class ImplicitSolver {
       console.warn(`⚠️ Implicit solver did not converge: ${result.iterations} iters, residual=${result.residual.toFixed(6)}`);
     }
     
-    // 4. Update velocities
+    // 4. Update velocities (with NaN guard!)
+    let nanCount = 0;
     for (let i = 0; i < N; i++) {
-      this.sph.velocities[i * 2] = result.x[i * 2];
-      this.sph.velocities[i * 2 + 1] = result.x[i * 2 + 1];
+      const vx = result.x[i * 2];
+      const vy = result.x[i * 2 + 1];
+      
+      // NaN guard - if solver produced NaN, keep old velocity
+      if (!isNaN(vx) && !isNaN(vy) && isFinite(vx) && isFinite(vy)) {
+        this.sph.velocities[i * 2] = vx;
+        this.sph.velocities[i * 2 + 1] = vy;
+      } else {
+        nanCount++;
+        // Keep old velocity - don't corrupt the simulation
+      }
+    }
+    
+    if (nanCount > 0) {
+      console.error(`❌ Implicit solver produced ${nanCount} NaN velocities - keeping old values`);
     }
     
     // Debug logging (occasional)
@@ -110,7 +124,7 @@ export default class ImplicitSolver {
                   `time=${totalTime.toFixed(2)}ms (build=${this.stats.buildTime.toFixed(1)}ms, solve=${this.stats.solveTime.toFixed(1)}ms)`);
     }
     
-    return result.converged;
+    return result.converged && nanCount === 0;
   }
   
   /**
@@ -130,6 +144,16 @@ export default class ImplicitSolver {
     for (let i = 0; i < N; i++) {
       const forceX = this.sph.forces[i * 2];
       const forceY = this.sph.forces[i * 2 + 1];
+      
+      // NaN guard on forces - prevent corruption at source
+      if (isNaN(forceX) || isNaN(forceY) || !isFinite(forceX) || !isFinite(forceY)) {
+        console.warn(`⚠️ NaN/Inf force at particle ${i}, setting to zero`);
+        this.sph.forces[i * 2] = 0;
+        this.sph.forces[i * 2 + 1] = 0;
+        this.rhs[i * 2] = m * this.sph.velocities[i * 2];
+        this.rhs[i * 2 + 1] = m * this.sph.velocities[i * 2 + 1];
+        continue;
+      }
 
       // M*v (mass matrix is diagonal) + dt*F
       this.rhs[i * 2] = m * this.sph.velocities[i * 2] + dt * forceX;
