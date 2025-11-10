@@ -37,11 +37,34 @@ export default class ConjugateGradient {
     const p = new Float32Array(n);  // Search direction
     const Ap = new Float32Array(n); // A * p
     
-    // Build Jacobi preconditioner (diagonal of A)
-    const M_inv = new Float32Array(n);
-    for (let i = 0; i < n; i++) {
-      const diag = A.getDiagonal(i);
-      M_inv[i] = Math.abs(diag) > 1e-12 ? 1.0 / diag : 1.0;
+    // Build 2x2 block-Jacobi preconditioner per particle: [a b; c d]^{-1}
+    // Store as four arrays for cache-friendly apply
+    const blockCount = Math.floor(n / 2);
+    const Minv00 = new Float32Array(blockCount);
+    const Minv01 = new Float32Array(blockCount);
+    const Minv10 = new Float32Array(blockCount);
+    const Minv11 = new Float32Array(blockCount);
+    for (let bi = 0; bi < blockCount; bi++) {
+      const r0 = 2 * bi;
+      const r1 = r0 + 1;
+      const a = A.get(r0, r0);
+      const b = A.get(r0, r1);
+      const c = A.get(r1, r0);
+      const d = A.get(r1, r1);
+      const det = a * d - b * c;
+      if (Math.abs(det) > 1e-12) {
+        const invDet = 1.0 / det;
+        Minv00[bi] =  d * invDet;
+        Minv01[bi] = -b * invDet;
+        Minv10[bi] = -c * invDet;
+        Minv11[bi] =  a * invDet;
+      } else {
+        // Fallback to scalar Jacobi if block is near-singular
+        Minv00[bi] = Math.abs(a) > 1e-12 ? 1.0 / a : 1.0;
+        Minv01[bi] = 0.0;
+        Minv10[bi] = 0.0;
+        Minv11[bi] = Math.abs(d) > 1e-12 ? 1.0 / d : 1.0;
+      }
     }
     
     // Initial residual: r = b - A*x0
@@ -63,9 +86,12 @@ export default class ConjugateGradient {
     }
     residual0 = Math.sqrt(residual0);
     
-    // Apply preconditioner: z = M^-1 * r
-    for (let i = 0; i < n; i++) {
-      z[i] = M_inv[i] * r[i];
+    // Apply preconditioner: z = M^-1 * r (block-wise)
+    for (let bi = 0; bi < blockCount; bi++) {
+      const r0 = r[2 * bi];
+      const r1 = r[2 * bi + 1];
+      z[2 * bi]     = Minv00[bi] * r0 + Minv01[bi] * r1;
+      z[2 * bi + 1] = Minv10[bi] * r0 + Minv11[bi] * r1;
     }
     
     // Initial search direction: p = z
@@ -115,9 +141,12 @@ export default class ConjugateGradient {
         };
       }
       
-      // Apply preconditioner: z = M^-1 * r
-      for (let i = 0; i < n; i++) {
-        z[i] = M_inv[i] * r[i];
+      // Apply preconditioner: z = M^-1 * r (block-wise)
+      for (let bi = 0; bi < blockCount; bi++) {
+        const r0b = r[2 * bi];
+        const r1b = r[2 * bi + 1];
+        z[2 * bi]     = Minv00[bi] * r0b + Minv01[bi] * r1b;
+        z[2 * bi + 1] = Minv10[bi] * r0b + Minv11[bi] * r1b;
       }
       
       // beta = (r_new'*z_new) / (r_old'*z_old)

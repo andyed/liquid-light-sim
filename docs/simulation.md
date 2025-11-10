@@ -337,3 +337,39 @@ The fundamental tension: oil needs to **move with water** (advection) but also *
 If something looks strangely rectangular, it's probably the visualization. Flip to HSV velocity debug first. If rotation still creates artifacts, adjust `viscousCoupling` (lower = gentler) and ensure velocity advection is semi‑Lagrangian. The viscous coupling model eliminates both center pooling and hard seams by mimicking friction transmission from the spinning plate boundary.
 
 If horizontal banding persists at the rim: increase `softEdge` in `clampToCircle` (0.015 → 0.02) and/or increase post‑processing distortion (0.4 → 0.5). If a bright ring appears at the rim: increase `rimAbsorption` (0.15 → 0.2) or widen the absorption band (0.03 → 0.04).
+
+## Current SPH Oil Status (Nov 9, 2025)
+
+### What we implemented this session
+- XSPH velocity smoothing in `SPHOilSystem` (per‑material `xsphCoeff`).
+- Short‑range cohesion computed every frame; long‑range cohesion throttled (and disabled for Syrup during congeal).
+- NaN guards, velocity/temperature clamps, and max‑speed caps in integration.
+- Tunables exposed: `gridDragCoeff`, `maxSpeedCap`, `dampingFactor`, `particleSpriteRadius` (per material via `OilLayer`).
+- Density composite v2: half‑res separable Gaussian blur on particle alpha + recomposite to improve continuity beyond point sprites.
+- Cluster‑based spawning: `spawnClusters(center, opts)`; OilLayer uses 2–4 compact clusters with a cooldown to avoid burst spam.
+- Post‑splat rotation ramp: grid drag ramps 0.3→1.0 over ~2s, then 1.3 baseline to let the blob rotate only after congeal.
+
+### Syrup preset (congeal‑first)
+- shortCohesion 12.0, shortRadiusScale 3.1, minDistScale 0.24
+- longCohesion 0.0 (disabled during merge), xsphCoeff 0.50
+- dampingFactor 0.88, maxSpeedCap 0.35, spawnSpeedScale 0.05
+- particleSpriteRadius 140, cluster spawn 3×2 (with cooldown)
+
+### Observed issue
+- Still dissolves into “pinballs” (micro‑droplets with residual kinetic energy) rather than forming a single blob consistently.
+
+### Likely root causes
+- Residual kinetic energy + insufficient near‑field dissipation immediately post‑spawn.
+- Long‑range interactions/rotation coupling re‑energizing clusters before merge in some cases.
+- Minimum separation still too large for tight packing in high‑shear moments.
+
+### Next actions (high priority)
+- Add per‑particle cohesion force clamp per frame to prevent “helicopter” excursions.
+- Increase near‑field friction: quadratic speed damping term before cap.
+- Extend rotation ramp to 2–3s and raise post‑ramp baseline only after blob area stabilizes (detect via local density variance).
+- Optionally reduce `minDistScale` further (→0.20–0.22) for Syrup and increase `shortCohesion` (→13.0) if needed.
+- Add third separable blur pass during first second only; then revert to two passes.
+
+### Medium‑term
+- Thickness/normal shading (composite v3) and optional edge highlight to further hide point granularity.
+- GPU path for grid → SPH alcohol coupling (surface tension/drag modulation), already outlined in `ALCOHOL_PHYSICS_TODO.md`.

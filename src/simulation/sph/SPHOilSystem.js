@@ -21,10 +21,10 @@ export default class SPHOilSystem {
     this.containerRadius = containerRadius;
     
     // SPH parameters (will be tuned per material)
-    this.smoothingRadius = 0.1;       // LARGE: Particles need long-range cohesion (was 0.05)
+    this.smoothingRadius = 0.14;      // Larger h for broader neighbor overlap (sheet formation)
     this.restDensity = 1000.0;        // Rest density (ρ₀)
     this.particleMass = 0.02;         // Mass per particle
-    this.viscosity = 0.05;            // VERY LOW: Prevent NaN instability (was 0.1, originally 2.0)
+    this.viscosity = 0.08;            // Slightly higher to maintain ribbons/filaments
     this.surfaceTension = 50.0;       // DRASTICALLY REDUCED from 3000 - was causing NaN (was insane!)
     this.gravity = -0.01;             // EXTREMELY WEAK: Prevent spreading (was -0.1)
     this.dt = 1/60;                   // Timestep
@@ -79,6 +79,25 @@ export default class SPHOilSystem {
       integrateTime: 0,
       renderTime: 0
     };
+    // Perf and debugging
+    this.frameIndex = 0;
+    this.debug = false;
+
+    // Tunable cohesion and spawn parameters (material presets can override)
+    this.shortCohesion = 6.5;
+    this.shortRadiusScale = 2.0; // shortRadius = h * shortRadiusScale
+    this.minDistScale = 0.35;    // minDist = h * minDistScale
+    this.longCohesion = 1.0;
+    this.longRadiusScale = 4.0;  // longRadius = h * longRadiusScale
+    this.spawnSpeedScale = 1.0;  // multiply base spawn speed
+    this.gridDragCoeff = 1.3;    // coupling to grid velocities
+    this.maxSpeedCap = 0.6;      // cap for |v| in _updatePositions
+    this.xsphCoeff = 0.0;        // XSPH velocity smoothing (0 disables)
+    this.particleSpriteRadius = 90.0; // point sprite radius in pixels (rendering)
+    this.dampingFactor = 0.94;   // per-material velocity damping in _updatePositions
+
+    // Buffers for auxiliary accumulations
+    this.xsphCorr = new Float32Array(maxParticles * 2);
   }
   
   /**
@@ -161,7 +180,7 @@ export default class SPHOilSystem {
     // Set uniforms
     gl.uniform2f(gl.getUniformLocation(this.splatProgram, 'u_resolution'), canvasWidth, canvasHeight);
     gl.uniform1f(gl.getUniformLocation(this.splatProgram, 'u_containerRadius'), this.containerRadius);
-    gl.uniform1f(gl.getUniformLocation(this.splatProgram, 'u_particleRadius'), 60.0); // LARGE for strong field (was 45)
+    gl.uniform1f(gl.getUniformLocation(this.splatProgram, 'u_particleRadius'), this.particleSpriteRadius);
     
     // Enable pre-multiplied alpha blending for proper color mixing
     // This prevents white accumulation - colors blend like translucent layers
@@ -220,7 +239,8 @@ export default class SPHOilSystem {
       // Add TINY radial velocity variance for splitting/recombining behavior
       // Particles near edge spawn with slight outward velocity, center nearly stationary
       const radiusFraction = r / spawnRadius; // 0 at center, 1 at edge
-      const baseSpeed = 0.005 + radiusFraction * 0.015; // 0.005-0.02 range (was 0.05-0.15, WAY too fast!)
+      // Lower initial outward velocity to avoid early scattering
+      const baseSpeed = (0.002 + radiusFraction * 0.006) * this.spawnSpeedScale; // gentler 0.002-0.008
       const vx = Math.cos(angle) * baseSpeed * (0.5 + Math.random() * 0.5);
       const vy = Math.sin(angle) * baseSpeed * (0.5 + Math.random() * 0.5);
       
@@ -238,6 +258,37 @@ export default class SPHOilSystem {
     }
     
     return count;
+  }
+
+  /**
+   * Spawn multiple compact clusters that quickly merge
+   * @param {number} centerX world x
+   * @param {number} centerY world y
+   * @param {{r:number,g:number,b:number}} color
+   * @param {object} opts
+   *  - clusterCount: number of clusters
+   *  - particlesPerCluster: particles per cluster
+   *  - interClusterRadiusPx: ring radius for cluster centers (pixels)
+   *  - clusterRadiusPx: spawn radius inside cluster (pixels)
+   */
+  spawnClusters(centerX, centerY, color, opts = {}) {
+    const clusterCount = opts.clusterCount ?? 4;
+    const particlesPerCluster = opts.particlesPerCluster ?? 3;
+    const interClusterRadiusPx = opts.interClusterRadiusPx ?? 18.0;
+    const clusterRadiusPx = opts.clusterRadiusPx ?? 10.0;
+    const jitter = opts.jitter ?? 0.35; // fraction of 2pi/clusterCount
+
+    // Convert inter-cluster radius from pixels to world
+    const interR = (interClusterRadiusPx / 1000.0) * this.containerRadius;
+    let totalSpawned = 0;
+    for (let k = 0; k < clusterCount; k++) {
+      const baseAngle = (2.0 * Math.PI * k) / clusterCount;
+      const angle = baseAngle + (Math.random() - 0.5) * (2.0 * Math.PI / clusterCount) * jitter;
+      const cx = centerX + Math.cos(angle) * interR;
+      const cy = centerY + Math.sin(angle) * interR;
+      totalSpawned += this.spawnParticles(cx, cy, particlesPerCluster, color, clusterRadiusPx);
+    }
+    return totalSpawned;
   }
   
   /**
@@ -335,6 +386,10 @@ export default class SPHOilSystem {
       this.forces[i * 2 + 1] += fy;
     }
   }
+
+  // Force safety clamp (prevent NaNs and runaway accelerations)
+  // Apply at end of force accumulation per frame
+  // Note: This should be called after computeForces. Here we clamp in integrate/update via forces array state.
   
   /**
    * Write particle velocities back to grid texture (for continuity with grid-based rendering)
@@ -460,10 +515,11 @@ export default class SPHOilSystem {
     // Store rotation for force computation
     this.currentRotation = rotationAmount;
     
-    // Clamp timestep for stability (REDUCED to prevent oscillations)
-    dt = Math.min(dt, 0.010); // Max 10ms (100fps) - prevents pressure overshooting
+    // Clamp timestep for stability (tighter to reduce late-frame NaNs)
+    dt = Math.min(dt, 0.008); // Max 8ms (125fps)
     
     // PHASE 1/2: SPH pipeline with optional implicit integration
+    this.frameIndex++;
     this.updateSpatialHash();
     this.computeDensities();
     this.computePressures();
@@ -473,7 +529,7 @@ export default class SPHOilSystem {
     // Apply LIGHT grid drag forces - oil should move slower than ink
     // Lower drag = oil lags behind water movement (more realistic)
     if (gridVelocities) {
-      this.applyGridDragForces(gridVelocities, 1.5); // REDUCED from 3.0 - oil moves slower than ink
+      this.applyGridDragForces(gridVelocities, this.gridDragCoeff);
     }
     
     if (this.useImplicitIntegration) {
@@ -641,7 +697,7 @@ export default class SPHOilSystem {
    * PHASE 1.6: Tension-free (clamp negative pressure to zero)
    */
   computePressures() {
-    const B = 2.0; // MINIMAL: Let cohesion completely dominate (was 5)
+    const B = 6.0; // Higher stiffness to resist compression/collapse
     const gamma = 7.0;
     
     for (let i = 0; i < this.particleCount; i++) {
@@ -693,6 +749,12 @@ export default class SPHOilSystem {
       // Also include simple cooling to room temperature
       const coolingRate = 0.001; // VERY SLOW cooling (was 0.005) - blobs need to persist
       this.nextTemperatures[i] -= (this.temperatures[i] - this.roomTemperature) * coolingRate * dt;
+      // NaN/finite guard and clamp to safe range
+      if (!isFinite(this.nextTemperatures[i]) || isNaN(this.nextTemperatures[i])) {
+        this.nextTemperatures[i] = this.roomTemperature;
+      } else {
+        this.nextTemperatures[i] = Math.max(-20, Math.min(200, this.nextTemperatures[i]));
+      }
     }
 
     // Swap buffers
@@ -731,6 +793,8 @@ export default class SPHOilSystem {
   computeForces() {
     // Zero out force accumulator
     this.forces.fill(0);
+    // Zero XSPH corrections (if used)
+    if (this.xsphCoeff > 0) this.xsphCorr.fill(0);
     
     const h = this.smoothingRadius;
     
@@ -788,58 +852,76 @@ export default class SPHOilSystem {
         } else {
           console.warn(`⚠️ NaN force at particle ${i} from neighbor ${j}`);
         }
+        
+        // XSPH velocity smoothing (helps blobs merge, reduces oscillation)
+        if (this.xsphCoeff > 0) {
+          const w = (h - dist) > 0 ? (h - dist) / (h + 1e-6) : 0;
+          if (w > 0) {
+            const rhoAvg = 0.5 * (rhoi + rhoj) + 1e-6;
+            const scale = this.xsphCoeff * (this.particleMass / rhoAvg) * w;
+            this.xsphCorr[i * 2] += scale * (vxj - vxi);
+            this.xsphCorr[i * 2 + 1] += scale * (vyj - vyi);
+          }
+        }
       }
     }
     
-    // STEP 2: EXPLICIT COHESION (Gentle to prevent NaN)
-    const shortCohesion = 5.0; // REDUCED from 20.0 to prevent instability
-    const shortRadius = h * 2.0; // Wide range
-    const minDist = h * 0.2; // Allow tight packing
-    
-    // Long-range: Pull distant particles together
-    const longCohesion = 1.0; // STRONGER for blob formation (was 0.2)
-    const longRadius = h * 4.0; // Long range attraction
-    
+    // STEP 2: EXPLICIT COHESION (short-range every frame, long-range throttled)
+    const shortCohesion = this.shortCohesion;
+    const shortRadius = h * this.shortRadiusScale;
+    const minDist = h * this.minDistScale;
+    const longCohesion = this.longCohesion;
+    const longRadius = h * this.longRadiusScale;
+
+    // Short-range pass (every frame)
     for (let i = 0; i < this.particleCount; i++) {
       const xi = this.positions[i * 2];
       const yi = this.positions[i * 2 + 1];
-      
-      // Query with LONG radius to find distant blobs
-      const neighbors = this.spatialHash.query(xi, yi, longRadius);
-      
-      for (const j of neighbors) {
+      const neighborsS = this.spatialHash.query(xi, yi, shortRadius);
+      const maxShort = 64;
+      const sCount = Math.min(neighborsS.length, maxShort);
+      for (let n = 0; n < sCount; n++) {
+        const j = neighborsS[n];
         if (i === j) continue;
-        
-        const xj = this.positions[j * 2];
-        const yj = this.positions[j * 2 + 1];
-        const dx = xj - xi;
-        const dy = yj - yi;
-        const distSq = dx * dx + dy * dy;
-        const dist = Math.sqrt(distSq);
-        
-        if (dist < minDist) continue; // Too close
-        
-        let strength = 0;
-        
-        // SHORT-RANGE: Strong, prevents spreading
-        if (dist < shortRadius) {
-          const q = dist / shortRadius;
-          const falloff = Math.exp(-q * q * 4.0);
-          strength = shortCohesion * falloff;
-        }
-        // LONG-RANGE: Weak, pulls blobs together
-        else if (dist < longRadius) {
-          const q = (dist - shortRadius) / (longRadius - shortRadius);
-          const falloff = Math.exp(-q * 2.0); // Gentle decay
-          strength = longCohesion * falloff;
-        }
-        
+        const dx = this.positions[j * 2] - xi;
+        const dy = this.positions[j * 2 + 1] - yi;
+        const dist = Math.hypot(dx, dy);
+        if (dist < minDist || dist <= 1e-6) continue;
+        const q = dist / shortRadius;
+        const falloff = Math.exp(-q * q * 4.0);
+        const strength = shortCohesion * falloff;
         if (strength > 0) {
-          const fx = (dx / dist) * strength * this.particleMass;
-          const fy = (dy / dist) * strength * this.particleMass;
-          
-          this.forces[i * 2] += fx;
-          this.forces[i * 2 + 1] += fy;
+          const invd = 1.0 / dist;
+          this.forces[i * 2] += (dx * invd) * strength * this.particleMass;
+          this.forces[i * 2 + 1] += (dy * invd) * strength * this.particleMass;
+        }
+      }
+    }
+
+    // Long-range pass (throttled)
+    const doLongRange = (this.frameIndex % 3) === 0;
+    if (doLongRange && longCohesion > 0 && longRadius > shortRadius) {
+      for (let i = 0; i < this.particleCount; i++) {
+        const xi = this.positions[i * 2];
+        const yi = this.positions[i * 2 + 1];
+        const neighborsL = this.spatialHash.query(xi, yi, longRadius);
+        const maxLong = 96;
+        const lCount = Math.min(neighborsL.length, maxLong);
+        for (let n = 0; n < lCount; n++) {
+          const j = neighborsL[n];
+          if (i === j) continue;
+          const dx = this.positions[j * 2] - xi;
+          const dy = this.positions[j * 2 + 1] - yi;
+          const dist = Math.hypot(dx, dy);
+          if (dist < Math.max(minDist, shortRadius) || dist >= longRadius || dist <= 1e-6) continue;
+          const q = (dist - shortRadius) / (longRadius - shortRadius);
+          const falloff = Math.exp(-q * 2.0);
+          const strength = longCohesion * falloff;
+          if (strength > 0) {
+            const invd = 1.0 / dist;
+            this.forces[i * 2] += (dx * invd) * strength * this.particleMass;
+            this.forces[i * 2 + 1] += (dy * invd) * strength * this.particleMass;
+          }
         }
       }
     }
@@ -866,9 +948,9 @@ export default class SPHOilSystem {
                     const dy = this.positions[i * 2 + 1] - this.positions[j * 2 + 1];
                     const dist = Math.sqrt(dx * dx + dy * dy);
 
-                    if (dist < h) {
+                    if (dist > 1e-6 && dist < h) {
                         const grad = this.spikyGradientKernel(dx, dy, dist, h);
-                        const temp_diff = Tj - Ti;
+                        const temp_diff = Math.max(-50, Math.min(50, Tj - Ti));
                         
                         // SPH gradient of temperature
                         gradTx += (this.particleMass / rhoj) * temp_diff * grad.x;
@@ -883,26 +965,13 @@ export default class SPHOilSystem {
         }
     }
     
-    // STEP 4: Radial gravity (MINIMAL - just enough to prevent floating away)
-    const gravityMag = 0.001; // MINIMAL (was 0.005) - cohesion must dominate
-    for (let i = 0; i < this.particleCount; i++) {
-      const x = this.positions[i * 2];
-      const y = this.positions[i * 2 + 1];
-      const distFromCenter = Math.sqrt(x * x + y * y);
-      
-      if (distFromCenter > 1e-6) {
-        const dirX = -x / distFromCenter;
-        const dirY = -y / distFromCenter;
-        this.forces[i * 2] += dirX * gravityMag * this.particleMass;
-        this.forces[i * 2 + 1] += dirY * gravityMag * this.particleMass;
-      }
-    }
+    // STEP 4: Radial gravity disabled (was causing global convergence)
     
     // STEP 4: Rotation (tangential force for lava lamp motion)
     const rotation = this.currentRotation || 0.0;
     
     // Debug: Log rotation with force comparison
-    if (Math.abs(rotation) > 1e-6 && Math.random() < 0.01) {
+    if (this.debug && Math.abs(rotation) > 1e-6 && Math.random() < 0.01) {
       // Sample a particle to see force magnitudes
       if (this.particleCount > 0) {
         const i = Math.floor(this.particleCount / 2);
@@ -957,6 +1026,11 @@ export default class SPHOilSystem {
       
       this.velocities[i * 2] += (fx / this.particleMass) * dt;
       this.velocities[i * 2 + 1] += (fy / this.particleMass) * dt;
+      // Apply XSPH velocity smoothing before damping (if enabled)
+      if (this.xsphCoeff > 0) {
+        this.velocities[i * 2] += this.xsphCorr[i * 2];
+        this.velocities[i * 2 + 1] += this.xsphCorr[i * 2 + 1];
+      }
     }
     
     // Apply damping and update positions
@@ -967,8 +1041,8 @@ export default class SPHOilSystem {
    * Shared logic for applying damping, velocity caps, and updating positions
    */
   _updatePositions(dt) {
-    const damping = 0.92; // Lighter damping - allows more independent particle movement (was 0.85)
-    const maxSpeed = 1.0;  // High speed cap for visible rotation (was 0.3)
+    const damping = this.dampingFactor; // Tunable damping per material
+    const maxSpeed = this.maxSpeedCap;  // Tunable cap per material
     
     for (let i = 0; i < this.particleCount; i++) {
       // Apply damping

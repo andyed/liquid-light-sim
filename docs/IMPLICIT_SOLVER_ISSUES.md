@@ -16,14 +16,14 @@ The implicit SPH solver is not converging:
 ### Fix 1: Disabled Cohesion Jacobian
 **Commit**: `ad38845`
 **Rationale**: Cohesion is position-based, not velocity-based. Should not be in velocity Jacobian.
-**Result**: Unknown (not tested yet)
+**Result**: Implemented in code. `implicitCohesion` is currently set to `false` by default in `ImplicitSolver`.
 
 ### Fix 2: Improved Matrix Conditioning
 **Commit**: `ad38845`
 - Added 10% damping to diagonal: `diagonal = m * 1.1`
 - Increased max iterations: 50 → 100
 - Relaxed tolerance: 1e-4 → 1e-3
-**Result**: Unknown (not tested yet)
+**Result**: Present in code. Impact on convergence still needs verification.
 
 ### Fix 3: NaN Guards
 **Commit**: `f6a5c0e`
@@ -34,11 +34,14 @@ The implicit SPH solver is not converging:
 ## Root Cause Analysis
 
 ### Theory 1: Cohesion in Implicit Solver (MOST LIKELY)
-The original implementation included cohesion forces in the implicit Jacobian:
+The original implementation included cohesion forces in the implicit Jacobian (see `ImplicitSolver.buildRow` cohesion block):
 ```javascript
-// Line 264-292 in ImplicitSolver.js
-const k = 20000.0; // Extreme stiffness
-const offDiag = -dt2 * k;
+// Cohesion block exists but is gated by a flag
+if (this.implicitCohesion) {
+  const k = 20000.0;
+  const offDiag = -dt2 * k;
+  // ... addEntry(...), diagonal -= offDiag
+}
 ```
 
 **Problem**: 
@@ -47,7 +50,7 @@ const offDiag = -dt2 * k;
 - This is mathematically incorrect!
 - Creates massive matrix entries that don't represent the actual physics
 
-**Solution**: Cohesion should be handled explicitly in the force computation, NOT in the implicit Jacobian.
+**Solution**: Ensure cohesion remains explicit-only for now. In code, `implicitCohesion` is `false` by default; verify it stays off during tests.
 
 ### Theory 2: Matrix Size Explosion
 With N particles and ~50 neighbors each:
@@ -72,20 +75,16 @@ For stiff systems, this may be insufficient. Consider:
 
 ### Immediate (High Priority)
 1. **Verify cohesion is disabled** in implicit solver
-   - Check `this.implicitCohesion = false` is actually working
-   - Add debug log to confirm skipping cohesion Jacobian block
+   - Confirm `this.implicitCohesion = false` in `ImplicitSolver` constructor.
+   - Optionally add a one-time console log when cohesion block would run to assert it is skipped.
 
-2. **Add matrix statistics logging**
-   ```javascript
-   console.log('Matrix stats:', {
-     size: DOF,
-     nnz: actualNonZeros,
-     density: (actualNonZeros / (DOF * DOF)) * 100,
-     avgEntriesPerRow: actualNonZeros / DOF
-   });
-   ```
+2. **Use existing matrix statistics logging**
+   - `SparseMatrix.finalize()` logs: `✅ Sparse matrix built: [size]×[size], [nnz] non-zeros ([percent]% dense)`.
+   - `SparseMatrix.getStats()` returns:
+     - `size`, `nonZeros`, `avgPerRow`, `sparsity`, `memoryMB`.
+   - Align any additional logs with these available fields.
 
-3. **Test with very few particles** (10-20)
+3. **Test with very few particles** (10–20)
    - Check if solver converges with small system
    - If yes, problem is scaling
    - If no, problem is fundamental
@@ -96,8 +95,8 @@ For stiff systems, this may be insufficient. Consider:
    - Profile to confirm it helps
 
 2. **Reduce Jacobian entries**
-   - Only add entries above threshold (e.g., |J_ij| > 1e-6)
-   - Limit neighbor radius for Jacobian (smaller than force radius)
+   - Only add entries above threshold (e.g., |J_ij| > 1e-6) – note: `SparseMatrix.addEntry` already skips near-zero values `<1e-12`.
+   - Limit neighbor radius for Jacobian (potentially smaller than force radius).
 
 3. **Consider alternative formulation**
    - Pressure projection method (like Stable Fluids)
@@ -153,15 +152,16 @@ After making changes:
 1. **Hard refresh** (Cmd+Shift+R)
 2. Paint 5-10 mineral oil splats (key 2)
 3. Check console for:
-   ```
-   🔧 Implicit solve: [iterations] iters, residual=[value]
-   ✅ Sparse matrix built: [size]×[size], [nnz] non-zeros
-   ```
+  ```
+  🔧 Implicit solve: [iterations] iters, residual=[value], time=[ms] (build=[ms], solve=[ms])
+  ✅ Sparse matrix built: [size]×[size], [nnz] non-zeros ([percent]% dense)
+  ```
 4. Expected good values:
-   - Iterations: <20
-   - Residual: <0.01
-   - Matrix density: <5%
-   - Particles: smooth, cohesive motion
+  - Iterations: <20
+  - Residual: <0.01
+  - Matrix density (from finalize log): <5%
+  - `avgPerRow` roughly O(100–400) depending on neighbor count
+  - Particles: smooth, cohesive motion
 
 ## References
 

@@ -28,9 +28,26 @@ export default class OilLayer extends FluidLayer {
     // COMPOSITE LAYER (final blended result)
     this.compositedTexture = null;
     this.compositeFBO = null;
+    // Half-res density buffers for separable blur (composite v2)
+    this.densityHalfTex1 = null;
+    this.densityHalfTex2 = null;
+    this.densityHalfFBO = null;
+    // Short post-splat boost to help immediate congealing
+    this.postSplatBoostFrames = 0;
+    this.postSplatBoostTotal = 120; // frames for boost ramp
+    // Use multi-cluster spawning for SPH materials (promotes fast congeal)
+    this.useClusterSpawn = true;
+    // Debounce for SPH spawning so a single input doesn't create many bursts
+    this.splatCooldownMs = 180;
+    this.lastSplatAtMs = 0;
     
     // Track if layers have content (for optimization and proper rendering)
     this.hasGridContent = false; // True if Alcohol has been painted
+    this.useDensityComposite = true; // Enable smoothing-based continuous sheet rendering
+    // Throttled CPU grid sampling cache (to avoid per-frame readback stalls)
+    this.gridSampleInterval = 6; // frames between samples
+    this.gridSampleFrame = 0;
+    this.cachedGridVelocities = null;
     
     // LEGACY - being migrated to layer system
     this.oilTexture1 = null;  // Currently used for rendering (will become compositedTexture)
@@ -87,6 +104,12 @@ export default class OilLayer extends FluidLayer {
     // COMPOSITE LAYER (final blend)
     this.compositedTexture = this.sim.createTexture(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
     this.compositeFBO = this.sim.createFBO(this.compositedTexture);
+    // Half-res density textures
+    const hw = Math.max(1, Math.floor(w * 0.5));
+    const hh = Math.max(1, Math.floor(h * 0.5));
+    this.densityHalfTex1 = this.sim.createTexture(hw, hh, gl.R16F, gl.RED, gl.HALF_FLOAT);
+    this.densityHalfTex2 = this.sim.createTexture(hw, hh, gl.R16F, gl.RED, gl.HALF_FLOAT);
+    this.densityHalfFBO = this.sim.createFBO(this.densityHalfTex1);
     
     console.log('✅ Multi-layer textures created: SPH + Grid + Composite');
 
@@ -167,17 +190,92 @@ export default class OilLayer extends FluidLayer {
   updateSPHLayer(dt, useSPHForMaterial) {
     const gl = this.gl;
     const sim = this.sim;
+    const controller = window.controller || this.sim.controller;
+    const currentMaterial = controller?.materials[controller?.currentMaterialIndex]?.name || '';
     
-    // STEP 1: Sample grid velocity from water layer (for rotation + water coupling)
+    // STEP 1: Throttled sample of grid velocity from water layer (rotation + coupling)
     let gridVelocities = null;
     if (this.sph.particleCount > 0) {
-      gridVelocities = this.sph.sampleVelocityGrid(
-        sim.velocityTexture1, 
-        gl.canvas.width, 
-        gl.canvas.height
-      );
+      this.gridSampleFrame = (this.gridSampleFrame + 1) | 0;
+      const shouldSample = (this.gridSampleFrame % this.gridSampleInterval) === 1;
+      if (shouldSample) {
+        gridVelocities = this.sph.sampleVelocityGrid(
+          sim.velocityTexture1,
+          gl.canvas.width,
+          gl.canvas.height
+        );
+        this.cachedGridVelocities = gridVelocities;
+      } else {
+        // Reuse cached velocities if particle count matches; otherwise skip drag this frame
+        if (this.cachedGridVelocities && this.cachedGridVelocities.length === this.sph.particleCount * 2) {
+          gridVelocities = this.cachedGridVelocities;
+        } else {
+          gridVelocities = null;
+        }
+
+    // Apply post-splat boost ramp (non-accumulating): only ramp grid drag coupling
+    if (this.postSplatBoostFrames > 0 && this.sph) {
+      const t = 1.0 - (this.postSplatBoostFrames / Math.max(1, this.postSplatBoostTotal));
+      // Ramp from very low coupling (0.3) to normal (1.0) over boost period
+      const ramped = 0.3 + 0.7 * t;
+      this.sph.gridDragCoeff = ramped;
+      this.postSplatBoostFrames--;
+      if (this.postSplatBoostFrames === 0) {
+        // After ramp, set to stronger rotation coupling
+        this.sph.gridDragCoeff = 1.3;
+      }
+    }
+      }
     }
     
+    // Apply per-material SPH tuning (kept lightweight; no change to smoothingRadius)
+    if (this.sph) {
+      switch (currentMaterial) {
+        case 'Syrup':
+          // Aggressive congeal-first preset
+          this.sph.viscosity = 0.20;
+          this.sph.shortCohesion = 12.0;
+          this.sph.shortRadiusScale = 3.1;
+          this.sph.minDistScale = 0.24;
+          this.sph.longCohesion = 0.0; // disable long-range during merge
+          this.sph.longRadiusScale = 3.0;
+          this.sph.spawnSpeedScale = 0.05; // almost no initial kick
+          this.sph.gridDragCoeff = 1.3; // baseline (will be ramped down/up during boost)
+          this.sph.maxSpeedCap = 0.35;
+          this.sph.xsphCoeff = 0.50;
+          this.sph.dampingFactor = 0.88; // stronger damping
+          this.sph.particleSpriteRadius = 140.0;
+          break;
+        case 'Glycerine':
+          this.sph.viscosity = 0.14;
+          this.sph.shortCohesion = 8.5;
+          this.sph.shortRadiusScale = 2.2;
+          this.sph.minDistScale = 0.45;
+          this.sph.longCohesion = 0.7;
+          this.sph.longRadiusScale = 3.2;
+          this.sph.spawnSpeedScale = 0.5;
+          this.sph.gridDragCoeff = 1.1;
+          this.sph.maxSpeedCap = 0.55;
+          this.sph.xsphCoeff = 0.25;
+          this.sph.particleSpriteRadius = 130.0;
+          break;
+        case 'Mineral Oil':
+        default:
+          this.sph.viscosity = 0.08;
+          this.sph.shortCohesion = 6.5;
+          this.sph.shortRadiusScale = 2.0;
+          this.sph.minDistScale = 0.35;
+          this.sph.longCohesion = 1.0;
+          this.sph.longRadiusScale = 4.0;
+          this.sph.spawnSpeedScale = 1.0;
+          this.sph.gridDragCoeff = 1.3;
+          this.sph.maxSpeedCap = 0.6;
+          this.sph.xsphCoeff = 0.0;
+          this.sph.particleSpriteRadius = 100.0;
+          break;
+      }
+    }
+
     // STEP 2: Update SPH particle physics (always if particles exist!)
     // Particles should continue moving even when user switches to Ink/Alcohol
     if (this.sph.particleCount > 0) {
@@ -205,8 +303,81 @@ export default class OilLayer extends FluidLayer {
       this.sph.renderParticles(this.sphFBO, gl.canvas.width, gl.canvas.height);
       this.swapSPHTextures();
       
-      // STEP 4: Apply MetaBall rendering for smooth blending (optional)
-      if (sim.metaballEnabled && sim.oilMetaballProgram) {
+      // STEP 4: Density Composite v2 (half-res separable Gaussian on alpha)
+      if (this.useDensityComposite) {
+        // Lazy-create programs
+        if (!sim.gaussBlurHProgram) sim.gaussBlurHProgram = this.createGaussBlurProgram(true);
+        if (!sim.gaussBlurVProgram) sim.gaussBlurVProgram = this.createGaussBlurProgram(false);
+        if (!sim.composeAlphaProgram) sim.composeAlphaProgram = this.createComposeAlphaProgram();
+
+        // Downsample alpha to half-res density buffer
+        const hw = Math.max(1, Math.floor(gl.canvas.width * 0.5));
+        const hh = Math.max(1, Math.floor(gl.canvas.height * 0.5));
+        gl.viewport(0, 0, hw, hh);
+        gl.useProgram(sim.composeAlphaProgram);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.densityHalfFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.densityHalfTex2, 0);
+        gl.disable(gl.BLEND);
+        gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
+        const pos0 = gl.getAttribLocation(sim.composeAlphaProgram, 'a_position');
+        gl.enableVertexAttribArray(pos0);
+        gl.vertexAttribPointer(pos0, 2, gl.FLOAT, false, 0, 0);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.sphTexture1);
+        gl.uniform1i(gl.getUniformLocation(sim.composeAlphaProgram, 'u_colorTex'), 0);
+        gl.uniform1i(gl.getUniformLocation(sim.composeAlphaProgram, 'u_mode'), 0); // 0=extract alpha only
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        this.swapDensityHalfTextures();
+
+        // Horizontal blur
+        gl.useProgram(sim.gaussBlurHProgram);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.densityHalfFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.densityHalfTex2, 0);
+        const posH = gl.getAttribLocation(sim.gaussBlurHProgram, 'a_position');
+        gl.enableVertexAttribArray(posH);
+        gl.vertexAttribPointer(posH, 2, gl.FLOAT, false, 0, 0);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.densityHalfTex1);
+        gl.uniform1i(gl.getUniformLocation(sim.gaussBlurHProgram, 'u_tex'), 0);
+        gl.uniform2f(gl.getUniformLocation(sim.gaussBlurHProgram, 'u_texelSize'), 1.0 / hw, 1.0 / hh);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        this.swapDensityHalfTextures();
+
+        // Vertical blur
+        gl.useProgram(sim.gaussBlurVProgram);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.densityHalfFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.densityHalfTex2, 0);
+        const posV = gl.getAttribLocation(sim.gaussBlurVProgram, 'a_position');
+        gl.enableVertexAttribArray(posV);
+        gl.vertexAttribPointer(posV, 2, gl.FLOAT, false, 0, 0);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.densityHalfTex1);
+        gl.uniform1i(gl.getUniformLocation(sim.gaussBlurVProgram, 'u_tex'), 0);
+        gl.uniform2f(gl.getUniformLocation(sim.gaussBlurVProgram, 'u_texelSize'), 1.0 / hw, 1.0 / hh);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        this.swapDensityHalfTextures();
+
+        // Recompose: replace SPH alpha with blurred density (upsampled)
+        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+        gl.useProgram(sim.composeAlphaProgram);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.sphFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.sphTexture2, 0);
+        const pos1 = gl.getAttribLocation(sim.composeAlphaProgram, 'a_position');
+        gl.enableVertexAttribArray(pos1);
+        gl.vertexAttribPointer(pos1, 2, gl.FLOAT, false, 0, 0);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.sphTexture1); // original color
+        gl.uniform1i(gl.getUniformLocation(sim.composeAlphaProgram, 'u_colorTex'), 0);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, this.densityHalfTex1); // blurred alpha
+        gl.uniform1i(gl.getUniformLocation(sim.composeAlphaProgram, 'u_densityTex'), 1);
+        gl.uniform1i(gl.getUniformLocation(sim.composeAlphaProgram, 'u_mode'), 1); // 1=compose
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        this.swapSPHTextures();
+      }
+
+      // STEP 4 (alternative): MetaBall rendering (keep as optional fallback)
+      if (!this.useDensityComposite && sim.metaballEnabled && sim.oilMetaballProgram) {
         gl.useProgram(sim.oilMetaballProgram);
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.sphFBO);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.sphTexture2, 0);
@@ -620,28 +791,60 @@ export default class OilLayer extends FluidLayer {
       const worldX = (x - 0.5) * 2 * this.sph.containerRadius;
       const worldY = (0.5 - y) * 2 * this.sph.containerRadius;
       
+      // Throttle to avoid repeated spawns from a single click/gesture
+      const nowMs = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+      if (nowMs - this.lastSplatAtMs < this.splatCooldownMs) {
+        return;
+      }
+
       // Material-specific spawning parameters
       let particleCount = 50;
       let spawnRadius = 20.0;
       
       switch(currentMaterial) {
         case 'Mineral Oil':
-          particleCount = 40;   // Medium amount
-          spawnRadius = 15.0;   // Medium spread
+          particleCount = 14;   // few particles
+          spawnRadius = 14.0;   // tighter cluster
           break;
         case 'Syrup':
-          particleCount = 80;   // MORE particles for thick, viscous look
-          spawnRadius = 12.0;   // Tighter spread (doesn't disperse as much)
+          particleCount = 10;   // very few; rely on large sprites and cohesion
+          spawnRadius = 12.0;   // tight cluster for congealing
           break;
         case 'Glycerine':
-          particleCount = 60;   // Medium-high amount
-          spawnRadius = 18.0;   // Medium-wide spread
+          particleCount = 12;   // few particles
+          spawnRadius = 16.0;   // medium cluster
           break;
       }
       
-      this.sph.spawnParticles(worldX, worldY, particleCount, color, spawnRadius);
-      console.log(`🎨 Spawned ${particleCount} ${currentMaterial} particles (radius=${spawnRadius})`);
-      return;
+      if (this.useClusterSpawn) {
+        // Choose cluster params by material
+        let opts = null;
+        switch (currentMaterial) {
+          case 'Syrup':
+            opts = { clusterCount: 3, particlesPerCluster: 2, interClusterRadiusPx: 16.0, clusterRadiusPx: 10.0 };
+            break;
+          case 'Glycerine':
+            opts = { clusterCount: 3, particlesPerCluster: 2, interClusterRadiusPx: 18.0, clusterRadiusPx: 12.0 };
+            break;
+          case 'Mineral Oil':
+          default:
+            opts = { clusterCount: 2, particlesPerCluster: 2, interClusterRadiusPx: 12.0, clusterRadiusPx: 10.0 };
+            break;
+        }
+        const spawned = this.sph.spawnClusters(worldX, worldY, color, opts);
+        // Start a brief congeal boost window
+        this.postSplatBoostFrames = this.postSplatBoostTotal; // start ramp
+        this.lastSplatAtMs = nowMs;
+        console.log(`🎨 Cluster spawn ${currentMaterial}: ${spawned} particles, opts=`, opts);
+        return;
+      } else {
+        const spawned = this.sph.spawnParticles(worldX, worldY, particleCount, color, spawnRadius);
+        // Start a brief congeal boost window
+        this.postSplatBoostFrames = 75; // ~1.25s at 60fps
+        this.lastSplatAtMs = nowMs;
+        console.log(`🎨 Spawned ${spawned} ${currentMaterial} particles (radius=${spawnRadius})`);
+        return;
+      }
     }
     
     // Route to Grid layer
@@ -708,6 +911,10 @@ export default class OilLayer extends FluidLayer {
   
   swapGridVelocityTextures() {
     [this.gridVelocityTexture1, this.gridVelocityTexture2] = [this.gridVelocityTexture2, this.gridVelocityTexture1];
+  }
+
+  swapDensityHalfTextures() {
+    [this.densityHalfTex1, this.densityHalfTex2] = [this.densityHalfTex2, this.densityHalfTex1];
   }
   
   /**
@@ -818,5 +1025,71 @@ export default class OilLayer extends FluidLayer {
     if (this.oilPropsTexture1) gl.deleteTexture(this.oilPropsTexture1);
     if (this.oilPropsTexture2) gl.deleteTexture(this.oilPropsTexture2);
     if (this.oilPropsFBO) gl.deleteFramebuffer(this.oilPropsFBO);
+  }
+
+  // === PROGRAM CREATORS ===
+  createGaussBlurProgram(horizontal) {
+    const gl = this.gl;
+    const vertSrc = `#version 300 es\n
+      in vec2 a_position;\n
+      out vec2 v_uv;\n
+      void main(){\n
+        v_uv = a_position * 0.5 + 0.5;\n
+        gl_Position = vec4(a_position, 0.0, 1.0);\n
+      }`;
+    const dir = horizontal ? 'vec2(u_texelSize.x, 0.0)' : 'vec2(0.0, u_texelSize.y)';
+    const fragSrc = `#version 300 es\n
+      precision highp float;\n
+      in vec2 v_uv;\n
+      out vec4 fragColor;\n
+      uniform sampler2D u_tex;\n
+      uniform vec2 u_texelSize;\n
+      void main(){\n
+        float w0 = 0.227027;\n
+        float w1 = 0.1945946;\n
+        float w2 = 0.1216216;\n
+        float w3 = 0.054054;\n
+        float w4 = 0.016216;\n
+        float a = texture(u_tex, v_uv).r * w0;\n
+        vec2 d = ${dir};\n
+        a += texture(u_tex, v_uv + d*1.0).r * w1;\n
+        a += texture(u_tex, v_uv - d*1.0).r * w1;\n
+        a += texture(u_tex, v_uv + d*2.0).r * w2;\n
+        a += texture(u_tex, v_uv - d*2.0).r * w2;\n
+        a += texture(u_tex, v_uv + d*3.0).r * w3;\n
+        a += texture(u_tex, v_uv - d*3.0).r * w3;\n
+        a += texture(u_tex, v_uv + d*4.0).r * w4;\n
+        a += texture(u_tex, v_uv - d*4.0).r * w4;\n
+        fragColor = vec4(a, 0.0, 0.0, 1.0);\n
+      }`;
+    return this.sim.renderer.createProgram(vertSrc, fragSrc);
+  }
+
+  createComposeAlphaProgram() {
+    const vertSrc = `#version 300 es\n
+      in vec2 a_position;\n
+      out vec2 v_uv;\n
+      void main(){\n
+        v_uv = a_position * 0.5 + 0.5;\n
+        gl_Position = vec4(a_position, 0.0, 1.0);\n
+      }`;
+    const fragSrc = `#version 300 es\n
+      precision highp float;\n
+      in vec2 v_uv;\n
+      out vec4 fragColor;\n
+      uniform sampler2D u_colorTex;\n
+      uniform sampler2D u_densityTex;\n
+      uniform int u_mode;\n
+      void main(){\n
+        if (u_mode == 0) {\n
+          float a = texture(u_colorTex, v_uv).a;\n
+          fragColor = vec4(a, 0.0, 0.0, 1.0);\n
+        } else {\n
+          vec4 c = texture(u_colorTex, v_uv);\n
+          float a = texture(u_densityTex, v_uv).r;\n
+          fragColor = vec4(c.rgb, a);\n
+        }\n
+      }`;
+    return this.sim.renderer.createProgram(vertSrc, fragSrc);
   }
 }

@@ -25,11 +25,11 @@ export default class ImplicitSolver {
     this.sph = sphSystem;
     
     // Solver parameters
-    this.maxIterations = 100; // Increased from 50 - give solver more time
-    this.tolerance = 1e-3; // Relaxed from 1e-4 - converge faster
+    this.maxIterations = 200; // Increased to allow more CG iterations
+    this.tolerance = 5e-3; // Relaxed to tolerate small relative residuals
     
     // Implicit forces configuration
-    this.implicitPressure = true;
+    this.implicitPressure = false;
     this.implicitViscosity = true;
     this.implicitCohesion = false; // DISABLED - cohesion is position-based, not velocity-based!
     
@@ -169,8 +169,8 @@ export default class ImplicitSolver {
     const N = this.sph.particleCount;
     const DOF = N * 2;
     
-    // Estimate non-zeros: ~50 neighbors × 2 DOF × 2 DOF = 200 per particle
-    const estimatedNNZ = N * 200;
+    // Estimate non-zeros based on capped neighbors (~30 per row, 2 rows per particle)
+    const estimatedNNZ = N * 80;
     
     this.systemMatrix = new SparseMatrix(DOF, estimatedNNZ);
     
@@ -184,6 +184,11 @@ export default class ImplicitSolver {
     }
     
     this.systemMatrix.finalize();
+    // Optional: occasional matrix stats log
+    if (Math.random() < 0.02) {
+      const stats = this.systemMatrix.getStats();
+      console.log('📊 Matrix stats', stats);
+    }
   }
   
   /**
@@ -198,6 +203,8 @@ export default class ImplicitSolver {
     
     const m = this.sph.particleMass;
     const h = this.sph.smoothingRadius;
+    const hJ = h * 0.3; // More aggressive: smaller Jacobian radius
+    const maxNeighborsPerRow = 12; // Aggressive cap to keep rows sparse
     
     // Diagonal: mass matrix + damping for better conditioning
     let diagonal = m * 1.1; // Add 10% damping to diagonal
@@ -205,10 +212,11 @@ export default class ImplicitSolver {
     // Get neighbors
     const xi = this.sph.positions[particleIdx * 2];
     const yi = this.sph.positions[particleIdx * 2 + 1];
-    const neighbors = this.sph.spatialHash.query(xi, yi, h);
+    const neighbors = this.sph.spatialHash.query(xi, yi, hJ);
     
     // === PRESSURE JACOBIAN ===
     if (this.implicitPressure) {
+      let used = 0;
       for (const j of neighbors) {
         if (j === particleIdx) continue;
         
@@ -217,8 +225,9 @@ export default class ImplicitSolver {
         const dx = xi - xj;
         const dy = yi - yj;
         const distSq = dx * dx + dy * dy;
-        if (distSq >= h * h) continue;
+        if (distSq >= hJ * hJ) continue;
         const dist = Math.sqrt(distSq);
+        if (dist < 1e-6) continue;
         
         // ∂F_pressure/∂v (simplified: assume pressure depends on velocity divergence)
         // This is a linearization - full derivation is complex
@@ -231,12 +240,15 @@ export default class ImplicitSolver {
         }
         
         diagonal -= pressureJac * (component === 0 ? dx : dy) / dist;
+        used++;
+        if (used >= maxNeighborsPerRow) break;
       }
     }
     
     // === VISCOSITY JACOBIAN ===
     if (this.implicitViscosity) {
       const mu = this.sph.viscosity;
+      let used = 0;
       for (const j of neighbors) {
         if (j === particleIdx) continue;
         
@@ -245,18 +257,25 @@ export default class ImplicitSolver {
         const dx = xi - xj;
         const dy = yi - yj;
         const distSq = dx * dx + dy * dy;
-        if (distSq >= h * h) continue;
+        if (distSq >= hJ * hJ) continue;
         const dist = Math.sqrt(distSq);
+        if (dist < 1e-6) continue;
         
         // Viscosity Jacobian: ∂F_visc/∂v
         const laplacian = this.sph.viscosityLaplacianKernel(dist, h);
-        const viscJac = dt * mu * m * m / (this.sph.densities[j] + 1e-6) * laplacian;
+        // Symmetric pair weight using average of inverse densities
+        const invRhoi = 1.0 / (this.sph.densities[particleIdx] + 1e-6);
+        const invRhoj = 1.0 / (this.sph.densities[j] + 1e-6);
+        const invRhoAvg = 0.5 * (invRhoi + invRhoj);
+        const viscJac = dt * mu * m * m * invRhoAvg * laplacian;
         
-        // Off-diagonal: coupling to neighbor
-        this.systemMatrix.addEntry(j * 2 + component, viscJac);
+        // Off-diagonal: negative coupling to neighbor (diffusion stencil)
+        this.systemMatrix.addEntry(j * 2 + component, -viscJac);
         
-        // Diagonal: coupling to self
-        diagonal -= viscJac;
+        // Diagonal: accumulate positive contribution
+        diagonal += viscJac;
+        used++;
+        if (used >= maxNeighborsPerRow) break;
       }
     }
     
