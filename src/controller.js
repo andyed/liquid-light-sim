@@ -958,7 +958,7 @@ export default class Controller {
             
             // Continuous source injection (source term in advection-diffusion equation)
             // Throttle to every N frames to avoid overwhelming flow
-            if ((this._injectionFrameCount % this.injectEveryN) === 1) {
+            if ((this._injectionFrameCount % this.injectEveryN) === 0) {
                 const isInk = this.currentMaterialIndex === 0;
                 if (isInk) {
                     // Paint ink into water layer

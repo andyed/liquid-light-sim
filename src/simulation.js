@@ -486,11 +486,13 @@ export default class Simulation {
     }
 
     splat(x, y, color, radius = 0.01) {
+        console.log(`🔍 simulation.splat called: x=${x.toFixed(2)}, y=${y.toFixed(2)}, ready=${this.ready}, water=${!!this.water}`);
         if (!this.ready || !this.renderer.ready) {
             console.warn('⚠️ Splat called but not ready:', {ready: this.ready, rendererReady: this.renderer.ready});
             return;
         }
         if (this.water) {
+            console.log(`🔍 Calling water.splatColor...`);
             this.water.splatColor(x, y, color, radius);
             // small stirring impulse to match previous behavior
             const cx = 0.5, cy = 0.5;
