@@ -604,11 +604,15 @@ export default class OilLayer extends FluidLayer {
     const gl = this.gl;
     const sim = this.sim;
     
+    console.log(`🔍 splatColor called: x=${x.toFixed(2)}, y=${y.toFixed(2)}, radius=${radius}`);
+    
     // === MULTI-LAYER SPLAT ROUTING ===
     const controller = window.controller || this.sim.controller;
     const currentMaterial = controller?.materials[controller?.currentMaterialIndex]?.name || '';
     const useSPHForMaterial = ['Mineral Oil', 'Syrup', 'Glycerine'].includes(currentMaterial);
     const useGridForMaterial = ['Alcohol'].includes(currentMaterial);
+    
+    console.log(`🔍 Material: ${currentMaterial}, useSPH=${this.useSPH}, useSPHForMaterial=${useSPHForMaterial}`);
     
     // Route to SPH layer
     if (this.useSPH && useSPHForMaterial) {

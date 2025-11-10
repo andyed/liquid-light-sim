@@ -264,7 +264,13 @@ export default class WaterLayer extends FluidLayer {
   splatColor(x, y, color, radius) {
     const sim = this.sim;
     const gl = this.gl;
+    
+    console.log(`🔍 WaterLayer.splatColor: x=${x.toFixed(2)}, y=${y.toFixed(2)}, color=${color.r.toFixed(2)},${color.g.toFixed(2)},${color.b.toFixed(2)}, radius=${radius}`);
 
+    if (!this.colorTexture1 || !sim.splatProgram) {
+      console.error('❌ Water layer not initialized - colorTexture1:', !!this.colorTexture1, 'splatProgram:', !!sim.splatProgram);
+      return;
+    }
     gl.useProgram(sim.splatProgram);
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.colorFBO);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.colorTexture2, 0);
