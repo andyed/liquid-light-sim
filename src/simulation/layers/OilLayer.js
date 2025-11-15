@@ -280,6 +280,10 @@ export default class OilLayer extends FluidLayer {
     
     // Apply per-material SPH tuning (kept lightweight; no change to smoothingRadius)
     if (this.sph) {
+      // Base grid-drag (water→oil coupling) per material; we will scale this
+      // by |rotationAmount| below so that rotating the plate couples more
+      // strongly to the blobs.
+      let baseGridDrag = 1.3;
       switch (currentMaterial) {
         case 'Syrup':
           // Syrup: slow, overdamped, highly cohesive "hero" blob
@@ -291,16 +295,17 @@ export default class OilLayer extends FluidLayer {
           this.sph.longRadiusScale = 3.0;         // keep influence fairly local
           this.sph.splitDistance = 1.4;           // lower maxCohesionDist: different blobs don't see each other as much
           this.sph.spawnSpeedScale = 0.04;        // almost no initial kick
-          this.sph.gridDragCoeff = 3.0;           // stronger coupling to water (oil follows flow more)
-          this.sph.maxSpeedCap = 0.24;            // slightly lower cap for dense cores
-          this.sph.xsphCoeff = 0.25;              // weaker velocity equalization (less condensation)
-          this.sph.dampingFactor = 0.96;          // even stronger per-step damping on dense cores
-          this.sph.maxPressureDensityRatio = 1.2; // saturate pressure even earlier so density maps to size
+          baseGridDrag = 3.0;                     // stronger coupling to water (oil follows flow more)
+          this.sph.maxSpeedCap = 0.16;            // lower cap for dense cores and fragments
+          this.sph.xsphCoeff = 0.22;              // weaker velocity equalization (less condensation)
+          this.sph.dampingFactor = 0.97;          // stronger per-step damping on dense cores and fragments
+          this.sph.maxPressureDensityRatio = 1.15; // saturate pressure very early so density maps to size
+          this.sph.pressureStiffness = 0.22;       // very soft pressure so big blobs squish instead of exploding
           // Positional cohesion: local-only to avoid cross-blob averaging
           this.sph.enablePositionalCohesion = true;
-          this.sph.posCohesionCoeff = 0.02;       // softer centroid pull (slower condensation)
-          this.sph.maxPosNudge = 0.0012;          // smaller centroid nudge per frame
-          this.sph.posCohesionBoostCoeff = 0.09;  // weaker extra pull for fresh splats
+          this.sph.posCohesionCoeff = 0.018;      // softer centroid pull (slower condensation)
+          this.sph.maxPosNudge = 0.0010;          // smaller centroid nudge per frame
+          this.sph.posCohesionBoostCoeff = 0.08;  // weaker extra pull for fresh splats
           this.sph.posCohesionRadiusScale = 1.2;  // ~1.2h neighborhood: stays inside blob thickness
           this.sph.particleSpriteRadius = 118.0;  // smaller sprite; rely on more particles per splat
           // Thinning & splitting: Syrup should very rarely auto-split
@@ -316,7 +321,7 @@ export default class OilLayer extends FluidLayer {
           this.sph.longCohesion = 0.0; // disabled - prevents distant blob merging
           this.sph.longRadiusScale = 3.2;
           this.sph.spawnSpeedScale = 0.5;
-          this.sph.gridDragCoeff = 1.1;
+          baseGridDrag = 1.1;
           this.sph.maxSpeedCap = 0.55;
           this.sph.xsphCoeff = 0.25;
           this.sph.particleSpriteRadius = 130.0;
@@ -335,10 +340,10 @@ export default class OilLayer extends FluidLayer {
           this.sph.longCohesion = 0.0; // disabled - prevents distant blob merging
           this.sph.longRadiusScale = 4.0;
           this.sph.spawnSpeedScale = 1.0;
-          this.sph.gridDragCoeff = 1.3;
-          this.sph.maxSpeedCap = 0.5;         // lower cap: dense cores move more slowly
-          this.sph.xsphCoeff = 0.18;          // weaker velocity equalization
-          this.sph.dampingFactor = 0.955;     // stronger damping per step
+          baseGridDrag = 1.3;
+          this.sph.maxSpeedCap = 0.48;        // slightly lower cap: dense cores move more slowly
+          this.sph.xsphCoeff = 0.16;          // weaker velocity equalization
+          this.sph.dampingFactor = 0.96;      // stronger damping per step
           this.sph.particleSpriteRadius = 100.0;
           // Thinning & splitting: Mineral Oil is fluid - easy to thin and split
           this.sph.thinningThreshold = 0.7;   // Higher threshold = easier to thin
@@ -346,12 +351,19 @@ export default class OilLayer extends FluidLayer {
           this.sph.splitDistance = 2.2;       // blobs separate a bit more before splitting
           // Positional cohesion: keep but softer to avoid minimum-size collapse
           this.sph.enablePositionalCohesion = true;
-          this.sph.posCohesionCoeff = 0.035;  // softer centroid pull so bubbles stay chunky
-          this.sph.maxPosNudge = 0.0018;
-          this.sph.posCohesionBoostCoeff = 0.14;
+          this.sph.posCohesionCoeff = 0.03;   // softer centroid pull so bubbles stay chunky
+          this.sph.maxPosNudge = 0.0015;
+          this.sph.posCohesionBoostCoeff = 0.12;
           this.sph.maxPressureDensityRatio = 1.3; // Mineral Oil: saturate pressure earlier in dense cores
+          this.sph.pressureStiffness = 0.6;   // softer pressure so big blobs tend to hold together
           break;
       }
+
+      // Scale water→oil drag with rotation magnitude so tilting/rotating the
+      // plate couples more strongly to blobs via the velocity field.
+      const rotAbs = Math.abs(this.sim.rotationAmount || 0.0);
+      const rotScale = 1.0 + 2.0 * Math.min(rotAbs, 1.0); // up to ~3x at strong rotation
+      this.sph.gridDragCoeff = baseGridDrag * rotScale;
     }
 
     // STEP 2: Update SPH particle physics (always if particles exist!)
@@ -921,21 +933,25 @@ export default class OilLayer extends FluidLayer {
       const nowMs = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
       // Only update timestamp, don't block spawning
 
-      // Base spawn counts per material (kept modest for perf and variety)
-      let baseCount = 10;
-      let baseRadius = 14.0;
+      // Base spawn counts per material (kept modest for perf and variety).
+      // These are intentionally low so that even after breakup, a single tap
+      // cannot populate the whole plate with droplets.
+      let baseCount = 8;
+      let baseRadius = 13.0;
       switch (currentMaterial) {
         case 'Mineral Oil':
-          baseCount = 10;        // medium-weight, more numerous small droplets
-          baseRadius = 14.0;     // compact cluster
+          baseCount = 8;         // fewer particles per splat
+          baseRadius = 13.0;     // compact cluster
           break;
         case 'Syrup':
-          baseCount = 14;        // hero blobs but still modest particle count
-          baseRadius = 15.0;     // moderate cluster size
+          // Syrup: hero blobs but with very limited particle count so
+          // breakup doesn't flood the plate.
+          baseCount = 8;         // significantly reduced from earlier values
+          baseRadius = 14.0;     // moderate cluster size
           break;
         case 'Glycerine':
-          baseCount = 10;        // light per splat
-          baseRadius = 16.0;     // medium cluster
+          baseCount = 8;         // light per splat
+          baseRadius = 15.0;     // medium cluster
           break;
         default:
           break;
@@ -952,23 +968,23 @@ export default class OilLayer extends FluidLayer {
         const nearby = this.sph.countParticlesNear(worldX, worldY, localRadius);
 
         if (nearby >= 12) {
-          // Deep inside an existing blob: add some mass but do NOT explode
-          // particle count. Slightly increase radius so new mass spreads.
-          particleCount = Math.round(baseCount * 1.3);
-          spawnRadius = baseRadius * 1.1;
+          // Deep inside an existing blob: add a bit of mass but keep count
+          // close to base so we don't dramatically increase droplet count.
+          particleCount = Math.round(baseCount * 1.15);
+          spawnRadius = baseRadius * 1.05;
         } else if (nearby >= 3) {
           // Near a blob edge: light feeding
           particleCount = Math.round(baseCount * 1.0);
         } else if (nearby <= 1) {
           // New/isolated splat: small droplet, easy to absorb later
-          particleCount = Math.max(4, Math.round(baseCount * 0.5));
-          spawnRadius = baseRadius * 0.85;
+          particleCount = Math.max(3, Math.round(baseCount * 0.4));
+          spawnRadius = baseRadius * 0.8;
         }
       }
 
       // Add a small random variation so we get a spread of sizes even under
       // similar input; keep within a narrow band so behavior is stable.
-      const sizeJitter = 0.85 + Math.random() * 0.4; // [0.85, 1.25]
+      const sizeJitter = 0.8 + Math.random() * 0.3; // [0.8, 1.1]
       particleCount = Math.max(3, Math.round(particleCount * sizeJitter));
       
       // DISABLED: Cluster spawning creates multiple separate blobs

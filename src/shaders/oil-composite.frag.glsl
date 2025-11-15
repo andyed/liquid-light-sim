@@ -119,9 +119,9 @@ void main() {
     vec3 glowColor = final * 1.5; // A brighter version of the color to glow with
     final = mix(final, glowColor, heat * 0.3);
     
-    // Variable density visualization: thicker = darker version of user color
-    // float densityDarken = smoothstep(0.3, 0.8, thickness) * 0.3;
-    // final *= (1.0 - densityDarken);
+    // Variable density visualization: thicker = slightly darker version of user color
+    float densityDarken = smoothstep(0.35, 0.85, thickness) * 0.18;
+    final *= (1.0 - densityDarken);
     
     fragColor = vec4(final, 1.0);
 }

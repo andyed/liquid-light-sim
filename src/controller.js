@@ -904,7 +904,8 @@ export default class Controller {
     applyHeatLampPreset() {
         const level = this.heatLampLevel;
         const brightness = [1.0, 1.1, 1.2, 1.3];
-        const agitation = [0.0, 0.001, 0.002, 0.005];
+        // Much gentler agitation so oil doesnt behave like pinballs at high heat
+        const agitation = [0.0, 0.00025, 0.0006, 0.0012];
 
         this.renderer.brightnessGain = brightness[level];
         this.simulation.agitation = agitation[level];

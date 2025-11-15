@@ -19,13 +19,9 @@ void main() {
     // Calculate total concentration (how much ink is here)
     float totalConc = length(concentration.rgb);
     
-    if (totalConc < 0.001) {
-        // No ink - output the bright orange background
-        outColor = vec4(u_light_color * u_brightness_gain, 1.0);
-        return;
-    }
-    
-    // Normalized color direction (what color is the ink)
+    // Normalized color direction (what color is the ink). When there is no
+    // ink, totalConc≈0 so inkColor≈0 and the rest of the shader naturally
+    // fades to black without a hard threshold, avoiding black halos.
     vec3 inkColor = concentration.rgb / max(totalConc, 0.001);
     
     // Beer-Lambert: Opacity increases with concentration

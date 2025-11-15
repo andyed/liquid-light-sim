@@ -6,12 +6,28 @@ Move the SPH (oil) simulation to WebGPU so particle dynamics and water/oil coupl
 
 Rendering will initially remain in WebGL2; WebGPU will be introduced as a compute backend only.
 
+This implementation plan is now explicitly aligned with the analysis and recommendations in
+`docs/Analyzing Liquid Blobbing Simulation Project.md` ("ALBSP"). That document argues
+for:
+
+- High interfacial tension (IFT) and high viscosity as *required* for robust, cohesive
+  blobs.
+- An **implicit inter-particle cohesion (IPF)** model to make those stiff forces
+  numerically stable.
+- A metaball-style visualization layer to exaggerate merging and compensate for sparse
+  particle counts.
+
+The long-term destination of this plan is therefore:
+
+> **WebGPU-based SPH with implicit IPF cohesion, high IFT/high viscosity, and a
+>  texture-based metaball field, as outlined in ALBSP.**
+
 ---
 
 ## Current Status (2025-11)
 
 - **Renderer:** WebGL2-only for now (`useWebGPU = false` in `main.js`).
-- **SPH path in production:** CPU SPH + WebGL-only rendering.
+- **SPH path in production:** CPU SPH + WebGL-only rendering (Phase 1 of ALBSP roadmap).
   - SPH particles are simulated on CPU (`SPHOilSystem`) and rendered via the existing WebGL particle splat + oil composite pipeline.
   - Ink/water render through `WaterLayer → colorTexture1 → Renderer.render`.
 - **WebGPU SPH:** Implemented and working in isolation (compute + render pipelines), but **disabled by default** after triggering a reproducible hard macOS-level crash under load.
@@ -129,7 +145,9 @@ Stage 0 remains as a reference / fallback while GPU SPH is built.
 
 2. Pressure + force pass
    - Use Tait equation or similar to compute pressure from density:
-     - `p_i = B * ((ρ_i / ρ0)^γ - 1)`.
+     - `p_i = B * ((ρ_i / ρ0)^γ - 1)`. 
+   - For the first WebGPU prototype, keep this **explicit** and relatively soft,
+     matching the current CPU SPH behavior.
    - For each particle:
      - Loop over neighbors again (for now, all particles):
        - Compute pressure gradient, viscosity, cohesion.
@@ -222,6 +240,69 @@ In either case, CPU readback becomes unnecessary and can be removed from the hot
    - It now incorporates oil-induced forces via the oil grid textures.
 
 At this stage, there is **no CPU mediation** in SPH or coupling.
+
+---
+
+### Stage 7 – Implicit IPF Cohesion (ALBSP Phase 1)
+
+**Objective:** Follow ALBSP's recommendation to replace the current explicit cohesion
+with an implicit Inter-Particle Force (IPF) model on the GPU so we can safely use high
+IFT and high viscosity without explosions.
+
+This is where the project transitions from "soft, explicit SPH" to
+"stiff, physically-inspired blobs".
+
+**High-level tasks (adapted from ALBSP §4.2, §7):**
+
+1. **Define IPF cohesion term in WGSL**
+   - Add a pairwise, attractive force between oil particles within a narrow band
+     around the interface (same-phase only).
+   - Implement this as an additional force term `F_ipf` in the SPH force pass, but
+     treated implicitly in the time integration.
+
+2. **Implicit integration of cohesion (backward Euler / linearized solve)**
+   - Switch from fully explicit updates for cohesion to a simple implicit scheme
+     (e.g. linearized backward Euler) as described in ALBSP's references
+     (Jeske et al. 2023).
+   - Couple cohesion with pressure and viscosity in the per-step solve so we can
+     safely raise IFT and viscosity coefficients.
+
+3. **Parameter tuning in WebGPU regime**
+   - Gradually increase the effective surface tension / cohesion strength until
+     blobs:
+     - Rapidly spheroidize after perturbation.
+     - Aggressively merge when touching.
+     - Strongly resist breakup except under large rotational/thermal forcing.
+
+4. **Align CPU SPH with IPF where feasible**
+   - For development/debug, keep a soft, explicit approximation of the IPF
+     behavior on CPU (what we are currently tuning) so behavior differences between
+     CPU and GPU paths are minimized.
+
+### Stage 8 – Metaball Visualization Alignment (ALBSP Phase 3)
+
+**Objective:** Ensure the WebGL/WebGPU oil visualization behaves like a metaball
+field as described in ALBSP §5, exaggerating merging between nearby blobs and
+making contiguous oil regions visually continuous.
+
+**Tasks:**
+
+1. **Match SPH density field to metaball field**
+   - Confirm that the scalar used for oil thickness / implicit field is directly
+     derived from the SPH density / particle influence, so high-density regions
+     render as a single coherent blob.
+
+2. **Tunable blending for exaggerated coalescence**
+   - Introduce a blending parameter (Ricci-style or equivalent) in the shader that
+     controls how quickly separate blobs visually merge as their fields overlap.
+   - For the projector aesthetic, bias this toward *early* merging so nearby blobs
+     form a continuous sheet even at moderate distances.
+
+3. **WebGPU-native metaball path (future)**
+   - Once SPH and coupling are fully on WebGPU, consider a pure WebGPU metaball
+     rendering path (computing the implicit field in WGSL and feeding it to either
+     WebGPU or WebGL). This is optional but aligns with ALBSP's GPU metaball
+     recommendations.
 
 ---
 

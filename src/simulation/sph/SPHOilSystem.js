@@ -28,6 +28,9 @@ export default class SPHOilSystem {
     // at very high densities (helps map extra mass to size/thickness
     // instead of explosive spring).
     this.maxPressureDensityRatio = 1.8;
+    // Per-material pressure stiffness multiplier (Tait EOS B term).
+    // 1.0 ~= original global stiffness; <1.0 softens pressure response.
+    this.pressureStiffness = 1.0;
     this.particleMass = 0.02;         // Mass per particle
     this.viscosity = 0.08;            // Slightly higher to maintain ribbons/filaments
     this.surfaceTension = 50.0;       // DRASTICALLY REDUCED from 3000 - was causing NaN (was insane!)
@@ -120,10 +123,10 @@ export default class SPHOilSystem {
     this.enableNeighborScaledDrag = true;
     this.neighborDragNMin = 3;
     this.neighborDragNMax = 10;
-    // Positional cohesion boost after spawn
+    // Positional cohesion boost after spawn (kept gentle to avoid collapse→explode)
     this.posCohesionBoostFrames = 0;
-    this.posCohesionBoostCoeff = 0.35; // stronger temporary pull (increased for faster congealing)
-    this.posCohesionBoostIters = 3;    // extra iterations per frame during boost (increased)
+    this.posCohesionBoostCoeff = 0.18; // softer temporary pull
+    this.posCohesionBoostIters = 2;    // fewer extra iterations per frame during boost
 
     // Buffers for auxiliary accumulations
     this.xsphCorr = new Float32Array(maxParticles * 2);
@@ -994,7 +997,7 @@ export default class SPHOilSystem {
    * PHASE 1.6: Tension-free (clamp negative pressure to zero)
    */
   computePressures() {
-    const B = 6.0; // Higher stiffness to resist compression/collapse
+    const B = 6.0 * this.pressureStiffness; // Per-material stiffness to resist compression/collapse
     const gamma = 7.0;
     
     for (let i = 0; i < this.particleCount; i++) {
@@ -1192,16 +1195,15 @@ export default class SPHOilSystem {
         const neighborsS = this.spatialHash.query(xi, yi, shortRadius);
         const neighborCount = neighborsS.length - 1; // exclude self
         
-        // Particle is "thin" if:
-        // 1. Density is below threshold, OR
-        // 2. Too few neighbors (stretched region)
-        // BUT: Don't mark as thin if it has ANY neighbors (might be newly spawned)
-        // This prevents newly spawned particles from being marked thin before they congeal
+        // Particle is "thin" only if BOTH:
+        // 1. Density is below threshold, AND
+        // 2. Too few neighbors (stretched region).
+        // This means dense interiors of blobs remain "thick" and keep strong
+        // cohesion, making contiguous regions harder to break.
         const hasNeighbors = neighborCount > 0;
-        const isThin = hasNeighbors && (
-          densityRatio < this.thinningThreshold || 
-          neighborCount < this.minNeighborsForThick
-        );
+        const isThin = hasNeighbors &&
+          densityRatio < this.thinningThreshold &&
+          neighborCount < this.minNeighborsForThick;
         
         // Reduce cohesion in thin regions
         thinningFactors[i] = isThin ? this.cohesionReductionInThin : 1.0;
@@ -1221,6 +1223,22 @@ export default class SPHOilSystem {
       const maxShort = 64;
       const sCount = Math.min(neighborsS.length, maxShort);
       const thinFactorI = thinningFactors[i];
+
+      // Contiguity factor: more local neighbors → stronger cohesion. This
+      // pushes touching blobs to re-shape into one contiguous mass. Isolated
+      // droplets and filaments get weaker cohesion.
+      const neighborCount = Math.max(0, sCount - 1); // exclude self approx
+      const contigMin = 4;   // below this, scale goes to 0
+      const contigMax = 18;  // above this, scale ~1
+      let contiguityScale = 0.0;
+      if (neighborCount <= contigMin) {
+        contiguityScale = 0.0;
+      } else if (neighborCount >= contigMax) {
+        contiguityScale = 1.0;
+      } else {
+        const ct = (neighborCount - contigMin) / Math.max(1e-6, contigMax - contigMin);
+        contiguityScale = ct * ct * (3.0 - 2.0 * ct); // smoothstep
+      }
       
       for (let n = 0; n < sCount; n++) {
         const j = neighborsS[n];
@@ -1237,9 +1255,13 @@ export default class SPHOilSystem {
         const thinFactorJ = thinningFactors[j];
         const combinedThinFactor = Math.min(thinFactorI, thinFactorJ);
         
-        const q = dist / shortRadius;
-        const falloff = Math.exp(-q * q * 4.0);
-        const strength = shortCohesion * falloff * combinedThinFactor;
+        // Cohesion falloff: strongest just outside minDist, decaying smoothly
+        // toward shortRadius. This avoids a preferred mid-radius ring and
+        // encourages solid blobs instead of donuts.
+        const span = Math.max(1e-6, shortRadius - minDist);
+        const t = (dist - minDist) / span; // 0 at minDist, 1 at shortRadius
+        const falloff = Math.max(0.0, 1.0 - t);
+        const strength = shortCohesion * falloff * falloff * combinedThinFactor * contiguityScale;
         if (strength > 0) {
           const invd = 1.0 / dist;
           this.forces[i * 2] += (dx * invd) * strength * this.particleMass;
@@ -1324,7 +1346,10 @@ export default class SPHOilSystem {
     
     // STEP 4: Radial gravity disabled (was causing global convergence)
     
-    // STEP 4: Rotation (tangential force for lava lamp motion)
+    // STEP 4: Rotation-driven tilt gravity. We no longer spin particles
+    // tangentially around the center (which caused pinball behavior). Instead
+    // we treat rotationAmount as an effective tilt that applies a gentle
+    // body force in a roughly horizontal direction.
     const rotation = this.currentRotation || 0.0;
     
     // Debug: Log rotation with force comparison
@@ -1344,22 +1369,28 @@ export default class SPHOilSystem {
     }
     
     if (Math.abs(rotation) > 1e-6) {
+      // Effective tilt direction in plate space. For now, map positive
+      // rotation to a gentle "down-right" tilt and negative to "down-left".
+      // This is intentionally simple; water flow + drag do most of the work.
+      const tiltDirX = rotation > 0 ? 0.7 : -0.7;
+      const tiltDirY = 1.0; // always a bit "down"
+      const len = Math.hypot(tiltDirX, tiltDirY) || 1.0;
+      const nx = tiltDirX / len;
+      const ny = tiltDirY / len;
+
       for (let i = 0; i < this.particleCount; i++) {
-        const x = this.positions[i * 2];
-        const y = this.positions[i * 2 + 1];
-        const distFromCenter = Math.sqrt(x * x + y * y);
-        
-        if (distFromCenter > 1e-6) {
-          // Tangential direction (perpendicular to radius)
-          // For CCW rotation: tangent = (-y, x) / dist
-          const tangentX = -y / distFromCenter;
-          const tangentY = x / distFromCenter;
-          
-          // Apply rotation force (balanced for k=20000 cohesion)
-          const forceMag = rotation * distFromCenter * this.particleMass * 500.0; // Strong but stable (was 5000)
-          this.forces[i * 2] += tangentX * forceMag;
-          this.forces[i * 2 + 1] += tangentY * forceMag;
-        }
+        // Density-aware tilt: denser regions feel a bit more of the tilt
+        // gravity, but we keep it very gentle.
+        const rho = this.densities[i];
+        const densityRatio = rho / (this.restDensity || 1.0);
+        const clampedRatio = Math.max(0.5, Math.min(2.0, densityRatio));
+        // Map [0.5,2] → [0.7,1.1]
+        const densityScale = 0.7 + 0.4 * ((clampedRatio - 0.5) / 1.5);
+
+        const base = 4.0; // extremely gentle tilt force
+        const forceMag = Math.sign(rotation) * this.particleMass * base * densityScale;
+        this.forces[i * 2]     += nx * forceMag;
+        this.forces[i * 2 + 1] += ny * forceMag;
       }
     }
   }
