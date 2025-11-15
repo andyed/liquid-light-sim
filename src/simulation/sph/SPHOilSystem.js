@@ -93,7 +93,7 @@ export default class SPHOilSystem {
     this.debug = false;
 
     // Tunable cohesion and spawn parameters (material presets can override)
-    this.shortCohesion = 6.5;
+    this.shortCohesion = 4.0;   // Softer short-range cohesion (was 6.5)
     this.shortRadiusScale = 1.5; // REDUCED from 2.0: shortRadius = h * shortRadiusScale (prevents cross-blob attraction)
     this.minDistScale = 0.35;    // minDist = h * minDistScale
     this.longCohesion = 0.0;    // DISABLED: Long-range cohesion causes distant blobs to merge
@@ -129,7 +129,7 @@ export default class SPHOilSystem {
     this.thinningThreshold = 0.6;            // Density ratio below which region is "thin" (0-1)
     this.neckDetectionRadius = 1.5;          // Multiplier of h for neck detection
     this.minNeighborsForThick = 8;          // Minimum neighbors to be considered "thick"
-    this.cohesionReductionInThin = 0.3;     // Reduce cohesion to 30% in thin regions
+    this.cohesionReductionInThin = 0.2;     // Reduce cohesion to 20% in thin regions
     this.splitDistance = 2.0;                // Split when clusters are > 2.0h apart (tighter to prevent merging)
     this.splitCheckInterval = 30;            // Check for splitting every N frames (performance)
     this.minClusterSize = 3;                // Minimum particles to form a valid blob cluster
