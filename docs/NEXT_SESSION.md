@@ -1,5 +1,10 @@
 # Next Session Plan
 
+November 14, 2025
+heavier (denser) oil splats should push water more than lighter oil.
+Picking a simple mass proxy (SPH density or neighbor count).
+Scaling the existing oil→water coupling strength with that proxy when splatting to the grid.
+
 **Date**: November 9, 2025  
 **Status**: MULTI-LAYER ARCHITECTURE COMPLETE! 
 

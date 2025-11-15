@@ -67,13 +67,11 @@ void main() {
         outColor = vec4(rgb, newThickness);
         return;
     } else {
-        // Color splat: respect available space to avoid mixing
+        // Ink splat: allow repeated pours at same location to accumulate
+        // Gaussian controls spatial falloff; sourceStrength controls injection rate
         vec3 newInk = u_color * gaussian * sourceStrength;
-        float existingConc = length(existing.rgb);
-        float spaceAvailable = max(0.0, 0.8 - existingConc);
-        vec3 inkToAdd = newInk * spaceAvailable;
-        result = existing.rgb + inkToAdd;
-        // Clamp to [0,1] for color
+        result = existing.rgb + newInk;
+        // Clamp to [0,1] to keep colors in range
         result = clamp(result, vec3(0.0), vec3(1.0));
     }
     outColor = vec4(result, 1.0);

@@ -1,19 +1,11 @@
 import { loadShader } from './utils.js';
 
 export default class Renderer {
-    constructor() {
-        const canvas = document.getElementById('gl-canvas');
-        this.gl = canvas.getContext('webgl2');
-        if (!this.gl) {
-            throw new Error('WebGL 2 not supported');
-        }
-
-        // Enable float texture extension (required for FBO rendering)
-        const ext = this.gl.getExtension('EXT_color_buffer_float');
-        if (!ext) {
-            throw new Error('EXT_color_buffer_float not supported - float textures cannot be used as render targets');
-        }
-        console.log('✓ Float texture extension enabled');
+    constructor(useWebGPU) {
+        this.useWebGPU = useWebGPU;
+        this.gl = null;
+        this.webgpuCanvasContext = null;
+        this.webgpuDevice = null;
 
         this.backgroundColor = { r: 1.0, g: 0.35, b: 0.15 };
         this.debugMode = 0; // 0=color, 1=velocity, 2=concentration gradient, 3=oil thickness, 4=oil gradient, 5=occ split
@@ -32,11 +24,17 @@ export default class Renderer {
         this.oilTintStrength = 0.9; // 0..1, how much oil color tints scene (high to preserve user color)
         this.brightnessGain = 1.5; // Increased for more vibrant ink
 
+        // Debug flag: allow disabling oil composite pass entirely while
+        // debugging SPH / visibility issues. Now enabled by default so
+        // SPH oil overlays render on top of the water/ink scene.
+        this.enableOilComposite = true;
+
         this.resize();
         window.addEventListener('resize', () => this.resize());
 
-        this.quadBuffer = this.createQuad();
-        this.init();
+        // Defer quad creation until after WebGL context is initialized in init()
+        this.quadBuffer = null;
+        this.init(); // Call init as a regular method, it will handle its own async
     }
 
     setSimulation(simulation) {
@@ -44,6 +42,45 @@ export default class Renderer {
     }
 
     async init() {
+        const canvas = document.getElementById('gl-canvas');
+        this.canvas = canvas;
+
+        if (this.useWebGPU) {
+            try {
+                this.webgpuCanvasContext = canvas.getContext('webgpu');
+                if (this.webgpuCanvasContext) {
+                    const adapter = await navigator.gpu.requestAdapter();
+                    this.webgpuDevice = await adapter.requestDevice();
+                    this.webgpuCanvasContext.configure({
+                        device: this.webgpuDevice,
+                        format: navigator.gpu.getPreferredCanvasFormat(),
+                        alphaMode: 'premultiplied',
+                    });
+                    console.log('✓ WebGPU context configured.');
+                } else {
+                    this.useWebGPU = false;
+                }
+            } catch (e) {
+                console.error('WebGPU initialization failed:', e);
+                this.useWebGPU = false;
+            }
+        }
+
+        if (!this.useWebGPU) {
+            this.gl = canvas.getContext('webgl2');
+            if (!this.gl) {
+                throw new Error('WebGL 2 not supported');
+            }
+            const ext = this.gl.getExtension('EXT_color_buffer_float');
+            if (!ext) {
+                throw new Error('EXT_color_buffer_float not supported - float textures cannot be used as render targets');
+            }
+            console.log('✓ Float texture extension enabled');
+
+            // Now that WebGL is initialized, create the fullscreen quad buffer
+            this.quadBuffer = this.createQuad();
+        }
+
         const passThroughVert = await loadShader('src/shaders/fullscreen.vert.glsl');
         const passThroughFrag = await loadShader('src/shaders/passThrough.frag.glsl');
         this.passThroughProgram = this.createProgram(passThroughVert, passThroughFrag);
@@ -94,6 +131,7 @@ export default class Renderer {
     }
     
     createPostProcessTexture() {
+        if (!this.gl) return;
         const gl = this.gl;
         const width = gl.canvas.width;
         const height = gl.canvas.height;
@@ -110,6 +148,7 @@ export default class Renderer {
     }
 
     createOilCompositeTexture() {
+        if (!this.gl) return;
         const gl = this.gl;
         const width = gl.canvas.width;
         const height = gl.canvas.height;
@@ -126,6 +165,7 @@ export default class Renderer {
     }
     
     createBoundaryTexture() {
+        if (!this.gl) return;
         const gl = this.gl;
         const width = gl.canvas.width;
         const height = gl.canvas.height;
@@ -156,31 +196,35 @@ export default class Renderer {
         const cssH = squareSize;
 
         // Apply CSS size (but CSS has 100% with circular-border parent, so this is backup)
-        const canvasEl = this.gl.canvas;
+        const canvasEl = document.getElementById('gl-canvas');
         canvasEl.style.width = cssW + 'px';
         canvasEl.style.height = cssH + 'px';
 
         // Compute SQUARE drawing buffer size in device pixels
-        const maxTex = this._maxTextureSize || (this._maxTextureSize = this.gl.getParameter(this.gl.MAX_TEXTURE_SIZE));
+        const maxTex = this._maxTextureSize || (this.gl ? (this._maxTextureSize = this.gl.getParameter(this.gl.MAX_TEXTURE_SIZE)) : 8192);
         const targetSize = Math.min(maxTex, Math.max(1, Math.floor(squareSize * dpr)));
 
         // Set drawing buffer to SQUARE (critical for circular display)
-        this.gl.canvas.width = targetSize;
-        this.gl.canvas.height = targetSize;
+        canvasEl.width = targetSize;
+        canvasEl.height = targetSize;
 
-        this.gl.viewport(0, 0, this.gl.canvas.width, this.gl.canvas.height);
+        if (this.gl) {
+            this.gl.viewport(0, 0, canvasEl.width, canvasEl.height);
+        }
 
         // Recreate intermediate textures only if size changed
-        const w = this.gl.canvas.width;
-        const h = this.gl.canvas.height;
+        const w = canvasEl.width;
+        const h = canvasEl.height;
         const changed = (this._lastCanvasW !== w) || (this._lastCanvasH !== h);
         if (changed) {
             this._lastCanvasW = w;
             this._lastCanvasH = h;
             if (this.ready) {
-                this.createBoundaryTexture();
-                this.createPostProcessTexture();
-                this.createOilCompositeTexture();
+                if (this.gl) {
+                    this.createBoundaryTexture();
+                    this.createPostProcessTexture();
+                    this.createOilCompositeTexture();
+                }
                 if (this.simulation && this.simulation.ready) {
                     this.simulation.recreateTextures();
                 }
@@ -189,6 +233,7 @@ export default class Renderer {
     }
 
     createQuad() {
+        if (!this.gl) return null;
         const gl = this.gl;
         const vertices = new Float32Array([
             -1, -1, 1, -1, -1, 1,
@@ -201,6 +246,7 @@ export default class Renderer {
     }
 
     createProgram(vertexShaderSource, fragmentShaderSource) {
+        if (!this.gl) return null;
         const gl = this.gl;
         const vertexShader = this.compileShader(gl.VERTEX_SHADER, vertexShaderSource);
         const fragmentShader = this.compileShader(gl.FRAGMENT_SHADER, fragmentShaderSource);
@@ -219,6 +265,7 @@ export default class Renderer {
     }
 
     compileShader(type, source) {
+        if (!this.gl) return null;
         const gl = this.gl;
         const shader = gl.createShader(type);
         gl.shaderSource(shader, source);
@@ -243,7 +290,7 @@ export default class Renderer {
     }
 
     render(simulation) {
-        if (!this.ready || !simulation.ready) return;
+        if (!this.gl || !this.ready || !simulation.ready) return;
 
         const gl = this.gl;
         
@@ -383,7 +430,7 @@ export default class Renderer {
             console.log(`⏭️  Skipping oil-composite (no SPH particles)${gridContent} - Ink stays visible!`);
         }
         
-        if (this.simulation.useOil && hasVisibleOil && this.oilCompositeProgram) {
+        if (this.enableOilComposite && this.simulation.useOil && hasVisibleOil && this.oilCompositeProgram) {
             gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilCompositeFBO);
             gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilCompositeTexture, 0);
             gl.clearColor(0.0, 0.0, 0.0, 1.0);

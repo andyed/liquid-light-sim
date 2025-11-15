@@ -16,7 +16,7 @@ import ImplicitSolver from './ImplicitSolver.js';
 import { clamp } from '../../utils.js';
 
 export default class SPHOilSystem {
-  constructor(maxParticles = 50000, containerRadius = 0.48) {
+  constructor(maxParticles = 50000, containerRadius = 0.48, sphParticleSplatVertWGSL, sphParticleSplatFragWGSL) {
     this.maxParticles = maxParticles;
     this.containerRadius = containerRadius;
     
@@ -69,6 +69,15 @@ export default class SPHOilSystem {
     this.particleColorVBO = null;   // Vertex buffer for particle colors
     this.particleDensityVBO = null; // Vertex buffer for particle densities
     this.splatProgram = null;       // Shader program for particle rendering
+
+    // WebGPU resources
+    this.webgpuDevice = null;
+    this.webgpuRenderPipeline = null;
+    this.sphParticleSplatVertWGSL = sphParticleSplatVertWGSL;
+    this.sphParticleSplatFragWGSL = sphParticleSplatFragWGSL;
+    this.webgpuParticleBuffer = null; // GPUBuffer for particle data
+    this.webgpuBindGroup = null;      // Bind group for particle buffer
+    
     this.computeShaders = null;
     
     // Performance stats
@@ -85,19 +94,102 @@ export default class SPHOilSystem {
 
     // Tunable cohesion and spawn parameters (material presets can override)
     this.shortCohesion = 6.5;
-    this.shortRadiusScale = 2.0; // shortRadius = h * shortRadiusScale
+    this.shortRadiusScale = 1.5; // REDUCED from 2.0: shortRadius = h * shortRadiusScale (prevents cross-blob attraction)
     this.minDistScale = 0.35;    // minDist = h * minDistScale
-    this.longCohesion = 1.0;
-    this.longRadiusScale = 4.0;  // longRadius = h * longRadiusScale
+    this.longCohesion = 0.0;    // DISABLED: Long-range cohesion causes distant blobs to merge
+    this.longRadiusScale = 4.0;  // longRadius = h * longRadiusScale (not used when longCohesion=0)
     this.spawnSpeedScale = 1.0;  // multiply base spawn speed
     this.gridDragCoeff = 1.3;    // coupling to grid velocities
     this.maxSpeedCap = 0.6;      // cap for |v| in _updatePositions
     this.xsphCoeff = 0.0;        // XSPH velocity smoothing (0 disables)
     this.particleSpriteRadius = 90.0; // point sprite radius in pixels (rendering)
     this.dampingFactor = 0.94;   // per-material velocity damping in _updatePositions
+    this.forceClampMax = 4.0;    // per-particle |F| clamp (tighter default)
+    this.quadraticDampingK = 2.0; // v *= 1/(1 + k*|v|) before linear damping (tighter default)
+    // Universal positional cohesion (PBD-style)
+    this.enablePositionalCohesion = true;
+    this.posCohesionCoeff = 0.12; // 0..1 blend toward local centroid
+    this.maxPosNudge = 0.004;     // as fraction of containerRadius per frame
+    this.posCohesionRadiusScale = 1.0; // radius in units of h for positional cohesion neighborhood
+    // Neighbor-aware drag (scale grid drag by local density)
+    this.enableNeighborScaledDrag = true;
+    this.neighborDragNMin = 3;
+    this.neighborDragNMax = 10;
+    // Positional cohesion boost after spawn
+    this.posCohesionBoostFrames = 0;
+    this.posCohesionBoostCoeff = 0.35; // stronger temporary pull (increased for faster congealing)
+    this.posCohesionBoostIters = 3;    // extra iterations per frame during boost (increased)
 
     // Buffers for auxiliary accumulations
     this.xsphCorr = new Float32Array(maxParticles * 2);
+    
+    // === BLOB THINNING & SPLITTING PARAMETERS ===
+    this.enableThinning = true;              // Enable thinning detection
+    this.enableSplitting = true;             // Enable automatic blob splitting
+    this.thinningThreshold = 0.6;            // Density ratio below which region is "thin" (0-1)
+    this.neckDetectionRadius = 1.5;          // Multiplier of h for neck detection
+    this.minNeighborsForThick = 8;          // Minimum neighbors to be considered "thick"
+    this.cohesionReductionInThin = 0.3;     // Reduce cohesion to 30% in thin regions
+    this.splitDistance = 2.0;                // Split when clusters are > 2.0h apart (tighter to prevent merging)
+    this.splitCheckInterval = 30;            // Check for splitting every N frames (performance)
+    this.minClusterSize = 3;                // Minimum particles to form a valid blob cluster
+  }
+
+  /**
+   * Positional cohesion: move particles slightly toward local centroid (PBD-style)
+   * Applied after velocity integration; adjusts velocity to reflect displacement.
+   */
+  applyPositionalCohesion(dt, coeffOverride) {
+    const h = this.smoothingRadius * this.shortRadiusScale; // short-range neighborhood
+    const maxNudge = this.maxPosNudge * this.containerRadius;
+    const coeff = (typeof coeffOverride === 'number') ? coeffOverride : this.posCohesionCoeff;
+    if (coeff <= 0) return;
+    
+    // Maximum distance for positional cohesion - prevents cross-blob attraction
+    // Use dedicated positional radius scale so this stays local per material
+    const maxCohesionDist = this.smoothingRadius * this.posCohesionRadiusScale;
+    
+    for (let i = 0; i < this.particleCount; i++) {
+      const xi = this.positions[i * 2];
+      const yi = this.positions[i * 2 + 1];
+      const neighbors = this.spatialHash.query(xi, yi, h);
+      if (neighbors.length <= 1) continue; // isolated
+      
+      // Compute centroid (include self) - but only count neighbors within maxCohesionDist
+      let cx = 0, cy = 0, count = 0;
+      for (const j of neighbors) {
+        const xj = this.positions[j * 2];
+        const yj = this.positions[j * 2 + 1];
+        const dx = xi - xj;
+        const dy = yi - yj;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        
+        // Only include neighbors within maxCohesionDist (prevents cross-blob attraction)
+        if (dist <= maxCohesionDist) {
+          cx += xj;
+          cy += yj;
+          count++;
+        }
+      }
+      if (count <= 1) continue; // No valid neighbors after distance filtering
+      cx /= count; cy /= count;
+      let dx = (cx - xi) * coeff;
+      let dy = (cy - yi) * coeff;
+      const mag = Math.hypot(dx, dy);
+      if (mag > maxNudge && mag > 0) {
+        const s = maxNudge / mag;
+        dx *= s; dy *= s;
+      }
+      if (mag > 0) {
+        // Apply position correction
+        this.positions[i * 2] = xi + dx;
+        this.positions[i * 2 + 1] = yi + dy;
+        // Adjust velocity to be consistent with correction
+        const invDt = dt > 0 ? (1.0 / dt) : 0.0;
+        this.velocities[i * 2] += dx * invDt;
+        this.velocities[i * 2 + 1] += dy * invDt;
+      }
+    }
   }
   
   /**
@@ -114,26 +206,136 @@ export default class SPHOilSystem {
     
     console.log('✅ SPH GPU buffers created');
   }
+
+  /**
+   * Initialize WebGPU resources for rendering
+   */
+  initWebGPU(device) {
+    this.webgpuDevice = device;
+
+    // Define the layout of the particle data in the storage buffer
+    // This must match the Particle struct in sph-particle-splat.vert.wgsl
+    // struct Particle {
+    //     pos: vec2<f32>,
+    //     vel: vec2<f32>,
+    //     density: f32,
+    //     color: vec4<f32>,
+    // };
+    // Total size: 2*4 + 2*4 + 1*4 + 4*4 = 8 + 8 + 4 + 16 = 36 bytes per particle
+    const particleStride = 36; // bytes
+
+    // Create the GPU buffer for particle data
+    this.webgpuParticleBuffer = device.createBuffer({
+      size: this.maxParticles * particleStride,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      label: 'SPH Particle Buffer',
+    });
+
+    // Create the render pipeline
+    this.webgpuRenderPipeline = device.createRenderPipeline({
+      label: 'SPH Particle Splat Render Pipeline',
+      layout: 'auto',
+      vertex: {
+        module: device.createShaderModule({
+          code: this.sphParticleSplatVertWGSL,
+          label: 'SPH Particle Splat Vertex Shader',
+        }),
+        entryPoint: 'main',
+      },
+      fragment: {
+        module: device.createShaderModule({
+          code: this.sphParticleSplatFragWGSL,
+          label: 'SPH Particle Splat Fragment Shader',
+        }),
+        entryPoint: 'main',
+        targets: [{
+          format: 'rgba16float', // Assuming the target texture format is RGBA16F
+          blend: {
+            color: {
+              srcFactor: 'one',
+              dstFactor: 'one-minus-src-alpha',
+              operation: 'add',
+            },
+            alpha: {
+              srcFactor: 'one',
+              dstFactor: 'one-minus-src-alpha',
+              operation: 'add',
+            },
+          },
+        }],
+      },
+      primitive: {
+        topology: 'triangle-strip', // We are drawing quads using triangle strips
+      },
+    });
+
+    // Create the bind group for the particle buffer
+    this.webgpuBindGroup = device.createBindGroup({
+      layout: this.webgpuRenderPipeline.getBindGroupLayout(0),
+      entries: [{
+        binding: 0,
+        resource: {
+          buffer: this.webgpuParticleBuffer,
+        },
+      }],
+      label: 'SPH Particle Bind Group',
+    });
+
+    console.log('✅ SPH WebGPU render pipeline and buffers created');
+  }
   
   /**
    * Upload particle data to GPU buffers
    */
   uploadToGPU() {
-    if (!this.gl || this.particleCount === 0) return;
+    if (!this.gl && !this.webgpuDevice || this.particleCount === 0) return;
     
-    const gl = this.gl;
-    
-    // Upload positions (only active particles)
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.particleVBO);
-    gl.bufferData(gl.ARRAY_BUFFER, this.positions.subarray(0, this.particleCount * 2), gl.DYNAMIC_DRAW);
-    
-    // Upload colors directly (no temperature encoding - it was overwriting colors!)
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.particleColorVBO);
-    gl.bufferData(gl.ARRAY_BUFFER, this.colors.subarray(0, this.particleCount * 3), gl.DYNAMIC_DRAW);
-    
-    // Upload densities
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.particleDensityVBO);
-    gl.bufferData(gl.ARRAY_BUFFER, this.densities.subarray(0, this.particleCount), gl.DYNAMIC_DRAW);
+    // WebGL2 upload (for fallback)
+    if (this.gl) {
+      const gl = this.gl;
+      
+      // Upload positions (only active particles)
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.particleVBO);
+      gl.bufferData(gl.ARRAY_BUFFER, this.positions.subarray(0, this.particleCount * 2), gl.DYNAMIC_DRAW);
+      
+      // Upload colors directly (no temperature encoding - it was overwriting colors!)
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.particleColorVBO);
+      gl.bufferData(gl.ARRAY_BUFFER, this.colors.subarray(0, this.particleCount * 3), gl.DYNAMIC_DRAW);
+      
+      // Upload densities
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.particleDensityVBO);
+      gl.bufferData(gl.ARRAY_BUFFER, this.densities.subarray(0, this.particleCount), gl.DYNAMIC_DRAW);
+    }
+
+    // WebGPU upload
+    if (this.webgpuDevice) {
+      // Create interleaved data for WebGPU
+      const interleavedData = new Float32Array(this.particleCount * 9); // 2 pos + 2 vel + 1 density + 4 color
+      for (let i = 0; i < this.particleCount; i++) {
+        const baseIdx = i * 9;
+        // Position
+        interleavedData[baseIdx] = this.positions[i * 2];
+        interleavedData[baseIdx + 1] = this.positions[i * 2 + 1];
+        // Velocity (placeholder for now, will be updated by compute shader)
+        interleavedData[baseIdx + 2] = this.velocities[i * 2];
+        interleavedData[baseIdx + 3] = this.velocities[i * 2 + 1];
+        // Density
+        interleavedData[baseIdx + 4] = this.densities[i];
+        // Color (add alpha channel, assuming 1.0 for now)
+        interleavedData[baseIdx + 5] = this.colors[i * 3];
+        interleavedData[baseIdx + 6] = this.colors[i * 3 + 1];
+        interleavedData[baseIdx + 7] = this.colors[i * 3 + 2];
+        interleavedData[baseIdx + 8] = 1.0; // Alpha
+      }
+
+      this.webgpuDevice.queue.writeBuffer(
+        this.webgpuParticleBuffer,
+        0,
+        interleavedData.buffer,
+        interleavedData.byteOffset,
+        interleavedData.byteLength
+      );
+    }
   }
   
   /**
@@ -142,7 +344,31 @@ export default class SPHOilSystem {
    * @param {number} canvasWidth - Canvas width
    * @param {number} canvasHeight - Canvas height
    */
-  renderParticles(targetFBO, canvasWidth, canvasHeight) {
+  renderParticles(target, canvasWidth, canvasHeight) {
+    if (this.webgpuRenderPipeline && this.webgpuDevice && target instanceof GPUTextureView) {
+      // WebGPU rendering path
+      this.uploadToGPU();
+      const startTime = performance.now();
+      const commandEncoder = this.webgpuDevice.createCommandEncoder();
+      const passEncoder = commandEncoder.beginRenderPass({
+        colorAttachments: [{
+          view: target,
+          loadOp: 'clear',
+          clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 0.0 },
+          storeOp: 'store',
+        }],
+      });
+
+      passEncoder.setPipeline(this.webgpuRenderPipeline);
+      passEncoder.setBindGroup(0, this.webgpuBindGroup);
+      passEncoder.draw(4, this.particleCount, 0, 0); // 4 vertices per quad, particleCount instances
+      passEncoder.end();
+      this.webgpuDevice.queue.submit([commandEncoder.finish()]);
+      this.stats.renderTime = performance.now() - startTime;
+      return;
+    }
+
+    // WebGL2 rendering path (fallback)
     if (!this.gl || !this.splatProgram || this.particleCount === 0) return;
     
     const startTime = performance.now();
@@ -152,7 +378,7 @@ export default class SPHOilSystem {
     this.uploadToGPU();
     
     // Bind framebuffer
-    gl.bindFramebuffer(gl.FRAMEBUFFER, targetFBO);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target);
     
     // Use particle splat shader
     gl.useProgram(this.splatProgram);
@@ -236,16 +462,10 @@ export default class SPHOilSystem {
       this.positions[idx * 2] = x;
       this.positions[idx * 2 + 1] = y;
       
-      // Add TINY radial velocity variance for splitting/recombining behavior
-      // Particles near edge spawn with slight outward velocity, center nearly stationary
-      const radiusFraction = r / spawnRadius; // 0 at center, 1 at edge
-      // Lower initial outward velocity to avoid early scattering
-      const baseSpeed = (0.002 + radiusFraction * 0.006) * this.spawnSpeedScale; // gentler 0.002-0.008
-      const vx = Math.cos(angle) * baseSpeed * (0.5 + Math.random() * 0.5);
-      const vy = Math.sin(angle) * baseSpeed * (0.5 + Math.random() * 0.5);
-      
-      this.velocities[idx * 2] = vx;
-      this.velocities[idx * 2 + 1] = vy;
+      // Spawn with ZERO initial velocity for immediate congealing
+      // Particles will be pulled together by cohesion forces, not scattered by initial kick
+      this.velocities[idx * 2] = 0;
+      this.velocities[idx * 2 + 1] = 0;
       this.forces[idx * 2] = 0;
       this.forces[idx * 2 + 1] = 0;
       this.densities[idx] = this.restDensity;
@@ -257,7 +477,24 @@ export default class SPHOilSystem {
       this.colors[idx * 3 + 2] = color.b;
     }
     
+    // Activate positional cohesion boost for newly spawned particles
+    // This helps them congeal into a single blob immediately
+    if (count > 0) {
+      this.posCohesionBoostFrames = 120; // ~2 seconds at 60fps for strong initial congealing
+    }
+    
     return count;
+  }
+
+  /**
+   * Count particles within a given world-space radius of a point.
+   * Uses the spatial hash for efficiency. Intended for spawn rules
+   * that depend on whether a splat lands inside an existing blob.
+   */
+  countParticlesNear(x, y, radius) {
+    if (!this.spatialHash) return 0;
+    const neighbors = this.spatialHash.query(x, y, radius);
+    return neighbors ? neighbors.length : 0;
   }
 
   /**
@@ -272,23 +509,15 @@ export default class SPHOilSystem {
    *  - clusterRadiusPx: spawn radius inside cluster (pixels)
    */
   spawnClusters(centerX, centerY, color, opts = {}) {
-    const clusterCount = opts.clusterCount ?? 4;
+    // DISABLED: Cluster spawning creates multiple separate blobs
+    // Instead, spawn all particles in a single tight cluster for immediate blob formation
+    const clusterCount = 1; // Force single cluster
     const particlesPerCluster = opts.particlesPerCluster ?? 3;
-    const interClusterRadiusPx = opts.interClusterRadiusPx ?? 18.0;
     const clusterRadiusPx = opts.clusterRadiusPx ?? 10.0;
-    const jitter = opts.jitter ?? 0.35; // fraction of 2pi/clusterCount
-
-    // Convert inter-cluster radius from pixels to world
-    const interR = (interClusterRadiusPx / 1000.0) * this.containerRadius;
-    let totalSpawned = 0;
-    for (let k = 0; k < clusterCount; k++) {
-      const baseAngle = (2.0 * Math.PI * k) / clusterCount;
-      const angle = baseAngle + (Math.random() - 0.5) * (2.0 * Math.PI / clusterCount) * jitter;
-      const cx = centerX + Math.cos(angle) * interR;
-      const cy = centerY + Math.sin(angle) * interR;
-      totalSpawned += this.spawnParticles(cx, cy, particlesPerCluster, color, clusterRadiusPx);
-    }
-    return totalSpawned;
+    
+    // Spawn all particles at center in a single tight cluster
+    const totalParticles = clusterCount * particlesPerCluster;
+    return this.spawnParticles(centerX, centerY, totalParticles, color, clusterRadiusPx);
   }
   
   /**
@@ -373,17 +602,45 @@ export default class SPHOilSystem {
     for (let i = 0; i < this.particleCount; i++) {
       const vGridX = gridVelocities[i * 2];
       const vGridY = gridVelocities[i * 2 + 1];
-      
       const vParticleX = this.velocities[i * 2];
       const vParticleY = this.velocities[i * 2 + 1];
       
+      // Neighbor-aware scaling of drag based on local density
+      let scaledDrag = dragCoeff;
+      if (this.enableNeighborScaledDrag) {
+        const h = this.smoothingRadius;
+        const xi = this.positions[i * 2];
+        const yi = this.positions[i * 2 + 1];
+        const n = this.spatialHash.query(xi, yi, h).length - 1; // exclude self statistically
+        const nMin = this.neighborDragNMin;
+        const nMax = Math.max(this.neighborDragNMax, nMin + 1);
+        const t = Math.max(0, Math.min(1, (n - nMin) / (nMax - nMin)));
+        const smooth = t * t * (3.0 - 2.0 * t); // smoothstep
+        scaledDrag = dragCoeff * smooth;
+      }
+      
       // Drag toward grid velocity (rotation + water coupling)
-      const fx = dragCoeff * (vGridX - vParticleX);
-      const fy = dragCoeff * (vGridY - vParticleY);
+      const fx = scaledDrag * (vGridX - vParticleX);
+      const fy = scaledDrag * (vGridY - vParticleY);
       
       // Accumulate (don't overwrite existing forces)
       this.forces[i * 2] += fx;
       this.forces[i * 2 + 1] += fy;
+    }
+
+    // Clamp total force magnitude per particle to prevent "helicopter" impulses
+    if (this.forceClampMax > 0) {
+      const fmax = this.forceClampMax;
+      for (let i = 0; i < this.particleCount; i++) {
+        const fx = this.forces[i * 2];
+        const fy = this.forces[i * 2 + 1];
+        const fm = Math.hypot(fx, fy);
+        if (fm > fmax && fm > 0) {
+          const s = fmax / fm;
+          this.forces[i * 2] = fx * s;
+          this.forces[i * 2 + 1] = fy * s;
+        }
+      }
     }
   }
 
@@ -548,13 +805,38 @@ export default class SPHOilSystem {
       
       // After solver, velocities are updated. Now update positions.
       this._updatePositions(dt);
+      // Positional cohesion (PBD-style)
+      if (this.enablePositionalCohesion) {
+        this.applyPositionalCohesion(dt, this.posCohesionCoeff);
+        if (this.posCohesionBoostFrames > 0) {
+          for (let k = 0; k < this.posCohesionBoostIters; k++) {
+            this.applyPositionalCohesion(dt, this.posCohesionBoostCoeff);
+          }
+          this.posCohesionBoostFrames--;
+        }
+      }
 
     } else {
       // PHASE 1: Explicit integration (standard SPH)
       this.integrate(dt);
+      // Positional cohesion (PBD-style)
+      if (this.enablePositionalCohesion) {
+        this.applyPositionalCohesion(dt, this.posCohesionCoeff);
+        if (this.posCohesionBoostFrames > 0) {
+          for (let k = 0; k < this.posCohesionBoostIters; k++) {
+            this.applyPositionalCohesion(dt, this.posCohesionBoostCoeff);
+          }
+          this.posCohesionBoostFrames--;
+        }
+      }
     }
     
     this.enforceBoundaries();
+    
+    // STEP: Check for blob splitting (throttled for performance)
+    if (this.enableSplitting && (this.frameIndex % this.splitCheckInterval === 0)) {
+      this.checkAndSplitBlobs();
+    }
     
     // Debug: Log density, pressure, and forces
     if (Math.random() < 0.02 && this.particleCount > 0) {
@@ -867,19 +1149,58 @@ export default class SPHOilSystem {
     }
     
     // STEP 2: EXPLICIT COHESION (short-range every frame, long-range throttled)
+    // WITH THINNING DETECTION: Reduce cohesion in thin regions
     const shortCohesion = this.shortCohesion;
     const shortRadius = h * this.shortRadiusScale;
     const minDist = h * this.minDistScale;
     const longCohesion = this.longCohesion;
     const longRadius = h * this.longRadiusScale;
 
-    // Short-range pass (every frame)
+    // Pre-compute thinning factors for each particle (if enabled)
+    const thinningFactors = new Float32Array(this.particleCount);
+    if (this.enableThinning) {
+      for (let i = 0; i < this.particleCount; i++) {
+        const xi = this.positions[i * 2];
+        const yi = this.positions[i * 2 + 1];
+        const rhoi = this.densities[i];
+        
+        // Check local density relative to rest density
+        const densityRatio = rhoi / this.restDensity;
+        
+        // Count neighbors within short radius
+        const neighborsS = this.spatialHash.query(xi, yi, shortRadius);
+        const neighborCount = neighborsS.length - 1; // exclude self
+        
+        // Particle is "thin" if:
+        // 1. Density is below threshold, OR
+        // 2. Too few neighbors (stretched region)
+        // BUT: Don't mark as thin if it has ANY neighbors (might be newly spawned)
+        // This prevents newly spawned particles from being marked thin before they congeal
+        const hasNeighbors = neighborCount > 0;
+        const isThin = hasNeighbors && (
+          densityRatio < this.thinningThreshold || 
+          neighborCount < this.minNeighborsForThick
+        );
+        
+        // Reduce cohesion in thin regions
+        thinningFactors[i] = isThin ? this.cohesionReductionInThin : 1.0;
+      }
+    } else {
+      thinningFactors.fill(1.0);
+    }
+
+    // Short-range pass (every frame) - with thinning-aware cohesion
+    // Maximum distance check to prevent cross-blob attraction
+    const maxCohesionDist = h * this.splitDistance; // Same as positional cohesion limit
+    
     for (let i = 0; i < this.particleCount; i++) {
       const xi = this.positions[i * 2];
       const yi = this.positions[i * 2 + 1];
       const neighborsS = this.spatialHash.query(xi, yi, shortRadius);
       const maxShort = 64;
       const sCount = Math.min(neighborsS.length, maxShort);
+      const thinFactorI = thinningFactors[i];
+      
       for (let n = 0; n < sCount; n++) {
         const j = neighborsS[n];
         if (i === j) continue;
@@ -887,9 +1208,17 @@ export default class SPHOilSystem {
         const dy = this.positions[j * 2 + 1] - yi;
         const dist = Math.hypot(dx, dy);
         if (dist < minDist || dist <= 1e-6) continue;
+        
+        // CRITICAL: Don't apply cohesion if particles are too far apart (different blobs)
+        if (dist > maxCohesionDist) continue;
+        
+        // Apply thinning factor to both particles (neck region gets reduced cohesion)
+        const thinFactorJ = thinningFactors[j];
+        const combinedThinFactor = Math.min(thinFactorI, thinFactorJ);
+        
         const q = dist / shortRadius;
         const falloff = Math.exp(-q * q * 4.0);
-        const strength = shortCohesion * falloff;
+        const strength = shortCohesion * falloff * combinedThinFactor;
         if (strength > 0) {
           const invd = 1.0 / dist;
           this.forces[i * 2] += (dx * invd) * strength * this.particleMass;
@@ -898,7 +1227,7 @@ export default class SPHOilSystem {
       }
     }
 
-    // Long-range pass (throttled)
+    // Long-range pass (throttled) - with thinning-aware cohesion
     const doLongRange = (this.frameIndex % 3) === 0;
     if (doLongRange && longCohesion > 0 && longRadius > shortRadius) {
       for (let i = 0; i < this.particleCount; i++) {
@@ -907,6 +1236,8 @@ export default class SPHOilSystem {
         const neighborsL = this.spatialHash.query(xi, yi, longRadius);
         const maxLong = 96;
         const lCount = Math.min(neighborsL.length, maxLong);
+        const thinFactorI = thinningFactors[i];
+        
         for (let n = 0; n < lCount; n++) {
           const j = neighborsL[n];
           if (i === j) continue;
@@ -914,9 +1245,14 @@ export default class SPHOilSystem {
           const dy = this.positions[j * 2 + 1] - yi;
           const dist = Math.hypot(dx, dy);
           if (dist < Math.max(minDist, shortRadius) || dist >= longRadius || dist <= 1e-6) continue;
+          
+          // Apply thinning factor (weaker in long-range, but still applies)
+          const thinFactorJ = thinningFactors[j];
+          const combinedThinFactor = Math.min(thinFactorI, thinFactorJ);
+          
           const q = (dist - shortRadius) / (longRadius - shortRadius);
           const falloff = Math.exp(-q * 2.0);
-          const strength = longCohesion * falloff;
+          const strength = longCohesion * falloff * combinedThinFactor;
           if (strength > 0) {
             const invd = 1.0 / dist;
             this.forces[i * 2] += (dx * invd) * strength * this.particleMass;
@@ -1045,7 +1381,17 @@ export default class SPHOilSystem {
     const maxSpeed = this.maxSpeedCap;  // Tunable cap per material
     
     for (let i = 0; i < this.particleCount; i++) {
-      // Apply damping
+      // Quadratic speed damping before linear damping (eats residual kinetic energy)
+      const vx0 = this.velocities[i * 2];
+      const vy0 = this.velocities[i * 2 + 1];
+      const speed0 = Math.hypot(vx0, vy0);
+      if (speed0 > 0) {
+        const k = this.quadraticDampingK;
+        const q = 1.0 / (1.0 + k * speed0);
+        this.velocities[i * 2] = vx0 * q;
+        this.velocities[i * 2 + 1] = vy0 * q;
+      }
+      // Apply linear damping
       this.velocities[i * 2] *= damping;
       this.velocities[i * 2 + 1] *= damping;
       
@@ -1077,6 +1423,72 @@ export default class SPHOilSystem {
         this.velocities[i * 2 + 1] = 0;
       }
     }
+  }
+  
+  /**
+   * Check for disconnected blob clusters and allow them to split
+   * Uses graph connectivity analysis to find separate clusters
+   */
+  checkAndSplitBlobs() {
+    if (this.particleCount < this.minClusterSize * 2) return; // Need at least 2 clusters
+    
+    const h = this.smoothingRadius;
+    const connectionDistance = h * this.splitDistance;
+    
+    // Build connectivity graph: particles are connected if within connectionDistance
+    const visited = new Array(this.particleCount).fill(false);
+    const clusters = [];
+    
+    // Find all connected components using DFS
+    for (let i = 0; i < this.particleCount; i++) {
+      if (visited[i]) continue;
+      
+      // Start new cluster
+      const cluster = [];
+      const stack = [i];
+      visited[i] = true;
+      
+      while (stack.length > 0) {
+        const current = stack.pop();
+        cluster.push(current);
+        
+        const xi = this.positions[current * 2];
+        const yi = this.positions[current * 2 + 1];
+        
+        // Find all neighbors within connection distance
+        const neighbors = this.spatialHash.query(xi, yi, connectionDistance);
+        
+        for (const j of neighbors) {
+          if (visited[j] || j === current) continue;
+          
+          const xj = this.positions[j * 2];
+          const yj = this.positions[j * 2 + 1];
+          const dx = xi - xj;
+          const dy = yi - yj;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          
+          if (dist <= connectionDistance) {
+            visited[j] = true;
+            stack.push(j);
+          }
+        }
+      }
+      
+      // Only keep clusters with minimum size
+      if (cluster.length >= this.minClusterSize) {
+        clusters.push(cluster);
+      }
+    }
+    
+    // If we have multiple clusters, they're already split (no action needed)
+    // The thinning mechanism will allow them to drift apart naturally
+    if (clusters.length > 1 && this.debug && Math.random() < 0.1) {
+      console.log(`🔀 Detected ${clusters.length} blob clusters (sizes: ${clusters.map(c => c.length).join(', ')})`);
+    }
+    
+    // Note: We don't actively force particles apart here - the reduced cohesion
+    // in thin regions (from thinning detection) will naturally allow clusters
+    // to separate when they're stretched thin enough.
   }
   
   /**

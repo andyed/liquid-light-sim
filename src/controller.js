@@ -69,7 +69,7 @@ export default class Controller {
         this.currentMouseX = 0;
         this.currentMouseY = 0;
 
-        const canvas = this.gl.canvas;
+        const canvas = this.renderer.gl ? this.renderer.gl.canvas : document.getElementById('gl-canvas');
         // Disable native gesture handling so touches map to paint/jets
         canvas.style.touchAction = 'none';
         // Ensure canvas can receive focus for keyboard events in mobile emulators
@@ -1025,7 +1025,7 @@ export default class Controller {
     }
 
     onMouseDown(e) {
-        const rect = this.gl.canvas.getBoundingClientRect();
+        const rect = this.canvas.getBoundingClientRect();
         const x = (e.clientX - rect.left) / rect.width;
         const y = 1.0 - (e.clientY - rect.top) / rect.height;
         
@@ -1060,7 +1060,7 @@ export default class Controller {
     }
 
     onMouseMove(e) {
-        const rect = this.gl.canvas.getBoundingClientRect();
+        const rect = this.canvas.getBoundingClientRect();
         const x = (e.clientX - rect.left) / rect.width;
         const y = 1.0 - (e.clientY - rect.top) / rect.height;
         
@@ -1271,7 +1271,7 @@ export default class Controller {
     onTouchStart(e) {
         e.preventDefault();
         const touch = e.touches[0];
-        const rect = this.gl.canvas.getBoundingClientRect();
+        const rect = this.canvas.getBoundingClientRect();
         const x = (touch.clientX - rect.left) / rect.width;
         const y = 1.0 - (touch.clientY - rect.top) / rect.height;
         
@@ -1295,7 +1295,7 @@ export default class Controller {
     onTouchMove(e) {
         e.preventDefault();
         const touch = e.touches[0];
-        const rect = this.gl.canvas.getBoundingClientRect();
+        const rect = this.canvas.getBoundingClientRect();
         const x = (touch.clientX - rect.left) / rect.width;
         const y = 1.0 - (touch.clientY - rect.top) / rect.height;
         
@@ -1337,7 +1337,7 @@ export default class Controller {
             this.isRightMouseDown = false;
             this.isMouseDown = true;
             const t = e.touches[0];
-            const rect = this.gl.canvas.getBoundingClientRect();
+            const rect = this.canvas.getBoundingClientRect();
             this.currentMouseX = (t.clientX - rect.left) / rect.width;
             this.currentMouseY = 1.0 - (t.clientY - rect.top) / rect.height;
         }

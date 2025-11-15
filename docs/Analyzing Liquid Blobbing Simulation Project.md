@@ -1,17 +1,15 @@
-
-
 # **Technical Analysis and Recommendations for Liquid-Liquid Blob Simulation in Real-Time Environments**
 
 ## **1\. Executive Synthesis: Diagnosing the Interface Problem and Roadmap**
 
-The challenge of achieving consistent, cohesive "blobbing behavior" in a liquid light simulation is fundamentally an interfacial dynamics problem. The simulation is attempting to model a classic system of coupled fluid dynamics and heat transfer between two immiscible liquids, analogous to a lava lamp.1 The primary aesthetic failure—the lack of stable, organic blobs—overwhelmingly suggests a deficiency in the modeling and stable integration of the interfacial tension (IFT) force.
+The challenge of achieving consistent, cohesive "blobbing behavior" in this **projector-style liquid light show simulation** (oil and water on a glass plate, à la electric acid kool-aid test) is fundamentally an interfacial dynamics problem. The simulation is attempting to model a classic system of coupled fluid dynamics and heat transfer between two immiscible liquids. Lava lamp literature is useful as a **physics analogue**, but the target aesthetic is the overhead projector liquid light show, not a classic lava lamp.1 The primary aesthetic failure—the lack of stable, organic blobs—overwhelmingly suggests a deficiency in the modeling and stable integration of the interfacial tension (IFT) force.
 
 ### **1.1. The Interfacial Physics of Liquid Light**
 
 Successful simulation of the liquid light effect depends on accurately modeling two primary, competing physical forces and their thermal dependency:
 
 1. **Interfacial Tension ($\\sigma$):** This force acts to minimize the surface area of the oil phase, coercing it into stable, spherical shapes.3 High IFT is the critical cohesive mechanism required to resist fluid breakup and govern the smooth merging (coalescence) of droplets.5 If IFT is absent or numerically weak, the oil phase will simply diffuse, shear unrealistically, or fail to form stable spheres, leading to the observed "lack of blobbing."  
-2. **Buoyancy and Thermal Convection:** The movement is driven by a density difference ($\\Delta \\rho$) between the oil and the carrier fluid, which is temperature-dependent ($\\rho(T)$).6 This thermal coupling is necessary to sustain the cyclical, chaotic movement characteristic of a lava lamp, where heated, less dense blobs rise, cool and become denser, and subsequently sink.8
+2. **Buoyancy and Thermal Convection:** The movement is driven by a density difference ($\\Delta \\rho$) between the oil and the carrier fluid, which is temperature-dependent ($\\rho(T)$).6 This thermal coupling is necessary to sustain the cyclical, chaotic movement characteristic of **projector liquid light shows**—with heated, less dense blobs rising, cooling, and then sinking. Lava-lamp convection literature is referenced purely as an analytical analogue.
 
 ### **1.2. Deeper Analysis: The Stability Imperative**
 

@@ -38,9 +38,13 @@ void main() {
     float distFromCenter = length(v_worldPos);
     float edgeFade = 1.0 - smoothstep(u_containerRadius * 0.85, u_containerRadius * 0.95, distFromCenter);
     
-    // VERY HIGH alpha for strong field contribution
-    // Each particle needs to contribute significantly to reach threshold
-    float alpha = falloff * 1.0 * edgeFade; // MAXED for visibility (was 0.8)
+    // Density-based gain: let local SPH density modulate thickness contribution.
+    // Assume restDensity ~ 1000; normalize and apply a gentle, sublinear gain
+    float rhoNorm = clamp(v_density / 1000.0, 0.5, 2.0);
+    float densityGain = pow(rhoNorm, 0.6);
+
+    // Alpha: geometric falloff * density-based gain * edge fade
+    float alpha = falloff * densityGain * edgeFade;
     
     // PRE-MULTIPLY color by alpha for proper pigment mixing
     // This prevents white accumulation - colors will blend like translucent layers

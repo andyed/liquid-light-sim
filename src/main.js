@@ -6,8 +6,8 @@ import { SimulationTester, PerformanceMonitor } from '../tests/test-utils.js';
 console.log("🎨 Welcome to Liquid Light Simulator!");
 
 class App {
-    constructor() {
-        this.renderer = new Renderer();
+    constructor(useWebGPU) {
+        this.renderer = new Renderer(useWebGPU);
         this.simulation = new Simulation(this.renderer);
         this.renderer.setSimulation(this.simulation);
         this.controller = new Controller(this.simulation, this.renderer);
@@ -43,7 +43,7 @@ class App {
         this.animate(0);
     }
 
-    animate(currentTime) {
+    async animate(currentTime) {
         const deltaTime = (currentTime - this.lastTime) * 0.001; // convert to seconds
         this.lastTime = currentTime;
 
@@ -58,13 +58,18 @@ class App {
         // Update controller (continuous injection when buttons held)
         this.controller.update();
         
-        this.simulation.update(deltaTime);
+        await this.simulation.update(deltaTime);
         this.renderer.render(this.simulation);
 
         requestAnimationFrame(this.animate);
     }
 }
 
-const app = new App();
-app.run();
-
+window.addEventListener('DOMContentLoaded', async (event) => {
+    // For stability while debugging, force WebGL-only renderer.
+    // WebGPU features (SPH compute, etc.) can still be wired manually
+    // via Simulation/OilLayer flags without changing the core renderer.
+    const useWebGPU = false;
+    const app = new App(useWebGPU);
+    app.run();
+});

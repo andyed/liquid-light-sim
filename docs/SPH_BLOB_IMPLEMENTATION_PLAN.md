@@ -45,7 +45,7 @@ This is **exactly** what happened. We're at the grid-based ceiling.
 
 3. **Temperature-Dependent Dynamics** ✅
    - ρ(T): Hot oil rises (less dense), cool oil sinks (more dense)
-   - Creates chaotic convection cycle (lava lamp effect)
+   - Creates chaotic convection cycles reminiscent of lava-lamp physics, but applied here to an overhead-projector liquid light show aesthetic
    - We already have heat lamp system - just needs to affect density!
 
 4. **MetaBall Visualization (Already Working!)** ✅
@@ -399,7 +399,7 @@ src/shaders/
 
 ### Phase 3 Complete:
 - [ ] Hot oil rises, cool oil sinks (ρ(T) working)
-- [ ] Chaotic convection cycle (lava lamp!)
+- [ ] Chaotic convection cycle appropriate for projector liquid light shows (lava-lamp papers used only as physics references)
 - [ ] Blobs merge smoothly with bulgy joining
 - [ ] Natural split/coalescence behavior
 

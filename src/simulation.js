@@ -7,6 +7,8 @@ import { advectVelocity, advectColor } from './simulation/kernels/advection.js';
 import { applyViscosity } from './simulation/kernels/viscosity.js';
 import { projectVelocity } from './simulation/kernels/pressure.js';
 import { diffuseColor } from './simulation/kernels/diffusion.js';
+import webGPUContext from './simulation/sph/webgpu.js';
+import { runTestComputeShader } from './simulation/sph/webgpu-test.js';
 
 /**
  * Simulation class - Pure Model (no rendering logic)
@@ -21,6 +23,7 @@ export default class Simulation {
     constructor(renderer) {
         this.renderer = renderer;
         this.gl = renderer.gl;
+        this.webgpu = null;
         
         // Physics parameters - back to working values after radical experiment
         this.viscosity = 0.03;  // Lower viscosity so momentum lingers longer
@@ -121,6 +124,15 @@ export default class Simulation {
 
     async init() {
         const gl = this.gl;
+
+        // Initialize WebGPU context from renderer's device
+        if (this.renderer.webgpuDevice) {
+            webGPUContext.setDevice(this.renderer.webgpuDevice);
+            this.webgpu = webGPUContext;
+            await runTestComputeShader(this.webgpu.device, this.webgpu.queue);
+        } else {
+            console.warn("WebGPU not available from renderer, falling back to WebGL-only.");
+        }
 
         // Load all shaders
         const fullscreenVert = await loadShader('src/shaders/fullscreen.vert.glsl');
@@ -302,11 +314,16 @@ export default class Simulation {
         );
         console.log('✅ Oil layer composite shader loaded');
 
-        // SPH particle rendering (NEW!)
+        // SPH particle rendering (WebGL2) - used by CPU SPH path for texture splats
         this.sphParticleSplatProgram = this.renderer.createProgram(
             await loadShader('src/shaders/sph-particle-splat.vert.glsl'),
             await loadShader('src/shaders/sph-particle-splat.frag.glsl')
         );
+
+        // Load WebGPU SPH shaders
+        const sphParticleSplatVertWGSL = await loadShader('src/shaders/webgpu/sph-particle-splat.vert.wgsl');
+        const sphParticleSplatFragWGSL = await loadShader('src/shaders/webgpu/sph-particle-splat.frag.wgsl');
+
 
         // Splat per-pixel oil material properties
         this.splatOilPropsProgram = this.renderer.createProgram(
@@ -320,29 +337,32 @@ export default class Simulation {
             await loadShader('src/shaders/offset-copy.frag.glsl')
         );
 
-        const width = gl.canvas.width;
-        const height = gl.canvas.height;
+        const canvas = this.renderer.gl ? this.renderer.gl.canvas : document.getElementById('gl-canvas');
+        const width = canvas.width;
+        const height = canvas.height;
 
         // Occupancy texture/FBO at low resolution (UNSIGNED_BYTE for easy readback)
-        this.occupancyWidth = 128;
-        this.occupancyHeight = 128;
-        this.occupancyTexture = gl.createTexture();
-        gl.bindTexture(gl.TEXTURE_2D, this.occupancyTexture);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.occupancyWidth, this.occupancyHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        this.occupancyFBO = gl.createFramebuffer();
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.occupancyFBO);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.occupancyTexture, 0);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        if (gl) {
+            this.occupancyWidth = 128;
+            this.occupancyHeight = 128;
+            this.occupancyTexture = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, this.occupancyTexture);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.occupancyWidth, this.occupancyHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            this.occupancyFBO = gl.createFramebuffer();
+            gl.bindFramebuffer(gl.FRAMEBUFFER, this.occupancyFBO);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.occupancyTexture, 0);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        }
 
         this.water = new WaterLayer(this);
         await this.water.init();
         
         // Initialize oil layer (always enabled now since all materials use it)
-        this.oil = new OilLayer(this);
+        this.oil = new OilLayer(this, sphParticleSplatVertWGSL, sphParticleSplatFragWGSL);
         await this.oil.init();
         this.useOil = true;
         
@@ -491,21 +511,28 @@ export default class Simulation {
             console.warn('⚠️ Splat called but not ready:', {ready: this.ready, rendererReady: this.renderer.ready});
             return;
         }
-        if (this.water) {
-            console.log(`🔍 Calling water.splatColor...`);
-            this.water.splatColor(x, y, color, radius);
-            // small stirring impulse to match previous behavior
-            const cx = 0.5, cy = 0.5;
-            const dx = x - cx;
-            const dy = y - cy;
-            const len = Math.max(1e-4, Math.hypot(dx, dy));
-            const tx = -dy / len;
-            const ty = dx / len;
-            const dir = this.rotationAmount >= 0 ? 1 : -1;
-            const strength = 0.02 * (0.5 + Math.min(1.0, Math.abs(this.rotationAmount)));
-            const vx = tx * strength * dir;
-            const vy = ty * strength * dir;
-            this.water.splatVelocity(x, y, vx, vy, radius * 1.25);
+
+        if (this.webgpu) {
+            if (this.oil) {
+                this.oil.splatColor(x, y, color, radius);
+            }
+        } else {
+            if (this.water) {
+                console.log(`🔍 Calling water.splatColor...`);
+                this.water.splatColor(x, y, color, radius);
+                // small stirring impulse to match previous behavior
+                const cx = 0.5, cy = 0.5;
+                const dx = x - cx;
+                const dy = y - cy;
+                const len = Math.max(1e-4, Math.hypot(dx, dy));
+                const tx = -dy / len;
+                const ty = dx / len;
+                const dir = this.rotationAmount >= 0 ? 1 : -1;
+                const strength = 0.02 * (0.5 + Math.min(1.0, Math.abs(this.rotationAmount)));
+                const vx = tx * strength * dir;
+                const vy = ty * strength * dir;
+                this.water.splatVelocity(x, y, vx, vy, radius * 1.25);
+            }
         }
     }
 
@@ -583,12 +610,14 @@ export default class Simulation {
         this.oil.swapOilTextures();
     }
 
-    update(deltaTime) {
+    async update(deltaTime) {
         if (!this.ready || !this.renderer.ready || this.paused) return;
         const gl = this.gl;
         const dt = Math.min(deltaTime, 0.016);
         // Defensive viewport for all passes this frame
-        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+        if (gl) {
+            gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+        }
         // Combine rotation sources
         this.rotationAmount = this.rotationBase + this.rotationDelta;
         
@@ -602,12 +631,14 @@ export default class Simulation {
         
         if (this.water) this.water.update(dt);
         // Run oil after water velocity update (no coupling yet)
-        if (this.useOil && this.oil) this.oil.update(dt);
+        if (this.useOil && this.oil) await this.oil.update(dt);
         // Keep corruption check centralized here
-        if (this.checkForCorruption()) {
+        if (this.gl && this.checkForCorruption()) {
             console.error('❌ Simulation paused due to corruption');
         }
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        if (gl) {
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        }
     }
 
     recreateTextures() {
