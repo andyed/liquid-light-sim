@@ -30,9 +30,12 @@ The long-term destination of this plan is therefore:
 - **SPH path in production:** CPU SPH + WebGL-only rendering (Phase 1 of ALBSP roadmap).
   - SPH particles are simulated on CPU (`SPHOilSystem`) and rendered via the existing WebGL particle splat + oil composite pipeline.
   - Ink/water render through `WaterLayer → colorTexture1 → Renderer.render`.
-- **WebGPU SPH:** Implemented and working in isolation (compute + render pipelines), but **disabled by default** after triggering a reproducible hard macOS-level crash under load.
+- **WebGPU SPH:** Implemented and working in isolation (compute + render pipelines), but **disabled by default** after causing device/OS-level instability on multiple platforms when used with per-frame particle readback.
   - WebGPU context bootstrap and a test compute shader run successfully.
   - WebGPU SPH compute/draw feature flags exist in `OilLayer`, but are currently left `false` in the shipped configuration.
+  - On **macOS 26.1 / M3 Max (Chrome WebGPU)**, enabling WebGPU SPH with per-frame full-buffer readback reliably triggers a **WindowServer watchdog timeout** (system compositor crash) after a few seconds under load.
+  - On **Windows / NVIDIA (D3D12 backend)**, the same pattern (compute + full-buffer readback every frame) leads to `DXGI_ERROR_DEVICE_HUNG` and a **lost device** during `GPUBuffer.mapAsync` on the staging buffer.
+  - Conclusion: the "GPU compute → full particle buffer copy → per-frame CPU readback" design is not viable; SPH must be treated as a GPU-resident backend, with readback reserved for infrequent debugging/telemetry.
 - **Debug baseline:** All recent debugging and tuning assume this stable CPU SPH + WebGL renderer baseline.
 
 ---

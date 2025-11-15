@@ -106,6 +106,10 @@ export default class SPHOilSystem {
     this.minDistScale = 0.35;    // minDist = h * minDistScale
     this.longCohesion = 0.0;    // DISABLED: Long-range cohesion causes distant blobs to merge
     this.longRadiusScale = 4.0;  // longRadius = h * longRadiusScale (not used when longCohesion=0)
+    // Explicit IPF-style cohesion term (short-range attractive force between nearby particles)
+    this.ipfStrength = 0.0;        // base IPF attraction magnitude (per material)
+    this.ipfInnerRadiusScale = 0.55; // inner radius (in units of h) where IPF starts to act
+    this.ipfOuterRadiusScale = 1.0;  // outer radius (in units of h) where IPF goes to zero
     this.spawnSpeedScale = 1.0;  // multiply base spawn speed
     this.gridDragCoeff = 1.3;    // coupling to grid velocities
     this.maxSpeedCap = 0.6;      // cap for |v| in _updatePositions
@@ -1147,10 +1151,38 @@ export default class SPHOilSystem {
         
         const fx_viscosity = viscFactor * (vxj - vxi);
         const fy_viscosity = viscFactor * (vyj - vyi);
+
+        // === IPF COHESION FORCE (explicit, short-range) ===
+        let fx_ipf = 0.0;
+        let fy_ipf = 0.0;
+        if (this.ipfStrength > 0.0) {
+          const innerR = this.ipfInnerRadiusScale * h;
+          const outerR = this.ipfOuterRadiusScale * h;
+          if (dist > innerR && dist < outerR) {
+            // Density bias: pull thinner particles toward denser neighbors more strongly.
+            // If neighbor is less dense or similar, weaken/disable IPF so dense cores
+            // are not pushed around by fresh, low-density splats.
+            const rest = this.restDensity || 1.0;
+            const densityDelta = (rhoj - rhoi) / rest; // >0 when neighbor is denser
+            const densityScale = Math.max(0.0, Math.min(1.0, densityDelta));
+            if (densityScale > 0.0) {
+              const span = Math.max(1e-6, outerR - innerR);
+              const t = (dist - innerR) / span; // 0 at innerR, 1 at outerR
+              const falloff = 1.0 - t;
+              const w = falloff * falloff;
+              const invd = 1.0 / dist;
+              const dirx = (xj - xi) * invd;
+              const diry = (yj - yi) * invd;
+              const s = this.ipfStrength * w * densityScale * this.particleMass;
+              fx_ipf = dirx * s;
+              fy_ipf = diry * s;
+            }
+          }
+        }
         
         // NaN guards - prevent corrupting forces
-        const fx_total = fx_pressure + fx_viscosity;
-        const fy_total = fy_pressure + fy_viscosity;
+        const fx_total = fx_pressure + fx_viscosity + fx_ipf;
+        const fy_total = fy_pressure + fy_viscosity + fy_ipf;
         
         if (!isNaN(fx_total) && !isNaN(fy_total)) {
           this.forces[i * 2] += fx_total;

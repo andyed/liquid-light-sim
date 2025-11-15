@@ -155,24 +155,10 @@ class WebGPUSPHUpdate {
         const commandBuffer = commandEncoder.finish();
         this.device.queue.submit([commandBuffer]);
 
-        // Wait for GPU work to complete before reading back the staging buffer to avoid driver watchdog timeouts.
-        await this.device.queue.onSubmittedWorkDone();
-
-        // 4. Map staging buffer and copy data back to CPU
-        await this.stagingBuffer.mapAsync(GPUMapMode.READ);
-        const data = new Float32Array(this.stagingBuffer.getMappedRange());
-
-        for (let i = 0; i < effectiveCount; i++) {
-            const offset = i * (this.webgpuSPH.particleStride / 4);
-            sphSystem.positions[i * 2 + 0] = data[offset + 0];
-            sphSystem.positions[i * 2 + 1] = data[offset + 1];
-            sphSystem.velocities[i * 2 + 0] = data[offset + 2];
-            sphSystem.velocities[i * 2 + 1] = data[offset + 3];
-            sphSystem.densities[i] = data[offset + 6];
-            sphSystem.pressures[i] = data[offset + 7];
-        }
-
-        this.stagingBuffer.unmap();
+        // For now, treat SPH state as GPU-resident only and skip per-frame readback.
+        // This avoids device hangs seen on macOS (WindowServer watchdog) and Windows (DXGI device lost)
+        // when performing full-buffer mapAsync every frame.
+        return;
     }
 }
 

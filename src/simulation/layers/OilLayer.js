@@ -333,6 +333,7 @@ export default class OilLayer extends FluidLayer {
           this.sph.thinningThreshold = 0.42;      // lower threshold = harder to mark regions as thin
           this.sph.cohesionReductionInThin = 0.7; // reduce cohesion less in thin regions
           this.sph.splitDistance = 3.5;           // clusters must separate further before splitting
+          this.sph.ipfStrength = 0.4;             // conservative IPF strength
           break;
         case 'Glycerine':
           this.sph.viscosity = 0.14;
@@ -376,7 +377,9 @@ export default class OilLayer extends FluidLayer {
           this.sph.maxPosNudge = 0.0015;
           this.sph.posCohesionBoostCoeff = 0.12;
           this.sph.maxPressureDensityRatio = 1.3; // Mineral Oil: saturate pressure earlier in dense cores
-          this.sph.pressureStiffness = 0.6;   // softer pressure so big blobs tend to hold together
+          this.sph.pressureStiffness = 0.38;   // lower stiffness = softer pressure
+          // IPF cohesion: start with small explicit attraction band
+          this.sph.ipfStrength = 0.8;
           break;
       }
 

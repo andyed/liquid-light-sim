@@ -47,22 +47,28 @@ export default class Renderer {
 
         if (this.useWebGPU) {
             try {
-                this.webgpuCanvasContext = canvas.getContext('webgpu');
-                if (this.webgpuCanvasContext) {
-                    const adapter = await navigator.gpu.requestAdapter();
-                    this.webgpuLimitInfo = adapter ? adapter.limits : null;
-                    this.webgpuDevice = adapter ? await adapter.requestDevice() : null;
-                    if (this.webgpuLimitInfo) {
-                        console.log('WebGPU adapter limits:', this.webgpuLimitInfo);
-                    }
-                    this.webgpuCanvasContext.configure({
-                        device: this.webgpuDevice,
-                        format: navigator.gpu.getPreferredCanvasFormat(),
-                        alphaMode: 'premultiplied',
-                    });
-                    console.log('✓ WebGPU context configured.');
-                } else {
+                // If the browser does not expose WebGPU, immediately fall back to WebGL2.
+                if (typeof navigator === 'undefined' || !navigator.gpu) {
+                    console.warn('WebGPU not available; falling back to WebGL2.');
                     this.useWebGPU = false;
+                } else {
+                    this.webgpuCanvasContext = canvas.getContext('webgpu');
+                    if (this.webgpuCanvasContext) {
+                        const adapter = await navigator.gpu.requestAdapter();
+                        this.webgpuLimitInfo = adapter ? adapter.limits : null;
+                        this.webgpuDevice = adapter ? await adapter.requestDevice() : null;
+                        if (this.webgpuLimitInfo) {
+                            console.log('WebGPU adapter limits:', this.webgpuLimitInfo);
+                        }
+                        this.webgpuCanvasContext.configure({
+                            device: this.webgpuDevice,
+                            format: navigator.gpu.getPreferredCanvasFormat(),
+                            alphaMode: 'premultiplied',
+                        });
+                        console.log('✓ WebGPU context configured.');
+                    } else {
+                        this.useWebGPU = false;
+                    }
                 }
             } catch (e) {
                 console.error('WebGPU initialization failed:', e);
