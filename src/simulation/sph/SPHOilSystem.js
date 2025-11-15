@@ -23,6 +23,11 @@ export default class SPHOilSystem {
     // SPH parameters (will be tuned per material)
     this.smoothingRadius = 0.14;      // Larger h for broader neighbor overlap (sheet formation)
     this.restDensity = 1000.0;        // Rest density (ρ₀)
+    // Cap for density ratio when computing pressure: ρ/ρ0 above this
+    // no longer increases pressure. Prevents extremely stiff response
+    // at very high densities (helps map extra mass to size/thickness
+    // instead of explosive spring).
+    this.maxPressureDensityRatio = 1.8;
     this.particleMass = 0.02;         // Mass per particle
     this.viscosity = 0.08;            // Slightly higher to maintain ribbons/filaments
     this.surfaceTension = 50.0;       // DRASTICALLY REDUCED from 3000 - was causing NaN (was insane!)
@@ -604,8 +609,8 @@ export default class SPHOilSystem {
       const vGridY = gridVelocities[i * 2 + 1];
       const vParticleX = this.velocities[i * 2];
       const vParticleY = this.velocities[i * 2 + 1];
-      
-      // Neighbor-aware scaling of drag based on local density
+
+      // Neighbor-aware scaling of drag based on local density / thickness
       let scaledDrag = dragCoeff;
       if (this.enableNeighborScaledDrag) {
         const h = this.smoothingRadius;
@@ -618,6 +623,16 @@ export default class SPHOilSystem {
         const smooth = t * t * (3.0 - 2.0 * t); // smoothstep
         scaledDrag = dragCoeff * smooth;
       }
+
+      // Additional density-based modulation: thicker (denser) regions should
+      // resist water motion more than thin fringes.
+      const rho = this.densities[i];
+      const densityRatio = rho / (this.restDensity || 1.0);
+      // Map densityRatio in [0.5, 2.0] to a factor in roughly [1.2, 0.6]
+      const clampedRatio = Math.max(0.5, Math.min(2.0, densityRatio));
+      const inv = 1.0 / clampedRatio; // higher density → smaller factor
+      const densityFactor = 0.6 + 0.6 * inv; // ρ=ρ0 → ~1.2, very dense → ~0.6
+      scaledDrag *= densityFactor;
       
       // Drag toward grid velocity (rotation + water coupling)
       const fx = scaledDrag * (vGridX - vParticleX);
@@ -984,7 +999,13 @@ export default class SPHOilSystem {
     
     for (let i = 0; i < this.particleCount; i++) {
       const density = this.densities[i];
-      const ratio = density / this.restDensity;
+      let ratio = density / this.restDensity;
+      // Cap density ratio to avoid huge pressure spikes in very dense cores.
+      // This makes additional density map more to visual thickness/size rather
+      // than unbounded spring energy.
+      if (this.maxPressureDensityRatio && this.maxPressureDensityRatio > 0) {
+        ratio = Math.min(ratio, this.maxPressureDensityRatio);
+      }
       const pressure = B * (Math.pow(ratio, gamma) - 1.0);
       
       // Tension-free: no negative pressure (prevents explosion at low density)
@@ -1377,7 +1398,7 @@ export default class SPHOilSystem {
    * Shared logic for applying damping, velocity caps, and updating positions
    */
   _updatePositions(dt) {
-    const damping = this.dampingFactor; // Tunable damping per material
+    const damping = this.dampingFactor; // Base damping per material
     const maxSpeed = this.maxSpeedCap;  // Tunable cap per material
     
     for (let i = 0; i < this.particleCount; i++) {
@@ -1391,9 +1412,20 @@ export default class SPHOilSystem {
         this.velocities[i * 2] = vx0 * q;
         this.velocities[i * 2 + 1] = vy0 * q;
       }
-      // Apply linear damping
-      this.velocities[i * 2] *= damping;
-      this.velocities[i * 2 + 1] *= damping;
+      // Apply linear damping, modulated slightly by local density so dense
+      // cores are more damped (less oscillatory) than thin fringes.
+      const rho = this.densities[i];
+      const densityRatio = rho / (this.restDensity || 1.0);
+      const clampedRatio = Math.max(0.5, Math.min(2.0, densityRatio));
+      // Map clampedRatio in [0.5, 2.0] to a damping scale in ~[0.9, 1.1]
+      //  - thin (low density) blobs keep slightly more kinetic energy
+      //  - dense cores lose a bit more per step
+      const inv = 1.0 / clampedRatio;
+      const dampingScale = 0.9 + 0.2 * inv;
+      const localDamping = damping * dampingScale;
+
+      this.velocities[i * 2] *= localDamping;
+      this.velocities[i * 2 + 1] *= localDamping;
       
       // Cap velocity magnitude
       const speed = Math.sqrt(this.velocities[i * 2] ** 2 + this.velocities[i * 2 + 1] ** 2);

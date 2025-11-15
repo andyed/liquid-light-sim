@@ -55,7 +55,7 @@ export default class OilLayer extends FluidLayer {
     this.hasGridContent = false; // True if Alcohol has been painted
     this.useDensityComposite = true; // Enable smoothing-based continuous sheet rendering
     // Throttled CPU grid sampling cache (to avoid per-frame readback stalls)
-    this.gridSampleInterval = 6; // frames between samples
+    this.gridSampleInterval = 10; // frames between samples (higher for better perf)
     this.gridSampleFrame = 0;
     this.cachedGridVelocities = null;
     
@@ -284,21 +284,23 @@ export default class OilLayer extends FluidLayer {
         case 'Syrup':
           // Syrup: slow, overdamped, highly cohesive "hero" blob
           this.sph.viscosity = 0.38;              // higher internal resistance
-          this.sph.shortCohesion = 13.0;
-          this.sph.shortRadiusScale = 1.8;        // keep relatively tight attraction radius
+          this.sph.shortCohesion = 5.0;           // softer pull to reduce rapid blob merging
+          this.sph.shortRadiusScale = 1.4;        // tighter radius so cohesion is very local
           this.sph.minDistScale = 0.22;           // slightly larger core spacing to avoid hard overlaps
-          this.sph.longCohesion = 1.0;            // softer long-range attraction (reduces size equalization)
+          this.sph.longCohesion = 0.0;            // disable long-range cohesion to prevent distant pull-in
           this.sph.longRadiusScale = 3.0;         // keep influence fairly local
+          this.sph.splitDistance = 1.4;           // lower maxCohesionDist: different blobs don't see each other as much
           this.sph.spawnSpeedScale = 0.04;        // almost no initial kick
-          this.sph.gridDragCoeff = 1.0;           // weaker coupling to water to reduce pinball motion
+          this.sph.gridDragCoeff = 3.0;           // stronger coupling to water (oil follows flow more)
           this.sph.maxSpeedCap = 0.25;            // clamp maximum speed for overdamped motion
-          this.sph.xsphCoeff = 0.55;
-          this.sph.dampingFactor = 0.93;          // stronger per-step damping
+          this.sph.xsphCoeff = 0.30;              // weaker velocity equalization (less condensation)
+          this.sph.dampingFactor = 0.95;          // even stronger per-step damping on dense cores
+          this.sph.maxPressureDensityRatio = 1.4; // saturate pressure earlier so density maps to size
           // Positional cohesion: local-only to avoid cross-blob averaging
           this.sph.enablePositionalCohesion = true;
-          this.sph.posCohesionCoeff = 0.06;       // gentle centroid pull inside each blob
-          this.sph.maxPosNudge = 0.002;           // small centroid nudge per frame
-          this.sph.posCohesionBoostCoeff = 0.22;  // modest extra pull for fresh splats
+          this.sph.posCohesionCoeff = 0.03;       // softer centroid pull (slower condensation)
+          this.sph.maxPosNudge = 0.0015;          // smaller centroid nudge per frame
+          this.sph.posCohesionBoostCoeff = 0.12;  // weaker extra pull for fresh splats
           this.sph.posCohesionRadiusScale = 1.2;  // ~1.2h neighborhood: stays inside blob thickness
           this.sph.particleSpriteRadius = 118.0;  // smaller sprite; rely on more particles per splat
           // Thinning & splitting: Syrup should very rarely auto-split
@@ -326,20 +328,27 @@ export default class OilLayer extends FluidLayer {
         case 'Mineral Oil':
         default:
           this.sph.viscosity = 0.08;
-          this.sph.shortCohesion = 6.5;
-          this.sph.shortRadiusScale = 1.5; // REDUCED from 2.0 to prevent cross-blob attraction (matches default)
+          // Softer, more local cohesion so blobs don’t over-condense
+          this.sph.shortCohesion = 5.2;
+          this.sph.shortRadiusScale = 1.4; // slightly tighter radius
           this.sph.minDistScale = 0.35;
           this.sph.longCohesion = 0.0; // disabled - prevents distant blob merging
           this.sph.longRadiusScale = 4.0;
           this.sph.spawnSpeedScale = 1.0;
           this.sph.gridDragCoeff = 1.3;
-          this.sph.maxSpeedCap = 0.6;
-          this.sph.xsphCoeff = 0.0;
+          this.sph.maxSpeedCap = 0.55;        // slightly lower cap, a bit more overdamped
+          this.sph.xsphCoeff = 0.22;          // mild velocity equalization only
+          this.sph.dampingFactor = 0.945;     // strengthen damping a bit
           this.sph.particleSpriteRadius = 100.0;
           // Thinning & splitting: Mineral Oil is fluid - easy to thin and split
-          this.sph.thinningThreshold = 0.7; // Higher threshold = easier to thin
-          this.sph.cohesionReductionInThin = 0.2; // More reduction = easier to split
-          this.sph.splitDistance = 2.0; // Smaller distance = easier to split
+          this.sph.thinningThreshold = 0.7;   // Higher threshold = easier to thin
+          this.sph.cohesionReductionInThin = 0.25; // slightly more reduction in thin regions
+          this.sph.splitDistance = 2.2;       // blobs separate a bit more before splitting
+          // Positional cohesion: keep but softer to avoid minimum-size collapse
+          this.sph.enablePositionalCohesion = true;
+          this.sph.posCohesionCoeff = 0.055;
+          this.sph.maxPosNudge = 0.002;
+          this.sph.posCohesionBoostCoeff = 0.18;
           break;
       }
     }
