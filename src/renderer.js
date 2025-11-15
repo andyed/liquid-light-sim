@@ -284,8 +284,8 @@ export default class Renderer {
     }
     
     toggleDebugMode() {
-        this.debugMode = (this.debugMode + 1) % 6;
-        const modes = ['🎨 COLOR', '🔍 VELOCITY', '🌊 CONCENTRATION GRADIENT', '🛢️ OIL THICKNESS', '🧭 OIL GRADIENT', '📊 OCCUPANCY SPLIT'];
+        this.debugMode = (this.debugMode + 1) % 7;
+        const modes = ['🎨 COLOR', '🔍 VELOCITY', '🌊 CONCENTRATION GRADIENT', '🛢️ OIL THICKNESS', '🧭 OIL GRADIENT', '📊 OCCUPANCY SPLIT', '🛢️ OIL COMPOSITE'];
         console.log(`Debug mode: ${modes[this.debugMode]}`);
     }
 
@@ -366,6 +366,19 @@ export default class Renderer {
             gl.bindTexture(gl.TEXTURE_2D, this.simulation.oil.oilTexture1);
             gl.uniform1i(gl.getUniformLocation(this.debugOccupancySplitProgram, 'u_oil_texture'), 1);
             gl.uniform1f(gl.getUniformLocation(this.debugOccupancySplitProgram, 'u_thresh'), 0.02);
+        } else if (this.debugMode === 6 && this.simulation.useOil && this.simulation.oil) {
+            // Raw oil composite view: show the post-composited oil texture directly
+            gl.useProgram(this.passThroughProgram);
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
+            positionAttrib = gl.getAttribLocation(this.passThroughProgram, 'a_position');
+            gl.enableVertexAttribArray(positionAttrib);
+            gl.vertexAttribPointer(positionAttrib, 2, gl.FLOAT, false, 0, 0);
+
+            // Prefer dedicated oilCompositeTexture if available; fall back to oilTexture1
+            const oilComposite = this.oilCompositeTexture || this.simulation.oil.oilTexture1;
+            gl.bindTexture(gl.TEXTURE_2D, oilComposite);
+            let textureUniform = gl.getUniformLocation(this.passThroughProgram, 'u_texture');
+            gl.uniform1i(textureUniform, 0);
         } else if (this.debugMode === 0 && this.useVolumetric) {
             // Volumetric rendering mode (Beer-Lambert absorption)
             gl.useProgram(this.volumetricProgram);
