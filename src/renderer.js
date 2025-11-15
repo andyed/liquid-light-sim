@@ -50,7 +50,11 @@ export default class Renderer {
                 this.webgpuCanvasContext = canvas.getContext('webgpu');
                 if (this.webgpuCanvasContext) {
                     const adapter = await navigator.gpu.requestAdapter();
-                    this.webgpuDevice = await adapter.requestDevice();
+                    this.webgpuLimitInfo = adapter ? adapter.limits : null;
+                    this.webgpuDevice = adapter ? await adapter.requestDevice() : null;
+                    if (this.webgpuLimitInfo) {
+                        console.log('WebGPU adapter limits:', this.webgpuLimitInfo);
+                    }
                     this.webgpuCanvasContext.configure({
                         device: this.webgpuDevice,
                         format: navigator.gpu.getPreferredCanvasFormat(),

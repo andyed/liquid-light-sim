@@ -643,6 +643,7 @@ export default class Simulation {
 
     recreateTextures() {
         const gl = this.gl;
+        if (!gl) return;
         const width = gl.canvas.width;
         const height = gl.canvas.height;
         // Scale solver iterations based on resolution (reference min-dim = 1080)

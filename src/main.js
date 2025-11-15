@@ -66,10 +66,10 @@ class App {
 }
 
 window.addEventListener('DOMContentLoaded', async (event) => {
-    // For stability while debugging, force WebGL-only renderer.
-    // WebGPU features (SPH compute, etc.) can still be wired manually
-    // via Simulation/OilLayer flags without changing the core renderer.
-    const useWebGPU = false;
+    // Default to WebGL-only for stability. Enable WebGPU renderer explicitly
+    // via URL flag: ?webgpu=1
+    const search = window.location && window.location.search || '';
+    const useWebGPU = search.includes('webgpu=1');
     const app = new App(useWebGPU);
     app.run();
 });

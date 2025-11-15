@@ -16,7 +16,10 @@ export default class OilLayer extends FluidLayer {
     this.webgpuSPHUpdate = null;
     // Feature flags: keep WebGPU SPH compute and direct canvas draw disabled by default
     // to favor the more battle-tested CPU SPH + WebGL rendering path on macOS.
-    this.enableWebgpuSphCompute = false;
+    // WebGPU SPH compute is guarded behind a URL flag so we can experiment
+    // without risking crashes in normal use. Default is CPU SPH.
+    const search = (typeof window !== 'undefined' && window.location && window.location.search) || '';
+    this.enableWebgpuSphCompute = search.includes('webgpuSph=1');
     this.enableWebgpuDrawToCanvas = false;
     // NOTE: Physics disabled until validated step-by-step
     
@@ -105,11 +108,29 @@ export default class OilLayer extends FluidLayer {
     }
 
     if (this.sim.webgpu) {
-        this.webgpuSPH = new WebGPUSPH(this.sim.webgpu.device, this.sph.maxParticles);
-        console.log('🚀 Initializing WebGPU SPH System...');
-        this.webgpuSPHUpdate = new WebGPUSPHUpdate(this.sim.webgpu.device, this.webgpuSPH);
-        this.webgpuSPHUpdate.init();
+        const adapterLimits = this.sim.renderer?.webgpuLimitInfo;
+        const particleStrideBytes = 8 * 4; // 8 floats (pos, vel, force, density, pressure)
+        let gpuMaxParticles = this.sph.maxParticles;
+        if (adapterLimits && adapterLimits.maxStorageBufferBindingSize) {
+            gpuMaxParticles = Math.min(gpuMaxParticles, Math.floor(adapterLimits.maxStorageBufferBindingSize / particleStrideBytes));
+        }
+
+        if (gpuMaxParticles < 64) {
+            console.warn('WebGPU SPH disabled: adapter storage limit only allowed', gpuMaxParticles, 'particles.');
+            this.enableWebgpuSphCompute = false;
+            this.webgpuSPH = null;
+        } else {
+            this.webgpuSPH = new WebGPUSPH(this.sim.webgpu.device, gpuMaxParticles);
+            console.log('🚀 Initializing WebGPU SPH System (max particles:', gpuMaxParticles, '...');
+            this.webgpuSPHUpdate = new WebGPUSPHUpdate(this.sim.webgpu.device, this.webgpuSPH);
+            this.webgpuSPHUpdate.init();
+        }
         this.sph.initWebGPU(this.sim.webgpu.device); // Initialize WebGPU rendering for SPH
+
+        // Track whether we've seeded the WebGPU particle buffer from the CPU SPH
+        // state. This avoids re-uploading every frame while still ensuring the
+        // first WebGPU update starts from the correct positions/velocities.
+        this.webgpuSphSeededFromCPU = false;
 
         // Create WebGPU texture for SPH rendering
         this.webgpuSphTexture = this.sim.webgpu.device.createTexture({
@@ -378,6 +399,12 @@ export default class OilLayer extends FluidLayer {
       
       if (!shouldSkipPhysics) {
         if (this.webgpuSPHUpdate && this.enableWebgpuSphCompute) {
+          // Lazily upload the current CPU SPH state into the WebGPU particle
+          // buffer the first time we use the WebGPU SPH update path.
+          if (!this.webgpuSphSeededFromCPU && this.webgpuSPH) {
+            this.webgpuSPH.uploadInitialData(this.sph);
+            this.webgpuSphSeededFromCPU = true;
+          }
           await this.webgpuSPHUpdate.update(this.sph, dt);
         } else {
           this.sph.update(dt, sim.rotationAmount, gridVelocities);

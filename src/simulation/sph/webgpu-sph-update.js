@@ -101,9 +101,13 @@ class WebGPUSPHUpdate {
             return;
         }
 
+        // Clamp effective count to buffer capacity to avoid overruns.
+        const maxParticles = this.webgpuSPH.maxParticles;
+        const effectiveCount = Math.min(sphSystem.particleCount, maxParticles);
+
         // 1. Update uniforms
         const uniforms = new Float32Array([
-            sphSystem.particleCount,
+            effectiveCount,
             dt,
             sphSystem.smoothingRadius,
             sphSystem.restDensity,
@@ -117,7 +121,7 @@ class WebGPUSPHUpdate {
         const commandEncoder = this.device.createCommandEncoder();
         const passEncoder = commandEncoder.beginComputePass();
 
-        const workgroupCount = Math.ceil(sphSystem.particleCount / 64);
+        const workgroupCount = Math.ceil(effectiveCount / 64);
 
         // Density pass
         passEncoder.setPipeline(this.densityPipeline);
@@ -145,16 +149,20 @@ class WebGPUSPHUpdate {
         commandEncoder.copyBufferToBuffer(
             this.webgpuSPH.particleBuffer, 0,
             this.stagingBuffer, 0,
-            this.webgpuSPH.maxParticles * this.webgpuSPH.particleStride
+            effectiveCount * this.webgpuSPH.particleStride
         );
 
-        this.device.queue.submit([commandEncoder.finish()]);
+        const commandBuffer = commandEncoder.finish();
+        this.device.queue.submit([commandBuffer]);
+
+        // Wait for GPU work to complete before reading back the staging buffer to avoid driver watchdog timeouts.
+        await this.device.queue.onSubmittedWorkDone();
 
         // 4. Map staging buffer and copy data back to CPU
         await this.stagingBuffer.mapAsync(GPUMapMode.READ);
         const data = new Float32Array(this.stagingBuffer.getMappedRange());
 
-        for (let i = 0; i < sphSystem.particleCount; i++) {
+        for (let i = 0; i < effectiveCount; i++) {
             const offset = i * (this.webgpuSPH.particleStride / 4);
             sphSystem.positions[i * 2 + 0] = data[offset + 0];
             sphSystem.positions[i * 2 + 1] = data[offset + 1];
