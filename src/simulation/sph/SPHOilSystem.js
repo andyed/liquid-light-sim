@@ -19,7 +19,7 @@ export default class SPHOilSystem {
   constructor(maxParticles = 50000, containerRadius = 0.48, sphParticleSplatVertWGSL, sphParticleSplatFragWGSL) {
     this.maxParticles = maxParticles;
     this.containerRadius = containerRadius;
-    
+
     // SPH parameters (will be tuned per material)
     this.smoothingRadius = 0.14;      // Larger h for broader neighbor overlap (sheet formation)
     this.restDensity = 1000.0;        // Rest density (ρ₀)
@@ -35,14 +35,14 @@ export default class SPHOilSystem {
     this.viscosity = 0.08;            // Slightly higher to maintain ribbons/filaments
     this.surfaceTension = 50.0;       // DRASTICALLY REDUCED from 3000 - was causing NaN (was insane!)
     this.gravity = -0.01;             // EXTREMELY WEAK: Prevent spreading (was -0.1)
-    this.dt = 1/60;                   // Timestep
-    
+    this.dt = 1 / 60;                   // Timestep
+
     // Temperature parameters
-    this.thermalExpansion = 0.001;    // α for ρ(T) = ρ₀(1 - α(T - T₀))
+    this.thermalExpansion = 0.0;      // DISABLED: Causing radial expansion (was 0.001)
     this.thermalConductivity = 0.1;   // Heat diffusion rate
     this.roomTemperature = 20.0;      // Celsius
-    this.marangoniStrength = 5.0;     // Strength of surface tension gradient force
-    
+    this.marangoniStrength = 0.0;     // DISABLED: Causing radial explosion (was 5.0)
+
     // Particle data (Structure of Arrays for cache efficiency)
     // Each particle: [x, y, vx, vy, density, pressure, temperature, phase]
     this.particleCount = 0;
@@ -55,22 +55,22 @@ export default class SPHOilSystem {
     this.nextTemperatures = new Float32Array(maxParticles); // Temp buffer for update
     this.phases = new Uint8Array(maxParticles);               // 0=water, 1=oil
     this.colors = new Float32Array(maxParticles * 3);         // [r, g, b]
-    
+
     // Spatial hashing for O(N log N) neighbor queries
     this.spatialHash = new SpatialHashGrid(
       this.smoothingRadius * 2,  // Cell size = 2h
       containerRadius
     );
-    
+
     // Neighbor cache (reused each frame)
     this.neighborLists = Array.from({ length: maxParticles }, () => []);
-    
+
     // Implicit solver (Phase 2) - DISABLED due to instability
     // Matrix becomes ill-conditioned (16M non-zeros), residual explodes
     // Causes "dancing" particles instead of smooth flow
     this.useImplicitIntegration = false;
     this.implicitSolver = null; // Not used in explicit mode
-    
+
     // GPU resources (to be initialized)
     this.gl = null;
     this.particleVBO = null;        // Vertex buffer for particle positions
@@ -85,9 +85,9 @@ export default class SPHOilSystem {
     this.sphParticleSplatFragWGSL = sphParticleSplatFragWGSL;
     this.webgpuParticleBuffer = null; // GPUBuffer for particle data
     this.webgpuBindGroup = null;      // Bind group for particle buffer
-    
+
     this.computeShaders = null;
-    
+
     // Performance stats
     this.stats = {
       updateTime: 0,
@@ -112,12 +112,12 @@ export default class SPHOilSystem {
     this.ipfOuterRadiusScale = 1.0;  // outer radius (in units of h) where IPF goes to zero
     this.spawnSpeedScale = 1.0;  // multiply base spawn speed
     this.gridDragCoeff = 1.3;    // coupling to grid velocities
-    this.maxSpeedCap = 0.6;      // cap for |v| in _updatePositions
+    this.maxSpeedCap = 0.3;      // REDUCED: Lower speed cap for calmer motion
     this.xsphCoeff = 0.0;        // XSPH velocity smoothing (0 disables)
-    this.particleSpriteRadius = 90.0; // point sprite radius in pixels (rendering)
+    this.particleSpriteRadius = 100.0; // Moderate size for good overlap
     this.dampingFactor = 0.94;   // per-material velocity damping in _updatePositions
-    this.forceClampMax = 4.0;    // per-particle |F| clamp (tighter default)
-    this.quadraticDampingK = 2.0; // v *= 1/(1 + k*|v|) before linear damping (tighter default)
+    this.forceClampMax = 2.0;    // REDUCED: Tighter force clamp prevents sudden jerks
+    this.quadraticDampingK = 6.0; // VERY HIGH: Strong velocity damping
     // Universal positional cohesion (PBD-style)
     this.enablePositionalCohesion = true;
     this.posCohesionCoeff = 0.12; // 0..1 blend toward local centroid
@@ -134,7 +134,7 @@ export default class SPHOilSystem {
 
     // Buffers for auxiliary accumulations
     this.xsphCorr = new Float32Array(maxParticles * 2);
-    
+
     // === BLOB THINNING & SPLITTING PARAMETERS ===
     this.enableThinning = true;              // Enable thinning detection
     this.enableSplitting = true;             // Enable automatic blob splitting
@@ -145,6 +145,14 @@ export default class SPHOilSystem {
     this.splitDistance = 2.0;                // Split when clusters are > 2.0h apart (tighter to prevent merging)
     this.splitCheckInterval = 30;            // Check for splitting every N frames (performance)
     this.minClusterSize = 3;                // Minimum particles to form a valid blob cluster
+
+    // === BLOB PHYSICS TUNING ===
+    // Simplified model parameters (Lennard-Jones style)
+    // Tuned for VERY CALM, stable blobs (minimal jitter)
+    this.blobCohesion = 0.25;     // VERY LOW: Gentle attraction
+    this.blobRepulsion = 0.8;     // VERY LOW: Soft repulsion
+    this.blobInteractionRadius = 0.16; // Moderate interaction range
+    this.blobFriction = 0.95;     // HIGH: Strong damping kills jitter
   }
 
   /**
@@ -156,17 +164,17 @@ export default class SPHOilSystem {
     const maxNudge = this.maxPosNudge * this.containerRadius;
     const coeff = (typeof coeffOverride === 'number') ? coeffOverride : this.posCohesionCoeff;
     if (coeff <= 0) return;
-    
+
     // Maximum distance for positional cohesion - prevents cross-blob attraction
     // Use dedicated positional radius scale so this stays local per material
     const maxCohesionDist = this.smoothingRadius * this.posCohesionRadiusScale;
-    
+
     for (let i = 0; i < this.particleCount; i++) {
       const xi = this.positions[i * 2];
       const yi = this.positions[i * 2 + 1];
       const neighbors = this.spatialHash.query(xi, yi, h);
       if (neighbors.length <= 1) continue; // isolated
-      
+
       // Compute centroid (include self) - but only count neighbors within maxCohesionDist
       let cx = 0, cy = 0, count = 0;
       for (const j of neighbors) {
@@ -175,7 +183,7 @@ export default class SPHOilSystem {
         const dx = xi - xj;
         const dy = yi - yj;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        
+
         // Only include neighbors within maxCohesionDist (prevents cross-blob attraction)
         if (dist <= maxCohesionDist) {
           cx += xj;
@@ -203,19 +211,19 @@ export default class SPHOilSystem {
       }
     }
   }
-  
+
   /**
    * Initialize GPU resources
    */
   initGPU(gl, splatProgram) {
     this.gl = gl;
     this.splatProgram = splatProgram;
-    
+
     // Create vertex buffers for particle data
     this.particleVBO = gl.createBuffer();
     this.particleColorVBO = gl.createBuffer();
     this.particleDensityVBO = gl.createBuffer();
-    
+
     console.log('✅ SPH GPU buffers created');
   }
 
@@ -295,25 +303,25 @@ export default class SPHOilSystem {
 
     console.log('✅ SPH WebGPU render pipeline and buffers created');
   }
-  
+
   /**
    * Upload particle data to GPU buffers
    */
   uploadToGPU() {
     if (!this.gl && !this.webgpuDevice || this.particleCount === 0) return;
-    
+
     // WebGL2 upload (for fallback)
     if (this.gl) {
       const gl = this.gl;
-      
+
       // Upload positions (only active particles)
       gl.bindBuffer(gl.ARRAY_BUFFER, this.particleVBO);
       gl.bufferData(gl.ARRAY_BUFFER, this.positions.subarray(0, this.particleCount * 2), gl.DYNAMIC_DRAW);
-      
+
       // Upload colors directly (no temperature encoding - it was overwriting colors!)
       gl.bindBuffer(gl.ARRAY_BUFFER, this.particleColorVBO);
       gl.bufferData(gl.ARRAY_BUFFER, this.colors.subarray(0, this.particleCount * 3), gl.DYNAMIC_DRAW);
-      
+
       // Upload densities
       gl.bindBuffer(gl.ARRAY_BUFFER, this.particleDensityVBO);
       gl.bufferData(gl.ARRAY_BUFFER, this.densities.subarray(0, this.particleCount), gl.DYNAMIC_DRAW);
@@ -349,7 +357,7 @@ export default class SPHOilSystem {
       );
     }
   }
-  
+
   /**
    * Render particles to texture using point sprites
    * @param {WebGLFramebuffer} targetFBO - Framebuffer to render into
@@ -382,98 +390,98 @@ export default class SPHOilSystem {
 
     // WebGL2 rendering path (fallback)
     if (!this.gl || !this.splatProgram || this.particleCount === 0) return;
-    
+
     const startTime = performance.now();
     const gl = this.gl;
-    
+
     // Upload latest particle data to GPU
     this.uploadToGPU();
-    
+
     // Bind framebuffer
     gl.bindFramebuffer(gl.FRAMEBUFFER, target);
-    
+
     // Use particle splat shader
     gl.useProgram(this.splatProgram);
-    
+
     // Set up vertex attributes
     const posLoc = gl.getAttribLocation(this.splatProgram, 'a_position');
     const colorLoc = gl.getAttribLocation(this.splatProgram, 'a_color');
     const densityLoc = gl.getAttribLocation(this.splatProgram, 'a_density');
-    
+
     // Position attribute
     gl.bindBuffer(gl.ARRAY_BUFFER, this.particleVBO);
     gl.enableVertexAttribArray(posLoc);
     gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
-    
+
     // Color attribute
     gl.bindBuffer(gl.ARRAY_BUFFER, this.particleColorVBO);
     gl.enableVertexAttribArray(colorLoc);
     gl.vertexAttribPointer(colorLoc, 3, gl.FLOAT, false, 0, 0);
-    
+
     // Density attribute
     gl.bindBuffer(gl.ARRAY_BUFFER, this.particleDensityVBO);
     gl.enableVertexAttribArray(densityLoc);
     gl.vertexAttribPointer(densityLoc, 1, gl.FLOAT, false, 0, 0);
-    
+
     // Set uniforms
     gl.uniform2f(gl.getUniformLocation(this.splatProgram, 'u_resolution'), canvasWidth, canvasHeight);
     gl.uniform1f(gl.getUniformLocation(this.splatProgram, 'u_containerRadius'), this.containerRadius);
     gl.uniform1f(gl.getUniformLocation(this.splatProgram, 'u_particleRadius'), this.particleSpriteRadius);
-    
+
     // Enable pre-multiplied alpha blending for proper color mixing
     // This prevents white accumulation - colors blend like translucent layers
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); // Pre-multiplied alpha
-    
+
     // Render particles as point sprites
     gl.drawArrays(gl.POINTS, 0, this.particleCount);
-    
+
     // Restore blend mode
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-    
+
     this.stats.renderTime = performance.now() - startTime;
   }
-  
+
   /**
    * Spawn new oil particles from paint/splat
    */
   spawnParticles(centerX, centerY, count, color, spawnRadiusPixels = 20.0) {
     // HARD LIMIT for CPU performance (Phase 1)
     const PHASE1_PARTICLE_LIMIT = 5000; // Conservative limit for 60fps
-    
+
     if (this.particleCount >= PHASE1_PARTICLE_LIMIT) {
       console.warn(`⚠️ SPH: Particle limit reached (${PHASE1_PARTICLE_LIMIT}). Ignoring spawn.`);
       return 0;
     }
-    
+
     if (this.particleCount + count > this.maxParticles) {
       console.warn(`Cannot spawn ${count} particles - would exceed max ${this.maxParticles}`);
       count = this.maxParticles - this.particleCount;
     }
-    
+
     // Don't exceed phase 1 limit
     if (this.particleCount + count > PHASE1_PARTICLE_LIMIT) {
       count = PHASE1_PARTICLE_LIMIT - this.particleCount;
     }
-    
+
     if (count <= 0) return 0;
-    
+
     // Convert pixel radius to world space
     const spawnRadius = (spawnRadiusPixels / 1000.0) * this.containerRadius;
-    
+
     for (let i = 0; i < count; i++) {
       const idx = this.particleCount++;
-      
+
       // Random position in circle
       const angle = Math.random() * Math.PI * 2;
       const r = Math.sqrt(Math.random()) * spawnRadius;
       const x = centerX + Math.cos(angle) * r;
       const y = centerY + Math.sin(angle) * r;
-      
+
       // Set particle data
       this.positions[idx * 2] = x;
       this.positions[idx * 2 + 1] = y;
-      
+
       // Spawn with ZERO initial velocity for immediate congealing
       // Particles will be pulled together by cohesion forces, not scattered by initial kick
       this.velocities[idx * 2] = 0;
@@ -488,13 +496,13 @@ export default class SPHOilSystem {
       this.colors[idx * 3 + 1] = color.g;
       this.colors[idx * 3 + 2] = color.b;
     }
-    
+
     // Activate positional cohesion boost for newly spawned particles
     // This helps them congeal into a single blob immediately
     if (count > 0) {
       this.posCohesionBoostFrames = 120; // ~2 seconds at 60fps for strong initial congealing
     }
-    
+
     return count;
   }
 
@@ -526,12 +534,12 @@ export default class SPHOilSystem {
     const clusterCount = 1; // Force single cluster
     const particlesPerCluster = opts.particlesPerCluster ?? 3;
     const clusterRadiusPx = opts.clusterRadiusPx ?? 10.0;
-    
+
     // Spawn all particles at center in a single tight cluster
     const totalParticles = clusterCount * particlesPerCluster;
     return this.spawnParticles(centerX, centerY, totalParticles, color, clusterRadiusPx);
   }
-  
+
   /**
    * Sample velocity from grid texture at particle positions (bilinear interpolation)
    * Returns array of [vx, vy] for each particle
@@ -541,10 +549,10 @@ export default class SPHOilSystem {
    */
   sampleVelocityGrid(velocityTexture, gridWidth, gridHeight) {
     if (!this.gl || !velocityTexture) return null;
-    
+
     const gl = this.gl;
     const gridVelocities = new Float32Array(this.particleCount * 2);
-    
+
     // Read entire velocity texture (TODO: optimize with compute shader)
     const pixels = new Float32Array(gridWidth * gridHeight * 4);
     const tempFBO = gl.createFramebuffer();
@@ -552,20 +560,20 @@ export default class SPHOilSystem {
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, velocityTexture, 0);
     gl.readPixels(0, 0, gridWidth, gridHeight, gl.RGBA, gl.FLOAT, pixels);
     gl.deleteFramebuffer(tempFBO);
-    
+
     // Sample at each particle position
     for (let i = 0; i < this.particleCount; i++) {
       const x = this.positions[i * 2];
       const y = this.positions[i * 2 + 1];
-      
+
       // Convert world coords [-r, r] to texture coords [0, 1]
       const u = (x / (this.containerRadius * 2)) + 0.5;
       const v = (y / (this.containerRadius * 2)) + 0.5;
-      
+
       // Clamp to valid range
       const uc = Math.max(0, Math.min(1, u));
       const vc = Math.max(0, Math.min(1, v));
-      
+
       // Bilinear sample
       const px = uc * (gridWidth - 1);
       const py = vc * (gridHeight - 1);
@@ -573,16 +581,16 @@ export default class SPHOilSystem {
       const iy = Math.floor(py);
       const fx = px - ix;
       const fy = py - iy;
-      
+
       // Sample 4 neighbors
       const ix1 = Math.min(ix + 1, gridWidth - 1);
       const iy1 = Math.min(iy + 1, gridHeight - 1);
-      
+
       const idx00 = (iy * gridWidth + ix) * 4;
       const idx10 = (iy * gridWidth + ix1) * 4;
       const idx01 = (iy1 * gridWidth + ix) * 4;
       const idx11 = (iy1 * gridWidth + ix1) * 4;
-      
+
       // Bilinear interpolation
       const vx00 = pixels[idx00];
       const vy00 = pixels[idx00 + 1];
@@ -592,17 +600,17 @@ export default class SPHOilSystem {
       const vy01 = pixels[idx01 + 1];
       const vx11 = pixels[idx11];
       const vy11 = pixels[idx11 + 1];
-      
+
       const vx = (1 - fx) * (1 - fy) * vx00 + fx * (1 - fy) * vx10 + (1 - fx) * fy * vx01 + fx * fy * vx11;
       const vy = (1 - fx) * (1 - fy) * vy00 + fx * (1 - fy) * vy10 + (1 - fx) * fy * vy01 + fx * fy * vy11;
-      
+
       gridVelocities[i * 2] = vx;
       gridVelocities[i * 2 + 1] = vy;
     }
-    
+
     return gridVelocities;
   }
-  
+
   /**
    * Apply grid velocities as drag forces on particles (rotation coupling)
    * @param {Float32Array} gridVelocities - Sampled velocities [vx, vy] per particle
@@ -610,7 +618,7 @@ export default class SPHOilSystem {
    */
   applyGridDragForces(gridVelocities, dragCoeff = 5.0) {
     if (!gridVelocities) return;
-    
+
     for (let i = 0; i < this.particleCount; i++) {
       const vGridX = gridVelocities[i * 2];
       const vGridY = gridVelocities[i * 2 + 1];
@@ -640,11 +648,11 @@ export default class SPHOilSystem {
       const inv = 1.0 / clampedRatio; // higher density → smaller factor
       const densityFactor = 0.6 + 0.6 * inv; // ρ=ρ0 → ~1.2, very dense → ~0.6
       scaledDrag *= densityFactor;
-      
+
       // Drag toward grid velocity (rotation + water coupling)
       const fx = scaledDrag * (vGridX - vParticleX);
       const fy = scaledDrag * (vGridY - vParticleY);
-      
+
       // Accumulate (don't overwrite existing forces)
       this.forces[i * 2] += fx;
       this.forces[i * 2 + 1] += fy;
@@ -669,7 +677,7 @@ export default class SPHOilSystem {
   // Force safety clamp (prevent NaNs and runaway accelerations)
   // Apply at end of force accumulation per frame
   // Note: This should be called after computeForces. Here we clamp in integrate/update via forces array state.
-  
+
   /**
    * Write particle velocities back to grid texture (for continuity with grid-based rendering)
    * @param {WebGLTexture} oilVelocityTexture - Target velocity texture
@@ -678,34 +686,34 @@ export default class SPHOilSystem {
    */
   writeVelocitiesToGrid(oilVelocityTexture, gridWidth, gridHeight) {
     if (!this.gl || !oilVelocityTexture || this.particleCount === 0) return;
-    
+
     const gl = this.gl;
-    
+
     // Create temp buffer for grid
     const gridData = new Float32Array(gridWidth * gridHeight * 4);
     gridData.fill(0);
-    
+
     // Splat particle velocities to grid with soft falloff
     const splatRadius = 3; // pixels
-    
+
     for (let i = 0; i < this.particleCount; i++) {
       const x = this.positions[i * 2];
       const y = this.positions[i * 2 + 1];
       const vx = this.velocities[i * 2];
       const vy = this.velocities[i * 2 + 1];
-      
+
       // Convert world to grid coords
       const u = (x / (this.containerRadius * 2)) + 0.5;
       const v = (y / (this.containerRadius * 2)) + 0.5;
       const gx = Math.floor(u * gridWidth);
       const gy = Math.floor(v * gridHeight);
-      
+
       // Splat with soft kernel
       for (let dy = -splatRadius; dy <= splatRadius; dy++) {
         for (let dx = -splatRadius; dx <= splatRadius; dx++) {
           const nx = gx + dx;
           const ny = gy + dy;
-          
+
           if (nx >= 0 && nx < gridWidth && ny >= 0 && ny < gridHeight) {
             const dist = Math.sqrt(dx * dx + dy * dy);
             if (dist <= splatRadius) {
@@ -719,7 +727,7 @@ export default class SPHOilSystem {
         }
       }
     }
-    
+
     // Normalize by accumulated weights
     for (let i = 0; i < gridWidth * gridHeight; i++) {
       const idx = i * 4;
@@ -731,26 +739,26 @@ export default class SPHOilSystem {
       gridData[idx + 2] = 0;
       gridData[idx + 3] = 1;
     }
-    
+
     // Upload to texture
     gl.bindTexture(gl.TEXTURE_2D, oilVelocityTexture);
-    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0,
       gridWidth, gridHeight,
       gl.RGBA, gl.FLOAT, gridData);
   }
-  
+
   /**
    * Remove particles that are outside the container
    */
   removeOutOfBoundsParticles() {
     let writeIdx = 0;
     const threshold = this.containerRadius * 1.1; // 10% buffer
-    
+
     for (let readIdx = 0; readIdx < this.particleCount; readIdx++) {
       const x = this.positions[readIdx * 2];
       const y = this.positions[readIdx * 2 + 1];
       const distFromCenter = Math.sqrt(x * x + y * y);
-      
+
       // Keep particle if inside container
       if (distFromCenter < threshold) {
         if (writeIdx !== readIdx) {
@@ -772,14 +780,14 @@ export default class SPHOilSystem {
         writeIdx++;
       }
     }
-    
+
     const removed = this.particleCount - writeIdx;
     if (removed > 0) {
       console.log(`🗑️ Removed ${removed} out-of-bounds particles, ${writeIdx} remain`);
     }
     this.particleCount = writeIdx;
   }
-  
+
   /**
    * Main update loop: physics simulation step
    * PHASE 1.6: Add pressure forces for incompressibility
@@ -787,142 +795,89 @@ export default class SPHOilSystem {
   update(dt, rotationAmount = 0.0, gridVelocities = null) {
     // Early exit if no particles
     if (this.particleCount === 0) return;
-    
+
     // STEP 0: Remove particles outside container
     this.removeOutOfBoundsParticles();
-    
+
     // Store rotation for force computation
     this.currentRotation = rotationAmount;
-    
-    // Clamp timestep for stability (tighter to reduce late-frame NaNs)
-    dt = Math.min(dt, 0.008); // Max 8ms (125fps)
-    
-    // PHASE 1/2: SPH pipeline with optional implicit integration
-    this.frameIndex++;
-    this.updateSpatialHash();
-    this.computeDensities();
-    this.computePressures();
-    this.computeTemperature(dt);
-    this.computeForces(); // Now computed for both explicit and implicit paths
-    
-    // Apply LIGHT grid drag forces - oil should move slower than ink
-    // Lower drag = oil lags behind water movement (more realistic)
+
+    // Clamp timestep for stability
+    dt = Math.min(dt, 0.008);
+
+    // PHASE 1/2: Simplified "Blob Physics" pipeline
+
+    // 1. Reset forces & grid
+    this.spatialHash.clear();
+    for (let i = 0; i < this.particleCount; i++) {
+      this.spatialHash.insert(i, this.positions[i * 2], this.positions[i * 2 + 1]);
+      this.forces[i * 2] = 0;
+      this.forces[i * 2 + 1] = 0;
+    }
+
+    // 2. Compute Forces (Cohesion + Repulsion + Drag)
+    this.computeBlobForces(dt);
+
+    // 3. Apply External Forces
+    // Grid Drag (Water -> Oil coupling)
     if (gridVelocities) {
       this.applyGridDragForces(gridVelocities, this.gridDragCoeff);
     }
-    
-    if (this.useImplicitIntegration) {
-      // PHASE 2: Implicit integration (high surface tension)
-      if (!this.implicitSolver) {
-        this.implicitSolver = new ImplicitSolver(this);
-        console.log('🔧 Implicit solver initialized');
-      }
-      
-      // Solve for new velocities
-      const converged = this.implicitSolver.solve(dt);
-      
-      if (!converged && Math.random() < 0.1) {
-        console.warn('⚠️ Implicit solver convergence issue');
-      }
-      
-      // After solver, velocities are updated. Now update positions.
-      this._updatePositions(dt);
-      // Positional cohesion (PBD-style)
-      if (this.enablePositionalCohesion) {
-        this.applyPositionalCohesion(dt, this.posCohesionCoeff);
-        if (this.posCohesionBoostFrames > 0) {
-          for (let k = 0; k < this.posCohesionBoostIters; k++) {
-            this.applyPositionalCohesion(dt, this.posCohesionBoostCoeff);
-          }
-          this.posCohesionBoostFrames--;
-        }
-      }
+    // Gravity (weak vertical)
+    for (let i = 0; i < this.particleCount; i++) {
+      this.forces[i * 2 + 1] += this.gravity;
+    }
 
-    } else {
-      // PHASE 1: Explicit integration (standard SPH)
-      this.integrate(dt);
-      // Positional cohesion (PBD-style)
-      if (this.enablePositionalCohesion) {
-        this.applyPositionalCohesion(dt, this.posCohesionCoeff);
-        if (this.posCohesionBoostFrames > 0) {
-          for (let k = 0; k < this.posCohesionBoostIters; k++) {
-            this.applyPositionalCohesion(dt, this.posCohesionBoostCoeff);
-          }
-          this.posCohesionBoostFrames--;
-        }
+    // Rotation-driven tilt gravity (New "Blob" version of rotation coupling)
+    // Maps rotation to a gentle body force
+    const rotation = this.currentRotation || 0.0;
+    if (Math.abs(rotation) > 1e-6) {
+      const tiltDirX = rotation > 0 ? 0.7 : -0.7;
+      const tiltDirY = 1.0;
+      const len = Math.hypot(tiltDirX, tiltDirY) || 1.0;
+      const nx = tiltDirX / len;
+      const ny = tiltDirY / len;
+
+      // Base force magnitude
+      const base = 25.0;
+
+      for (let i = 0; i < this.particleCount; i++) {
+        // Simple mass-based force
+        const forceMag = Math.sign(rotation) * this.particleMass * base;
+        this.forces[i * 2] += nx * forceMag;
+        this.forces[i * 2 + 1] += ny * forceMag;
       }
     }
-    
+
+    // 4. Integrate (Verlet-ish)
+    this.integrate(dt);
+
+    // 5. Enforce Boundaries
     this.enforceBoundaries();
-    
-    // STEP: Check for blob splitting (throttled for performance)
+
+    this.frameIndex++;
+    this.updateSpatialHash();
+
+    // STEP: Check for blob splitting (throttled)
     if (this.enableSplitting && (this.frameIndex % this.splitCheckInterval === 0)) {
       this.checkAndSplitBlobs();
     }
-    
-    // Debug: Log density, pressure, and forces
-    if (Math.random() < 0.02 && this.particleCount > 0) {
-      const i = Math.floor(Math.random() * this.particleCount);
-      const x = this.positions[i * 2];
-      const y = this.positions[i * 2 + 1];
-      const density = this.densities[i];
-      const pressure = this.pressures[i];
-      const fx = this.forces[i * 2];
-      const fy = this.forces[i * 2 + 1];
-      const fmag = Math.sqrt(fx * fx + fy * fy);
-      
-      console.log(`💥 Particle ${i}: density=${density.toFixed(1)}, pressure=${pressure.toFixed(1)}, force=${fmag.toFixed(3)}`);
-      
-      // Validate
-      if (isNaN(pressure) || !isFinite(pressure)) {
-        console.error(`❌ INVALID PRESSURE at particle ${i}: ${pressure}`);
-      }
-    }
   }
-  
-  /**
-   * PHASE 1.4: Apply GENTLE radial gravity toward center
-   * This is the "concave plate" model - particles slide toward lowest point
-   */
-  applyGentleRadialGravity() {
-    // VERY GENTLE gravity - we want slow drift, not shooting
-    const gravityMag = 0.02; // TINY! (was -9.8 in failed attempt, now 0.02)
-    
-    for (let i = 0; i < this.particleCount; i++) {
-      const x = this.positions[i * 2];
-      const y = this.positions[i * 2 + 1];
-      const distFromCenter = Math.sqrt(x * x + y * y);
-      
-      if (distFromCenter > 1e-6) {
-        // Direction toward center
-        const dirX = -x / distFromCenter;
-        const dirY = -y / distFromCenter;
-        
-        // Apply gentle force
-        const fx = dirX * gravityMag * this.particleMass;
-        const fy = dirY * gravityMag * this.particleMass;
-        
-        this.forces[i * 2] = fx;
-        this.forces[i * 2 + 1] = fy;
-      } else {
-        this.forces[i * 2] = 0;
-        this.forces[i * 2 + 1] = 0;
-      }
-    }
-  }
-  
+
+
+
   /**
    * Rebuild spatial hash grid
    */
   updateSpatialHash() {
     this.spatialHash.clear();
-    
+
     for (let i = 0; i < this.particleCount; i++) {
       const x = this.positions[i * 2];
       const y = this.positions[i * 2 + 1];
       this.spatialHash.insert(i, x, y);
     }
-    
+
     // Build neighbor lists for each particle
     for (let i = 0; i < this.particleCount; i++) {
       const x = this.positions[i * 2];
@@ -930,503 +885,11 @@ export default class SPHOilSystem {
       this.neighborLists[i] = this.spatialHash.query(x, y, this.smoothingRadius);
     }
   }
-  
-  /**
-   * SPH Smoothing Kernel: Cubic Spline (simpler, more stable)
-   * W(q, h) where q = r/h
-   * - More standard in SPH literature
-   * - Better numerical stability
-   */
-  cubicSplineKernel(distSquared, hSquared) {
-    const h = Math.sqrt(hSquared);
-    const r = Math.sqrt(distSquared);
-    const q = r / h;
-    
-    if (q >= 2.0) return 0;
-    
-    const sigma = 10.0 / (7.0 * Math.PI * hSquared); // 2D normalization
-    
-    if (q < 1.0) {
-      return sigma * (1.0 - 1.5 * q * q + 0.75 * q * q * q);
-    } else {
-      const term = 2.0 - q;
-      return sigma * 0.25 * term * term * term;
-    }
-  }
-  
-  /**
-   * Compute density for each particle
-   * ρ_i = Σ_j m_j * W(r_ij, h)
-   * PHASE 1.5: Using spatial hash for neighbor queries
-   */
-  computeDensities() {
-    const h = this.smoothingRadius;
-    const hSquared = h * h;
-    const searchRadius = 2.0 * h; // Cubic spline has support up to 2h
-    
-    for (let i = 0; i < this.particleCount; i++) {
-      const xi = this.positions[i * 2];
-      const yi = this.positions[i * 2 + 1];
-      
-      // Query spatial hash for neighbors within 2h (cubic spline support)
-      const neighbors = this.spatialHash.query(xi, yi, searchRadius);
-      
-      let density = 0;
-      
-      for (const j of neighbors) {
-        const xj = this.positions[j * 2];
-        const yj = this.positions[j * 2 + 1];
-        const dx = xi - xj;
-        const dy = yi - yj;
-        const rSquared = dx * dx + dy * dy;
-        
-        // Use cubic spline kernel
-        density += this.particleMass * this.cubicSplineKernel(rSquared, hSquared);
-      }
-      
-      // Ensure minimum density (prevent division by zero later)
-      this.densities[i] = Math.max(density, this.restDensity * 0.01);
-      
-      // NaN guard
-      if (isNaN(this.densities[i]) || !isFinite(this.densities[i])) {
-        console.error(`❌ NaN density at particle ${i}, setting to rest density`);
-        this.densities[i] = this.restDensity;
-      }
-    }
-  }
-  
-  /**
-   * Compute pressure from density (Tait equation of state)
-   * p = B * ((ρ/ρ₀)^γ - 1)
-   * PHASE 1.6: Tension-free (clamp negative pressure to zero)
-   */
-  computePressures() {
-    const B = 6.0 * this.pressureStiffness; // Per-material stiffness to resist compression/collapse
-    const gamma = 7.0;
-    
-    for (let i = 0; i < this.particleCount; i++) {
-      const density = this.densities[i];
-      let ratio = density / this.restDensity;
-      // Cap density ratio to avoid huge pressure spikes in very dense cores.
-      // This makes additional density map more to visual thickness/size rather
-      // than unbounded spring energy.
-      if (this.maxPressureDensityRatio && this.maxPressureDensityRatio > 0) {
-        ratio = Math.min(ratio, this.maxPressureDensityRatio);
-      }
-      const pressure = B * (Math.pow(ratio, gamma) - 1.0);
-      
-      // Tension-free: no negative pressure (prevents explosion at low density)
-      this.pressures[i] = Math.max(pressure, 0.0);
-    }
-  }
 
-  /**
-   * Compute temperature diffusion between particles
-   */
-  computeTemperature(dt) {
-    const h = this.smoothingRadius;
-    const K = this.thermalConductivity;
 
-    // First, copy current temperatures to the next state
-    this.nextTemperatures.set(this.temperatures);
 
-    for (let i = 0; i < this.particleCount; i++) {
-      const Ti = this.temperatures[i];
-      const rhoi = this.densities[i];
-      let tempChange = 0;
 
-      const neighbors = this.spatialHash.query(this.positions[i * 2], this.positions[i * 2 + 1], h);
 
-      for (const j of neighbors) {
-        if (i === j) continue;
-
-        const Tj = this.temperatures[j];
-        const rhoj = this.densities[j];
-        
-        const dx = this.positions[i * 2] - this.positions[j * 2];
-        const dy = this.positions[i * 2 + 1] - this.positions[j * 2 + 1];
-        const rSquared = dx * dx + dy * dy;
-
-        // Using viscosity kernel for Laplacian of temperature
-        const laplacian = this.viscosityLaplacianKernel(Math.sqrt(rSquared), h);
-        
-        // SPH formulation for heat equation
-        tempChange += (this.particleMass / rhoj) * (K / rhoi) * (Ti - Tj) * laplacian;
-      }
-      
-      this.nextTemperatures[i] += tempChange * dt;
-
-      // Also include simple cooling to room temperature
-      const coolingRate = 0.001; // VERY SLOW cooling (was 0.005) - blobs need to persist
-      this.nextTemperatures[i] -= (this.temperatures[i] - this.roomTemperature) * coolingRate * dt;
-      // NaN/finite guard and clamp to safe range
-      if (!isFinite(this.nextTemperatures[i]) || isNaN(this.nextTemperatures[i])) {
-        this.nextTemperatures[i] = this.roomTemperature;
-      } else {
-        this.nextTemperatures[i] = Math.max(-20, Math.min(200, this.nextTemperatures[i]));
-      }
-    }
-
-    // Swap buffers
-    [this.temperatures, this.nextTemperatures] = [this.nextTemperatures, this.temperatures];
-  }
-  
-  /**
-   * SPH Pressure Gradient Kernel (Spiky kernel)
-   * ∇W(r, h) = -45 / (πh^6) * (h - r)² * (r̂)  for r < h
-   * Used for pressure forces (sharp gradient prevents clustering)
-   */
-  spikyGradientKernel(dx, dy, dist, h) {
-    if (dist >= h || dist < 1e-6) return { x: 0, y: 0 };
-    const factor = -45.0 / (Math.PI * Math.pow(h, 6));
-    const diff = h - dist;
-    const magnitude = factor * diff * diff / dist;
-    return {
-      x: magnitude * dx,
-      y: magnitude * dy
-    };
-  }
-  
-  /**
-   * SPH Viscosity Kernel Laplacian (for viscosity force)
-   * ∇²W(r, h) = 45 / (πh^6) * (h - r)  for r < h
-   */
-  viscosityLaplacianKernel(dist, h) {
-    if (dist >= h) return 0;
-    return (45.0 / (Math.PI * Math.pow(h, 6))) * (h - dist);
-  }
-  
-  /**
-   * Accumulate all forces (pressure, viscosity, gravity)
-   * PHASE 1.7: Pressure + Viscosity + Gravity
-   */
-  computeForces() {
-    // Zero out force accumulator
-    this.forces.fill(0);
-    // Zero XSPH corrections (if used)
-    if (this.xsphCoeff > 0) this.xsphCorr.fill(0);
-    
-    const h = this.smoothingRadius;
-    
-    // COMBINED LOOP: Pressure + Viscosity (cache efficient - single pass over neighbors)
-    for (let i = 0; i < this.particleCount; i++) {
-      const xi = this.positions[i * 2];
-      const yi = this.positions[i * 2 + 1];
-      const pi = this.pressures[i];
-      const rhoi = this.densities[i];
-      const vxi = this.velocities[i * 2];
-      const vyi = this.velocities[i * 2 + 1];
-      
-      // Query neighbors
-      const neighbors = this.spatialHash.query(xi, yi, h);
-      
-      for (const j of neighbors) {
-        if (i === j) continue; // Skip self
-        
-        const xj = this.positions[j * 2];
-        const yj = this.positions[j * 2 + 1];
-        const dx = xi - xj;
-        const dy = yi - yj;
-        const distSq = dx * dx + dy * dy;
-        
-        // Early exit if outside kernel radius
-        if (distSq >= h * h) continue;
-        
-        const dist = Math.sqrt(distSq);
-        
-        // === PRESSURE FORCE ===
-        const pj = this.pressures[j];
-        const rhoj = this.densities[j];
-        const pressureTerm = pi / (rhoi * rhoi) + pj / (rhoj * rhoj);
-        const grad = this.spikyGradientKernel(dx, dy, dist, h);
-        
-        const fx_pressure = -this.particleMass * this.particleMass * pressureTerm * grad.x;
-        const fy_pressure = -this.particleMass * this.particleMass * pressureTerm * grad.y;
-        
-        // === VISCOSITY FORCE ===
-        const vxj = this.velocities[j * 2];
-        const vyj = this.velocities[j * 2 + 1];
-        const laplacian = this.viscosityLaplacianKernel(dist, h);
-        const viscFactor = this.viscosity * this.particleMass * this.particleMass / rhoj * laplacian;
-        
-        const fx_viscosity = viscFactor * (vxj - vxi);
-        const fy_viscosity = viscFactor * (vyj - vyi);
-
-        // === IPF COHESION FORCE (explicit, short-range) ===
-        let fx_ipf = 0.0;
-        let fy_ipf = 0.0;
-        if (this.ipfStrength > 0.0) {
-          const innerR = this.ipfInnerRadiusScale * h;
-          const outerR = this.ipfOuterRadiusScale * h;
-          if (dist > innerR && dist < outerR) {
-            // Density bias: pull thinner particles toward denser neighbors more strongly.
-            // If neighbor is less dense or similar, weaken/disable IPF so dense cores
-            // are not pushed around by fresh, low-density splats.
-            const rest = this.restDensity || 1.0;
-            const densityDelta = (rhoj - rhoi) / rest; // >0 when neighbor is denser
-            const densityScale = Math.max(0.0, Math.min(1.0, densityDelta));
-            if (densityScale > 0.0) {
-              const span = Math.max(1e-6, outerR - innerR);
-              const t = (dist - innerR) / span; // 0 at innerR, 1 at outerR
-              const falloff = 1.0 - t;
-              const w = falloff * falloff;
-              const invd = 1.0 / dist;
-              const dirx = (xj - xi) * invd;
-              const diry = (yj - yi) * invd;
-              const s = this.ipfStrength * w * densityScale * this.particleMass;
-              fx_ipf = dirx * s;
-              fy_ipf = diry * s;
-            }
-          }
-        }
-        
-        // NaN guards - prevent corrupting forces
-        const fx_total = fx_pressure + fx_viscosity + fx_ipf;
-        const fy_total = fy_pressure + fy_viscosity + fy_ipf;
-        
-        if (!isNaN(fx_total) && !isNaN(fy_total)) {
-          this.forces[i * 2] += fx_total;
-          this.forces[i * 2 + 1] += fy_total;
-        } else {
-          console.warn(`⚠️ NaN force at particle ${i} from neighbor ${j}`);
-        }
-        
-        // XSPH velocity smoothing (helps blobs merge, reduces oscillation)
-        if (this.xsphCoeff > 0) {
-          const w = (h - dist) > 0 ? (h - dist) / (h + 1e-6) : 0;
-          if (w > 0) {
-            const rhoAvg = 0.5 * (rhoi + rhoj) + 1e-6;
-            const scale = this.xsphCoeff * (this.particleMass / rhoAvg) * w;
-            this.xsphCorr[i * 2] += scale * (vxj - vxi);
-            this.xsphCorr[i * 2 + 1] += scale * (vyj - vyi);
-          }
-        }
-      }
-    }
-    
-    // STEP 2: EXPLICIT COHESION (short-range every frame, long-range throttled)
-    // WITH THINNING DETECTION: Reduce cohesion in thin regions
-    const shortCohesion = this.shortCohesion;
-    const shortRadius = h * this.shortRadiusScale;
-    const minDist = h * this.minDistScale;
-    const longCohesion = this.longCohesion;
-    const longRadius = h * this.longRadiusScale;
-
-    // Pre-compute thinning factors for each particle (if enabled)
-    const thinningFactors = new Float32Array(this.particleCount);
-    if (this.enableThinning) {
-      for (let i = 0; i < this.particleCount; i++) {
-        const xi = this.positions[i * 2];
-        const yi = this.positions[i * 2 + 1];
-        const rhoi = this.densities[i];
-        
-        // Check local density relative to rest density
-        const densityRatio = rhoi / this.restDensity;
-        
-        // Count neighbors within short radius
-        const neighborsS = this.spatialHash.query(xi, yi, shortRadius);
-        const neighborCount = neighborsS.length - 1; // exclude self
-        
-        // Particle is "thin" only if BOTH:
-        // 1. Density is below threshold, AND
-        // 2. Too few neighbors (stretched region).
-        // This means dense interiors of blobs remain "thick" and keep strong
-        // cohesion, making contiguous regions harder to break.
-        const hasNeighbors = neighborCount > 0;
-        const isThin = hasNeighbors &&
-          densityRatio < this.thinningThreshold &&
-          neighborCount < this.minNeighborsForThick;
-        
-        // Reduce cohesion in thin regions
-        thinningFactors[i] = isThin ? this.cohesionReductionInThin : 1.0;
-      }
-    } else {
-      thinningFactors.fill(1.0);
-    }
-
-    // Short-range pass (every frame) - with thinning-aware cohesion
-    // Maximum distance check to prevent cross-blob attraction
-    const maxCohesionDist = h * this.splitDistance; // Same as positional cohesion limit
-    
-    for (let i = 0; i < this.particleCount; i++) {
-      const xi = this.positions[i * 2];
-      const yi = this.positions[i * 2 + 1];
-      const neighborsS = this.spatialHash.query(xi, yi, shortRadius);
-      const maxShort = 64;
-      const sCount = Math.min(neighborsS.length, maxShort);
-      const thinFactorI = thinningFactors[i];
-
-      // Contiguity factor: more local neighbors → stronger cohesion. This
-      // pushes touching blobs to re-shape into one contiguous mass. Isolated
-      // droplets and filaments get weaker cohesion.
-      const neighborCount = Math.max(0, sCount - 1); // exclude self approx
-      const contigMin = 4;   // below this, scale goes to 0
-      const contigMax = 18;  // above this, scale ~1
-      let contiguityScale = 0.0;
-      if (neighborCount <= contigMin) {
-        contiguityScale = 0.0;
-      } else if (neighborCount >= contigMax) {
-        contiguityScale = 1.0;
-      } else {
-        const ct = (neighborCount - contigMin) / Math.max(1e-6, contigMax - contigMin);
-        contiguityScale = ct * ct * (3.0 - 2.0 * ct); // smoothstep
-      }
-      
-      for (let n = 0; n < sCount; n++) {
-        const j = neighborsS[n];
-        if (i === j) continue;
-        const dx = this.positions[j * 2] - xi;
-        const dy = this.positions[j * 2 + 1] - yi;
-        const dist = Math.hypot(dx, dy);
-        if (dist < minDist || dist <= 1e-6) continue;
-        
-        // CRITICAL: Don't apply cohesion if particles are too far apart (different blobs)
-        if (dist > maxCohesionDist) continue;
-        
-        // Apply thinning factor to both particles (neck region gets reduced cohesion)
-        const thinFactorJ = thinningFactors[j];
-        const combinedThinFactor = Math.min(thinFactorI, thinFactorJ);
-        
-        // Cohesion falloff: strongest just outside minDist, decaying smoothly
-        // toward shortRadius. This avoids a preferred mid-radius ring and
-        // encourages solid blobs instead of donuts.
-        const span = Math.max(1e-6, shortRadius - minDist);
-        const t = (dist - minDist) / span; // 0 at minDist, 1 at shortRadius
-        const falloff = Math.max(0.0, 1.0 - t);
-        const strength = shortCohesion * falloff * falloff * combinedThinFactor * contiguityScale;
-        if (strength > 0) {
-          const invd = 1.0 / dist;
-          this.forces[i * 2] += (dx * invd) * strength * this.particleMass;
-          this.forces[i * 2 + 1] += (dy * invd) * strength * this.particleMass;
-        }
-      }
-    }
-
-    // Long-range pass (throttled) - with thinning-aware cohesion
-    const doLongRange = (this.frameIndex % 3) === 0;
-    if (doLongRange && longCohesion > 0 && longRadius > shortRadius) {
-      for (let i = 0; i < this.particleCount; i++) {
-        const xi = this.positions[i * 2];
-        const yi = this.positions[i * 2 + 1];
-        const neighborsL = this.spatialHash.query(xi, yi, longRadius);
-        const maxLong = 96;
-        const lCount = Math.min(neighborsL.length, maxLong);
-        const thinFactorI = thinningFactors[i];
-        
-        for (let n = 0; n < lCount; n++) {
-          const j = neighborsL[n];
-          if (i === j) continue;
-          const dx = this.positions[j * 2] - xi;
-          const dy = this.positions[j * 2 + 1] - yi;
-          const dist = Math.hypot(dx, dy);
-          if (dist < Math.max(minDist, shortRadius) || dist >= longRadius || dist <= 1e-6) continue;
-          
-          // Apply thinning factor (weaker in long-range, but still applies)
-          const thinFactorJ = thinningFactors[j];
-          const combinedThinFactor = Math.min(thinFactorI, thinFactorJ);
-          
-          const q = (dist - shortRadius) / (longRadius - shortRadius);
-          const falloff = Math.exp(-q * 2.0);
-          const strength = longCohesion * falloff * combinedThinFactor;
-          if (strength > 0) {
-            const invd = 1.0 / dist;
-            this.forces[i * 2] += (dx * invd) * strength * this.particleMass;
-            this.forces[i * 2 + 1] += (dy * invd) * strength * this.particleMass;
-          }
-        }
-      }
-    }
-
-    // STEP 3: MARANGONI FORCE (surface tension gradient)
-    if (this.marangoniStrength > 0) {
-        for (let i = 0; i < this.particleCount; i++) {
-            // Only apply to surface particles (heuristic: lower density)
-            if (this.densities[i] < this.restDensity * 0.9) {
-                const Ti = this.temperatures[i];
-                
-                let gradTx = 0;
-                let gradTy = 0;
-
-                const neighbors = this.spatialHash.query(this.positions[i * 2], this.positions[i * 2 + 1], h);
-
-                for (const j of neighbors) {
-                    if (i === j) continue;
-
-                    const Tj = this.temperatures[j];
-                    const rhoj = this.densities[j];
-                    
-                    const dx = this.positions[i * 2] - this.positions[j * 2];
-                    const dy = this.positions[i * 2 + 1] - this.positions[j * 2 + 1];
-                    const dist = Math.sqrt(dx * dx + dy * dy);
-
-                    if (dist > 1e-6 && dist < h) {
-                        const grad = this.spikyGradientKernel(dx, dy, dist, h);
-                        const temp_diff = Math.max(-50, Math.min(50, Tj - Ti));
-                        
-                        // SPH gradient of temperature
-                        gradTx += (this.particleMass / rhoj) * temp_diff * grad.x;
-                        gradTy += (this.particleMass / rhoj) * temp_diff * grad.y;
-                    }
-                }
-                
-                // Force is opposite to temperature gradient (hot to cold)
-                this.forces[i * 2] -= this.marangoniStrength * gradTx;
-                this.forces[i * 2 + 1] -= this.marangoniStrength * gradTy;
-            }
-        }
-    }
-    
-    // STEP 4: Radial gravity disabled (was causing global convergence)
-    
-    // STEP 4: Rotation-driven tilt gravity. We no longer spin particles
-    // tangentially around the center (which caused pinball behavior). Instead
-    // we treat rotationAmount as an effective tilt that applies a gentle
-    // body force in a roughly horizontal direction.
-    const rotation = this.currentRotation || 0.0;
-    
-    // Debug: Log rotation with force comparison
-    if (this.debug && Math.abs(rotation) > 1e-6 && Math.random() < 0.01) {
-      // Sample a particle to see force magnitudes
-      if (this.particleCount > 0) {
-        const i = Math.floor(this.particleCount / 2);
-        const x = this.positions[i * 2];
-        const y = this.positions[i * 2 + 1];
-        const dist = Math.sqrt(x * x + y * y);
-        const rotForce = Math.abs(rotation * dist * this.particleMass * 50.0);
-        const totalForce = Math.sqrt(this.forces[i * 2] ** 2 + this.forces[i * 2 + 1] ** 2);
-        console.log(`🌀 SPH Rotation: ${rotation.toFixed(3)}, rotForce=${rotForce.toFixed(1)}, totalForce=${totalForce.toFixed(1)}, pressure=${this.pressures[i].toFixed(1)}`);
-      } else {
-        console.log(`🌀 SPH Rotation: ${rotation.toFixed(3)}`);
-      }
-    }
-    
-    if (Math.abs(rotation) > 1e-6) {
-      // Effective tilt direction in plate space. For now, map positive
-      // rotation to a gentle "down-right" tilt and negative to "down-left".
-      // This is intentionally simple; water flow + drag do most of the work.
-      const tiltDirX = rotation > 0 ? 0.7 : -0.7;
-      const tiltDirY = 1.0; // always a bit "down"
-      const len = Math.hypot(tiltDirX, tiltDirY) || 1.0;
-      const nx = tiltDirX / len;
-      const ny = tiltDirY / len;
-
-      for (let i = 0; i < this.particleCount; i++) {
-        // Density-aware tilt: denser regions feel a bit more of the tilt
-        // gravity, but we keep it very gentle.
-        const rho = this.densities[i];
-        const densityRatio = rho / (this.restDensity || 1.0);
-        const clampedRatio = Math.max(0.5, Math.min(2.0, densityRatio));
-        // Map [0.5,2] → [0.7,1.1]
-        const densityScale = 0.7 + 0.4 * ((clampedRatio - 0.5) / 1.5);
-
-        const base = 4.0; // extremely gentle tilt force
-        const forceMag = Math.sign(rotation) * this.particleMass * base * densityScale;
-        this.forces[i * 2]     += nx * forceMag;
-        this.forces[i * 2 + 1] += ny * forceMag;
-      }
-    }
-  }
-  
   /**
    * Time integration: Update velocities and positions
    * PHASE 1.7: With NaN guards and damping
@@ -1436,14 +899,14 @@ export default class SPHOilSystem {
     for (let i = 0; i < this.particleCount; i++) {
       const fx = this.forces[i * 2];
       const fy = this.forces[i * 2 + 1];
-      
+
       if (isNaN(fx) || isNaN(fy) || !isFinite(fx) || !isFinite(fy)) {
         console.error(`❌ NaN force at particle ${i}, resetting to zero`);
         this.forces[i * 2] = 0;
         this.forces[i * 2 + 1] = 0;
         continue;
       }
-      
+
       this.velocities[i * 2] += (fx / this.particleMass) * dt;
       this.velocities[i * 2 + 1] += (fy / this.particleMass) * dt;
       // Apply XSPH velocity smoothing before damping (if enabled)
@@ -1452,29 +915,109 @@ export default class SPHOilSystem {
         this.velocities[i * 2 + 1] += this.xsphCorr[i * 2 + 1];
       }
     }
-    
+
     // Apply damping and update positions
     this._updatePositions(dt);
+  }
+
+  /**
+   * PHASE 1/2: Simplified "Blob Physics" Force Computation
+   * Uses Cohesion + Repulsion + Damping instead of Pressure/Viscosity
+   */
+  computeBlobForces(dt) {
+    const h = this.blobInteractionRadius;
+    const h2 = h * h;
+
+    // Lennard-Jones-ish potential tuning
+    // We want a stable distance around r = 0.6 * h
+    const targetDist = h * 0.6;
+
+    for (let i = 0; i < this.particleCount; i++) {
+      const xi = this.positions[i * 2];
+      const yi = this.positions[i * 2 + 1];
+      const vxi = this.velocities[i * 2];
+      const vyi = this.velocities[i * 2 + 1];
+
+      const neighbors = this.spatialHash.query(xi, yi, h);
+
+      for (const j of neighbors) {
+        if (i === j) continue;
+
+        const xj = this.positions[j * 2];
+        const yj = this.positions[j * 2 + 1];
+        const vxj = this.velocities[j * 2];
+        const vyj = this.velocities[j * 2 + 1];
+
+        let dx = xi - xj;
+        let dy = yi - yj;
+        let dist2 = dx * dx + dy * dy;
+
+        if (dist2 > h2 || dist2 < 0.00001) continue;
+
+        const dist = Math.sqrt(dist2);
+        const invDist = 1.0 / dist;
+        const nx = dx * invDist; // Normalized direction from j to i
+        const ny = dy * invDist;
+
+        // Force magnitude
+        // Positive = Repulsion (push away)
+        // Negative = Attraction (pull together)
+        let force = 0;
+
+        if (dist < targetDist) {
+          // Repulsion: Strong push away if too close
+          // Linear repulsion is stable: F = k * (target - dist)
+          const pct = 1.0 - (dist / targetDist);
+          force = this.blobRepulsion * pct;
+        } else {
+          // Cohesion: Pull together if within range but not too close
+          // Smooth falloff
+          const pct = 1.0 - ((dist - targetDist) / (h - targetDist));
+          // Curve it so it's strongest in the middle, zero at edges
+          const curve = pct * pct * (3 - 2 * pct);
+          force = -this.blobCohesion * curve; // Negative = Attraction
+        }
+
+        // --- Inter-particle Viscosity (Damping) ---
+        // Resists relative motion along the normal - CRITICAL for killing jitter
+        const dvx = vxi - vxj;
+        const dvy = vyi - vyj;
+        const relVel = dvx * nx + dvy * ny; // Relative velocity along normal
+
+        // High viscosity coefficient kills oscillation dead
+        const viscosity = 2.0; // VERY HIGH: Maximum damping for stable blobs
+        const dampingForce = -viscosity * relVel;
+
+        force += dampingForce;
+
+        const fx = nx * force;
+        const fy = ny * force;
+
+        this.forces[i * 2] += fx;
+        this.forces[i * 2 + 1] += fy;
+      }
+    }
   }
 
   /**
    * Shared logic for applying damping, velocity caps, and updating positions
    */
   _updatePositions(dt) {
-    const damping = this.dampingFactor; // Base damping per material
-    const maxSpeed = this.maxSpeedCap;  // Tunable cap per material
-    
+    const damping = this.blobFriction; // Use the tuned blob friction
+    const maxSpeed = this.maxSpeedCap;
+
     for (let i = 0; i < this.particleCount; i++) {
-      // Quadratic speed damping before linear damping (eats residual kinetic energy)
+      // Re-enable Quadratic speed damping (gentle) to kill high-freq vibration
       const vx0 = this.velocities[i * 2];
       const vy0 = this.velocities[i * 2 + 1];
       const speed0 = Math.hypot(vx0, vy0);
       if (speed0 > 0) {
-        const k = this.quadraticDampingK;
+        const k = 0.5; // Gentle quadratic drag (was 2.0)
         const q = 1.0 / (1.0 + k * speed0);
         this.velocities[i * 2] = vx0 * q;
         this.velocities[i * 2 + 1] = vy0 * q;
       }
+
       // Apply linear damping, modulated slightly by local density so dense
       // cores are more damped (less oscillatory) than thin fringes.
       const rho = this.densities[i];
@@ -1489,7 +1032,7 @@ export default class SPHOilSystem {
 
       this.velocities[i * 2] *= localDamping;
       this.velocities[i * 2 + 1] *= localDamping;
-      
+
       // Cap velocity magnitude
       const speed = Math.sqrt(this.velocities[i * 2] ** 2 + this.velocities[i * 2 + 1] ** 2);
       if (speed > maxSpeed) {
@@ -1497,18 +1040,19 @@ export default class SPHOilSystem {
         this.velocities[i * 2] *= factor;
         this.velocities[i * 2 + 1] *= factor;
       }
-      
+
+
       // NaN guard on velocities
       if (isNaN(this.velocities[i * 2]) || isNaN(this.velocities[i * 2 + 1])) {
         console.error(`❌ NaN velocity at particle ${i}, resetting`);
         this.velocities[i * 2] = 0;
         this.velocities[i * 2 + 1] = 0;
       }
-      
+
       // x += v * dt
       this.positions[i * 2] += this.velocities[i * 2] * dt;
       this.positions[i * 2 + 1] += this.velocities[i * 2 + 1] * dt;
-      
+
       // NaN guard on positions
       if (isNaN(this.positions[i * 2]) || isNaN(this.positions[i * 2 + 1])) {
         console.error(`❌ NaN position at particle ${i}, moving to center`);
@@ -1519,73 +1063,73 @@ export default class SPHOilSystem {
       }
     }
   }
-  
+
   /**
    * Check for disconnected blob clusters and allow them to split
    * Uses graph connectivity analysis to find separate clusters
    */
   checkAndSplitBlobs() {
     if (this.particleCount < this.minClusterSize * 2) return; // Need at least 2 clusters
-    
+
     const h = this.smoothingRadius;
     const connectionDistance = h * this.splitDistance;
-    
+
     // Build connectivity graph: particles are connected if within connectionDistance
     const visited = new Array(this.particleCount).fill(false);
     const clusters = [];
-    
+
     // Find all connected components using DFS
     for (let i = 0; i < this.particleCount; i++) {
       if (visited[i]) continue;
-      
+
       // Start new cluster
       const cluster = [];
       const stack = [i];
       visited[i] = true;
-      
+
       while (stack.length > 0) {
         const current = stack.pop();
         cluster.push(current);
-        
+
         const xi = this.positions[current * 2];
         const yi = this.positions[current * 2 + 1];
-        
+
         // Find all neighbors within connection distance
         const neighbors = this.spatialHash.query(xi, yi, connectionDistance);
-        
+
         for (const j of neighbors) {
           if (visited[j] || j === current) continue;
-          
+
           const xj = this.positions[j * 2];
           const yj = this.positions[j * 2 + 1];
           const dx = xi - xj;
           const dy = yi - yj;
           const dist = Math.sqrt(dx * dx + dy * dy);
-          
+
           if (dist <= connectionDistance) {
             visited[j] = true;
             stack.push(j);
           }
         }
       }
-      
+
       // Only keep clusters with minimum size
       if (cluster.length >= this.minClusterSize) {
         clusters.push(cluster);
       }
     }
-    
+
     // If we have multiple clusters, they're already split (no action needed)
     // The thinning mechanism will allow them to drift apart naturally
     if (clusters.length > 1 && this.debug && Math.random() < 0.1) {
       console.log(`🔀 Detected ${clusters.length} blob clusters (sizes: ${clusters.map(c => c.length).join(', ')})`);
     }
-    
+
     // Note: We don't actively force particles apart here - the reduced cohesion
     // in thin regions (from thinning detection) will naturally allow clusters
     // to separate when they're stretched thin enough.
   }
-  
+
   /**
    * Enforce circular container boundary (bounce particles back)
    */
@@ -1594,7 +1138,7 @@ export default class SPHOilSystem {
       let x = this.positions[i * 2];
       let y = this.positions[i * 2 + 1];
       const dist = Math.sqrt(x * x + y * y);
-      
+
       if (dist > this.containerRadius) {
         // Push particle back inside
         const factor = this.containerRadius / dist;
@@ -1602,7 +1146,7 @@ export default class SPHOilSystem {
         y *= factor;
         this.positions[i * 2] = x;
         this.positions[i * 2 + 1] = y;
-        
+
         // Reflect velocity (bounce with damping)
         const damping = 0.5;
         const nx = x / dist; // Normal
@@ -1615,7 +1159,7 @@ export default class SPHOilSystem {
       }
     }
   }
-  
+
   /**
    * Get statistics for debugging
    */

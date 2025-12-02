@@ -1,7 +1,7 @@
 #version 300 es
 // sph-particle-splat.frag.glsl
 // Fragment shader for SPH particle rendering
-// Renders each particle as a soft circular splat
+// Renders each particle as a soft circular splat with organic falloff
 
 precision highp float;
 
@@ -10,11 +10,26 @@ in vec3 v_color;
 in float v_density;
 in vec2 v_worldPos;
 
-// Uniforms (need container radius for edge fade)
+// Uniforms
 uniform float u_containerRadius;
 
 // Output
 out vec4 fragColor;
+
+// Attempt a smoother, more organic falloff curve
+// Combines gaussian core with polynomial tail for soft edges
+float organicFalloff(float dist) {
+    // Gaussian core (strong center)
+    float gaussian = exp(-1.2 * dist * dist);
+    
+    // Polynomial tail (soft edge that reaches further)
+    float poly = 1.0 - dist;
+    poly = poly * poly * poly; // Cubic falloff
+    poly = max(poly, 0.0);
+    
+    // Blend: gaussian dominates center, polynomial extends edges
+    return mix(poly, gaussian, 0.6);
+}
 
 void main() {
     // gl_PointCoord: [0,0] at top-left, [1,1] at bottom-right of point sprite
@@ -22,35 +37,38 @@ void main() {
     vec2 coord = gl_PointCoord * 2.0 - 1.0;
     float dist = length(coord);
     
-    // Circular falloff (soft edge)
-    // Distance 0.0 (center) = full opacity
-    // Distance 1.0 (edge) = zero opacity
-    if (dist > 1.0) {
-        discard; // Outside circle
+    // Soft circular boundary (no hard discard - let falloff handle it)
+    if (dist > 1.2) {
+        discard; // Only discard well outside the circle
     }
     
-    // BALANCED exponential falloff: sharp but reachable
-    // Exponential with moderate steepness for clean edges while maintaining blob formation
-    float falloff = exp(-2.0 * dist * dist); // Less aggressive than -3.0
-    falloff = clamp(falloff, 0.0, 1.0);
+    // Organic falloff: soft gaussian core with extended polynomial tail
+    float falloff = organicFalloff(dist);
     
     // Edge fade: reduce alpha near container boundary to prevent glow
     float distFromCenter = length(v_worldPos);
     float edgeFade = 1.0 - smoothstep(u_containerRadius * 0.85, u_containerRadius * 0.95, distFromCenter);
     
-    // Density-based gain: let local SPH density modulate thickness contribution.
-    // Assume restDensity ~ 1000; normalize and apply a gentle, sublinear gain
-    float rhoNorm = clamp(v_density / 1000.0, 0.5, 2.0);
-    float densityGain = pow(rhoNorm, 0.6);
+    // Density-based gain: denser particles contribute more to the field
+    // This helps thick blob cores stay solid while thin edges fade naturally
+    float rhoNorm = clamp(v_density / 1000.0, 0.3, 2.5);
+    float densityGain = pow(rhoNorm, 0.5); // Gentler curve for more uniform blobs
+    
+    // Density also affects splat "spread" - denser = slightly larger effective radius
+    float densitySpread = 1.0 + (rhoNorm - 1.0) * 0.15;
+    falloff = organicFalloff(dist / densitySpread);
 
     // Alpha: geometric falloff * density-based gain * edge fade
     float alpha = falloff * densityGain * edgeFade;
+    
+    // Boost alpha slightly to ensure good overlap between particles
+    alpha *= 1.3;
+    alpha = clamp(alpha, 0.0, 1.0);
     
     // PRE-MULTIPLY color by alpha for proper pigment mixing
     // This prevents white accumulation - colors will blend like translucent layers
     vec3 premultiplied = v_color * alpha;
     
     // Output: Pre-multiplied color + alpha channel
-    // Alpha blending will now mix colors properly instead of making white
     fragColor = vec4(premultiplied, alpha);
 }

@@ -24,26 +24,32 @@ export default class Simulation {
         this.renderer = renderer;
         this.gl = renderer.gl;
         this.webgpu = null;
-        
+
         // Physics parameters - back to working values after radical experiment
         this.viscosity = 0.03;  // Lower viscosity so momentum lingers longer
         this.diffusionRate = 0.0;  // Disable diffusion (was causing fading)
-        this.oilSmoothingRate = 0.0; // Set per-material
-        this.spreadStrength = 0.0;  
+        this.oilSmoothingRate = 0.25; // Set per-material (default 0.25 for bilateral filter)
+        this.spreadStrength = 0.0;
         this.oilCohesionStrength = 3.0;  // Cohesion force for dust cleanup
         this.oilAbsorptionThreshold = 0.12;  // Absorb thin dust
+        this.oilThicknessThreshold = 0.002; // Kill dust below this threshold (bilateral filter)
         this.oilEdgeSharpness = 0.0;  // DISABLED - was creating banding artifacts
-        
+
         // MetaBall rendering parameters (implicit surface blending)
         this.metaballEnabled = true;       // PHASE 1.9: ENABLED - Turn particles into blobs!
         this.metaballBlobThreshold = 0.4;  // LOWERED to include more particles (was 0.70)
         this.metaballRadius = 25.0;        // WIDER for better merging (was 20)
         this.metaballBulginess = 2.5;      // SOFTER merging (was 3.0)
+        
+        // Oil blur post-processing (smooth organic edges)
+        this.oilBlurEnabled = true;        // Enable post-blur pass
+        this.oilBlurRadius = 2.0;          // Blur kernel radius in pixels
+        this.oilBlurStrength = 0.4;        // REDUCED: Subtle blur to preserve detail
         this.rotationAmount = 0.0;   // Start at 0, controlled by user (A/D keys or buttons)
         this.rotationBase = 0.0;     // No baseline rotation - user controls via rotationDelta
         this.rotationDelta = 0.0;   // Transient input (keys/gestures)
-        this.jetForce = {x: 0, y: 0, strength: 0};  // Jet impulse tool
-        
+        this.jetForce = { x: 0, y: 0, strength: 0 };  // Jet impulse tool
+
         // Dynamic lighting - plate tilt and wobble
         this.lightTiltX = 0.0;  // -1 to 1 (left/right tilt)
         this.lightTiltY = 0.0;  // -1 to 1 (up/down tilt)
@@ -61,34 +67,34 @@ export default class Simulation {
         this._frameCounter = 0;
         this.overflowLower = 0.80; // target lower bound
         this.overflowUpper = 0.90; // trigger threshold
-        
+
         // Oil occupancy / overflow control (MUST be higher than water to persist longer)
         this.oilOccupancyPercent = 0.0; // 0..1 fraction of oil-covered pixels
         this.oilOverflowLower = 0.80; // target lower bound
         this.oilOverflowUpper = 0.95; // trigger threshold (HIGHER than water's 0.90 so oil persists longer)
-        
+
         // Central spiral force accumulation
         this.centralSpiralPower = 0.0; // 0..1, builds up with sustained rotation
         this.centralSpiralBuildRate = 0.015; // how fast it builds per frame (~1 second to full)
         this.centralSpiralDecayRate = 0.05; // how fast it decays when not rotating
         this.centralSpiralAngle = 0.0; // rotation angle of the force emitter
-        
+
         // Iteration counts (water)
         this.viscosityIterations = 20;  // Jacobi iterations for viscosity
         this.pressureIterations = 50;  // Jacobi iterations for pressure
         this.diffusionIterations = 20;  // Jacobi iterations for color diffusion
-        
+
         // Oil-specific viscosity parameters
         this.oilViscosity = 0.8;  // Much higher than water (will be material-specific)
         this.oilViscosityIterations = 100;  // Higher iterations for thicker oil
         this.oilVorticityStrength = 0.0;  // Disable vorticity for oil (high viscosity damps swirls)
-        
+
         // Oil → Water coupling (thickness gradient → force)
         this.couplingStrength = 0.1;  // Strength of oil pushing water (material-specific)
-        
+
         // Testing/debugging
         this.paused = false;  // F004 requirement: pause/freeze state
-        
+
         // Layers
         this.water = null;
         this.oil = null;      // optional, off by default
@@ -136,47 +142,47 @@ export default class Simulation {
 
         // Load all shaders
         const fullscreenVert = await loadShader('src/shaders/fullscreen.vert.glsl');
-        
+
         this.advectionProgram = this.renderer.createProgram(
             fullscreenVert,
             await loadShader('src/shaders/advection.frag.glsl')
         );
-        
+
         this.viscosityProgram = this.renderer.createProgram(
             fullscreenVert,
             await loadShader('src/shaders/viscosity.frag.glsl')
         );
-        
+
         this.diffusionProgram = this.renderer.createProgram(
             fullscreenVert,
             await loadShader('src/shaders/diffusion.frag.glsl')
         );
-        
+
         this.divergenceProgram = this.renderer.createProgram(
             fullscreenVert,
             await loadShader('src/shaders/divergence.frag.glsl')
         );
-        
+
         this.pressureProgram = this.renderer.createProgram(
             fullscreenVert,
             await loadShader('src/shaders/pressure.frag.glsl')
         );
-        
+
         this.gradientProgram = this.renderer.createProgram(
             fullscreenVert,
             await loadShader('src/shaders/gradient.frag.glsl')
         );
-        
+
         this.forcesProgram = this.renderer.createProgram(
             fullscreenVert,
             await loadShader('src/shaders/forces.frag.glsl')
         );
-        
+
         this.splatProgram = this.renderer.createProgram(
             fullscreenVert,
             await loadShader('src/shaders/splat.frag.glsl')
         );
-        
+
         try {
             this.concentrationPressureProgram = this.renderer.createProgram(
                 fullscreenVert,
@@ -187,7 +193,7 @@ export default class Simulation {
             console.error('❌ Failed to load concentration pressure shader:', e);
             this.concentrationPressureProgram = null;
         }
-        
+
         this.vorticityConfinementProgram = this.renderer.createProgram(
             fullscreenVert,
             await loadShader('src/shaders/vorticity-confinement.frag.glsl')
@@ -306,7 +312,13 @@ export default class Simulation {
             fullscreenVert,
             await loadShader('src/shaders/oil-metaball.frag.glsl')
         );
-        
+
+        // Oil blur pass (post-processing for smooth organic edges)
+        this.oilBlurProgram = this.renderer.createProgram(
+            fullscreenVert,
+            await loadShader('src/shaders/oil-blur.frag.glsl')
+        );
+
         // Oil Layer Compositor (blends SPH + Grid layers) - MULTI-LAYER ARCHITECTURE
         this.oilLayerCompositeProgram = this.renderer.createProgram(
             await loadShader('src/shaders/oil-layer-composite.vert.glsl'),
@@ -360,12 +372,12 @@ export default class Simulation {
 
         this.water = new WaterLayer(this);
         await this.water.init();
-        
+
         // Initialize oil layer (always enabled now since all materials use it)
         this.oil = new OilLayer(this, sphParticleSplatVertWGSL, sphParticleSplatFragWGSL);
         await this.oil.init();
         this.useOil = true;
-        
+
         this.ready = true;
         console.log('✓ Simulation initialized (water + oil layers)');
     }
@@ -381,7 +393,7 @@ export default class Simulation {
     async disableOil() {
         this.useOil = false;
         if (this.oil && typeof this.oil.destroy === 'function') {
-            try { this.oil.destroy(); } catch (_) {}
+            try { this.oil.destroy(); } catch (_) { }
         }
         this.oil = null;
         console.log('🛢️ Oil layer disabled');
@@ -448,29 +460,29 @@ export default class Simulation {
     }
 
     setJetForce(x, y, strength) {
-        this.jetForce = {x, y, strength};
+        this.jetForce = { x, y, strength };
     }
 
     updateLightTilt(dt) {
         // Target tilt from rotation (stronger rotation = more tilt)
         const rotationTilt = Math.sign(this.rotationAmount) * Math.min(0.3, Math.abs(this.rotationAmount) * 5.0);
-        
+
         // Spring force toward rotation-driven tilt
         const targetX = rotationTilt;
         const targetY = 0.0;
-        
+
         // Spring physics
         this.lightVelX += (targetX - this.lightTiltX) * this.lightSpring;
         this.lightVelY += (targetY - this.lightTiltY) * this.lightSpring;
-        
+
         // Damping
         this.lightVelX *= this.lightDamping;
         this.lightVelY *= this.lightDamping;
-        
+
         // Update position
         this.lightTiltX += this.lightVelX * dt * 60;
         this.lightTiltY += this.lightVelY * dt * 60;
-        
+
         // Clamp to prevent extreme tilts
         this.lightTiltX = Math.max(-0.5, Math.min(0.5, this.lightTiltX));
         this.lightTiltY = Math.max(-0.5, Math.min(0.5, this.lightTiltY));
@@ -489,26 +501,26 @@ export default class Simulation {
 
     clearColor() {
         if (!this.ready) return;
-        
+
         const gl = this.gl;
-        
+
         // Clear both color textures
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.colorFBO);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.colorTexture1, 0);
         gl.clearColor(0, 0, 0, 1);
         gl.clear(gl.COLOR_BUFFER_BIT);
-        
+
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.colorTexture2, 0);
         gl.clearColor(0, 0, 0, 1);
         gl.clear(gl.COLOR_BUFFER_BIT);
-        
+
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
 
     splat(x, y, color, radius = 0.01) {
         console.log(`🔍 simulation.splat called: x=${x.toFixed(2)}, y=${y.toFixed(2)}, ready=${this.ready}, water=${!!this.water}`);
         if (!this.ready || !this.renderer.ready) {
-            console.warn('⚠️ Splat called but not ready:', {ready: this.ready, rendererReady: this.renderer.ready});
+            console.warn('⚠️ Splat called but not ready:', { ready: this.ready, rendererReady: this.renderer.ready });
             return;
         }
 
@@ -620,15 +632,15 @@ export default class Simulation {
         }
         // Combine rotation sources
         this.rotationAmount = this.rotationBase + this.rotationDelta;
-        
+
         // Debug: Log when rotation is active
         if (Math.abs(this.rotationAmount) > 0.01 && Math.random() < 0.01) {
             console.log(`🎯 Main loop: rotationAmount=${this.rotationAmount.toFixed(3)}, base=${this.rotationBase}, delta=${this.rotationDelta.toFixed(3)}`);
         }
-        
+
         // Update dynamic lighting (plate tilt from rotation + wobble)
         this.updateLightTilt(dt);
-        
+
         if (this.water) this.water.update(dt);
         // Run oil after water velocity update (no coupling yet)
         if (this.useOil && this.oil) await this.oil.update(dt);
@@ -664,17 +676,17 @@ export default class Simulation {
 
     applyConcentrationPressure() {
         const gl = this.gl;
-        
+
         if (!this._concentrationFrameCount) {
             this._concentrationFrameCount = 0;
         }
         this._concentrationFrameCount++;
-        
+
         // Log every 60 frames to confirm it's running
         if (this._concentrationFrameCount % 60 === 1) {
             console.log(`🌊 Concentration pressure: ${this._concentrationFrameCount} frames, strength: ${this.spreadStrength}`);
         }
-        
+
         gl.useProgram(this.concentrationPressureProgram);
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.velocityFBO);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.velocityTexture2, 0);
@@ -700,7 +712,7 @@ export default class Simulation {
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         this.swapVelocityTextures();
     }
-    
+
     /**
      * Check velocity field for NaN or Inf values
      * Auto-pauses simulation if corruption detected
@@ -709,11 +721,11 @@ export default class Simulation {
         const gl = this.gl;
         // Match velocity texture format (RG16F) for readback: use HALF_FLOAT and Uint16Array
         const pixels = new Uint16Array(2 * 10); // 10 pixels * 2 channels (RG)
-        
+
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.velocityFBO);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.velocityTexture1, 0);
         gl.readPixels(0, 0, 10, 1, gl.RG, gl.HALF_FLOAT, pixels);
-        
+
         // Check for NaN or Inf (allow up to 10k velocity)
         let maxVal = 0;
         const halfToFloat = (h) => {
@@ -740,12 +752,12 @@ export default class Simulation {
                 return true;
             }
         }
-        
+
         // Warn if velocity is getting very high
         if (maxVal > 10000) {
             console.warn(`⚠️ High velocity detected: ${maxVal.toFixed(0)} (may cause instability)`);
         }
-        
+
         return false;
     }
 }

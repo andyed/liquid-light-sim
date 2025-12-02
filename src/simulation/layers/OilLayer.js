@@ -8,7 +8,7 @@ import { loadShader } from '../../utils.js';
 export default class OilLayer extends FluidLayer {
   constructor(simulation, sphParticleSplatVertWGSL, sphParticleSplatFragWGSL) {
     super(simulation);
-    
+
     // SPH PARTICLE SYSTEM (PHASE 1: INCREMENTAL REBUILD)
     this.useSPH = true; // RE-ENABLED: Starting from scratch, testing each piece
     this.sph = new SPHOilSystem(5000, 0.48, sphParticleSplatVertWGSL, sphParticleSplatFragWGSL); // REDUCED: 5k max for Phase 1 testing
@@ -22,13 +22,13 @@ export default class OilLayer extends FluidLayer {
     this.enableWebgpuSphCompute = search.includes('webgpuSph=1');
     this.enableWebgpuDrawToCanvas = false;
     // NOTE: Physics disabled until validated step-by-step
-    
+
     // === MULTI-LAYER ARCHITECTURE ===
     // SPH LAYER (Mineral Oil, Syrup, Glycerine) - particle-based
     this.sphTexture1 = null;
     this.sphTexture2 = null;
     this.sphFBO = null;
-    
+
     // GRID LAYER (Alcohol) - texture-based advection-diffusion
     this.gridTexture1 = null;
     this.gridTexture2 = null;
@@ -36,7 +36,7 @@ export default class OilLayer extends FluidLayer {
     this.gridVelocityTexture1 = null;
     this.gridVelocityTexture2 = null;
     this.gridVelocityFBO = null;
-    
+
     // COMPOSITE LAYER (final blended result)
     this.compositedTexture = null;
     this.compositeFBO = null;
@@ -53,7 +53,7 @@ export default class OilLayer extends FluidLayer {
     // Longer painting = bigger blob
     this.splatCooldownMs = 0; // No cooldown - particles accumulate continuously
     this.lastSplatAtMs = 0;
-    
+
     // Track if layers have content (for optimization and proper rendering)
     this.hasGridContent = false; // True if Alcohol has been painted
     this.useDensityComposite = true; // Enable smoothing-based continuous sheet rendering
@@ -61,7 +61,7 @@ export default class OilLayer extends FluidLayer {
     this.gridSampleInterval = 10; // frames between samples (higher for better perf)
     this.gridSampleFrame = 0;
     this.cachedGridVelocities = null;
-    
+
     // LEGACY - being migrated to layer system
     this.oilTexture1 = null;  // Currently used for rendering (will become compositedTexture)
     this.oilTexture2 = null;  // Swap buffer
@@ -75,7 +75,7 @@ export default class OilLayer extends FluidLayer {
     this.oilPropsTexture1 = null;
     this.oilPropsTexture2 = null;
     this.oilPropsFBO = null;
-    
+
     // Old hybrid particle system (DISABLED)
     this.particles = [];
     this.maxParticles = 500;
@@ -99,148 +99,148 @@ export default class OilLayer extends FluidLayer {
 
     // Verify Alcohol fix is loaded
     console.log('✨ OilLayer.js: Alcohol fix LOADED (Nov 9, 3:33pm)');
-    
+
     if (gl) {
-        // Initialize SPH system
-        console.log('🚀 Initializing SPH Oil System...');
-        this.sph.initGPU(gl, this.sim.sphParticleSplatProgram);
-        console.log(`✅ SPH initialized: max ${this.sph.maxParticles} particles`);
+      // Initialize SPH system
+      console.log('🚀 Initializing SPH Oil System...');
+      this.sph.initGPU(gl, this.sim.sphParticleSplatProgram);
+      console.log(`✅ SPH initialized: max ${this.sph.maxParticles} particles`);
     }
 
     if (this.sim.webgpu) {
-        const adapterLimits = this.sim.renderer?.webgpuLimitInfo;
-        const particleStrideBytes = 8 * 4; // 8 floats (pos, vel, force, density, pressure)
-        let gpuMaxParticles = this.sph.maxParticles;
-        if (adapterLimits && adapterLimits.maxStorageBufferBindingSize) {
-            gpuMaxParticles = Math.min(gpuMaxParticles, Math.floor(adapterLimits.maxStorageBufferBindingSize / particleStrideBytes));
-        }
+      const adapterLimits = this.sim.renderer?.webgpuLimitInfo;
+      const particleStrideBytes = 8 * 4; // 8 floats (pos, vel, force, density, pressure)
+      let gpuMaxParticles = this.sph.maxParticles;
+      if (adapterLimits && adapterLimits.maxStorageBufferBindingSize) {
+        gpuMaxParticles = Math.min(gpuMaxParticles, Math.floor(adapterLimits.maxStorageBufferBindingSize / particleStrideBytes));
+      }
 
-        if (gpuMaxParticles < 64) {
-            console.warn('WebGPU SPH disabled: adapter storage limit only allowed', gpuMaxParticles, 'particles.');
-            this.enableWebgpuSphCompute = false;
-            this.webgpuSPH = null;
-        } else {
-            this.webgpuSPH = new WebGPUSPH(this.sim.webgpu.device, gpuMaxParticles);
-            console.log('🚀 Initializing WebGPU SPH System (max particles:', gpuMaxParticles, '...');
-            this.webgpuSPHUpdate = new WebGPUSPHUpdate(this.sim.webgpu.device, this.webgpuSPH);
-            this.webgpuSPHUpdate.init();
-        }
-        this.sph.initWebGPU(this.sim.webgpu.device); // Initialize WebGPU rendering for SPH
+      if (gpuMaxParticles < 64) {
+        console.warn('WebGPU SPH disabled: adapter storage limit only allowed', gpuMaxParticles, 'particles.');
+        this.enableWebgpuSphCompute = false;
+        this.webgpuSPH = null;
+      } else {
+        this.webgpuSPH = new WebGPUSPH(this.sim.webgpu.device, gpuMaxParticles);
+        console.log('🚀 Initializing WebGPU SPH System (max particles:', gpuMaxParticles, '...');
+        this.webgpuSPHUpdate = new WebGPUSPHUpdate(this.sim.webgpu.device, this.webgpuSPH);
+        this.webgpuSPHUpdate.init();
+      }
+      this.sph.initWebGPU(this.sim.webgpu.device); // Initialize WebGPU rendering for SPH
 
-        // Track whether we've seeded the WebGPU particle buffer from the CPU SPH
-        // state. This avoids re-uploading every frame while still ensuring the
-        // first WebGPU update starts from the correct positions/velocities.
-        this.webgpuSphSeededFromCPU = false;
+      // Track whether we've seeded the WebGPU particle buffer from the CPU SPH
+      // state. This avoids re-uploading every frame while still ensuring the
+      // first WebGPU update starts from the correct positions/velocities.
+      this.webgpuSphSeededFromCPU = false;
 
-        // Create WebGPU texture for SPH rendering
-        this.webgpuSphTexture = this.sim.webgpu.device.createTexture({
-            size: [w, h],
-            format: 'rgba16float',
-            usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
-            label: 'WebGPU SPH Render Texture',
-        });
-        this.webgpuSphTextureView = this.webgpuSphTexture.createView();
-        console.log('✅ WebGPU SPH render texture created');
-        this.initWebGPUDrawToCanvasPipeline(); // Initialize pipeline to draw WebGPU texture to canvas
+      // Create WebGPU texture for SPH rendering
+      this.webgpuSphTexture = this.sim.webgpu.device.createTexture({
+        size: [w, h],
+        format: 'rgba16float',
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+        label: 'WebGPU SPH Render Texture',
+      });
+      this.webgpuSphTextureView = this.webgpuSphTexture.createView();
+      console.log('✅ WebGPU SPH render texture created');
+      this.initWebGPUDrawToCanvasPipeline(); // Initialize pipeline to draw WebGPU texture to canvas
     }
 
     if (gl) {
-        // === INITIALIZE MULTI-LAYER TEXTURES ===
-        console.log('🎨 Initializing multi-layer architecture...');
-        
-        // SPH LAYER (particle-based blobs)
-        this.sphTexture1 = this.sim.createTexture(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
-        this.sphTexture2 = this.sim.createTexture(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
-        this.sphFBO = this.sim.createFBO(this.sphTexture1);
-        
-        // GRID LAYER (texture-based advection-diffusion)
-        this.gridTexture1 = this.sim.createTexture(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
-        this.gridTexture2 = this.sim.createTexture(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
-        this.gridFBO = this.sim.createFBO(this.gridTexture1);
-        this.gridVelocityTexture1 = this.sim.createTexture(w, h, gl.RG32F, gl.RG, gl.FLOAT);
-        this.gridVelocityTexture2 = this.sim.createTexture(w, h, gl.RG32F, gl.RG, gl.FLOAT);
-        this.gridVelocityFBO = this.sim.createFBO(this.gridVelocityTexture1);
-        
-        // COMPOSITE LAYER (final blend)
-        this.compositedTexture = this.sim.createTexture(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
-        this.compositeFBO = this.sim.createFBO(this.compositedTexture);
-        // Half-res density buffers for separable blur (composite v2)
-        const hw = Math.max(1, Math.floor(w * 0.5));
-        const hh = Math.max(1, Math.floor(h * 0.5));
-        this.densityHalfTex1 = this.sim.createTexture(hw, hh, gl.R16F, gl.RED, gl.HALF_FLOAT);
-        this.densityHalfTex2 = this.sim.createTexture(hw, hh, gl.R16F, gl.RED, gl.HALF_FLOAT);
-        this.densityHalfFBO = this.sim.createFBO(this.densityHalfTex1);
-        
-        console.log('✅ Multi-layer textures created: SPH + Grid + Composite');
+      // === INITIALIZE MULTI-LAYER TEXTURES ===
+      console.log('🎨 Initializing multi-layer architecture...');
 
-        // LEGACY textures (will be phased out) - keeping for now during migration
-        this.oilTexture1 = this.sim.createTexture(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
-        this.oilTexture2 = this.sim.createTexture(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
-        this.oilFBO = this.sim.createFBO(this.oilTexture1);
+      // SPH LAYER (particle-based blobs)
+      this.sphTexture1 = this.sim.createTexture(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
+      this.sphTexture2 = this.sim.createTexture(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
+      this.sphFBO = this.sim.createFBO(this.sphTexture1);
 
-        // Oil velocity field (RG32F for velocity vectors - more robust than RG16F)
-        this.oilVelocityTexture1 = this.sim.createTexture(w, h, gl.RG32F, gl.RG, gl.FLOAT);
-        this.oilVelocityTexture2 = this.sim.createTexture(w, h, gl.RG32F, gl.RG, gl.FLOAT);
-        this.oilVelocityFBO = this.sim.createFBO(this.oilVelocityTexture1);
+      // GRID LAYER (texture-based advection-diffusion)
+      this.gridTexture1 = this.sim.createTexture(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
+      this.gridTexture2 = this.sim.createTexture(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
+      this.gridFBO = this.sim.createFBO(this.gridTexture1);
+      this.gridVelocityTexture1 = this.sim.createTexture(w, h, gl.RG32F, gl.RG, gl.FLOAT);
+      this.gridVelocityTexture2 = this.sim.createTexture(w, h, gl.RG32F, gl.RG, gl.FLOAT);
+      this.gridVelocityFBO = this.sim.createFBO(this.gridVelocityTexture1);
 
-        this.curvatureTexture = this.sim.createTexture(w, h, gl.R16F, gl.RED, gl.HALF_FLOAT);
-        this.curvatureFBO = this.sim.createFBO(this.curvatureTexture);
+      // COMPOSITE LAYER (final blend)
+      this.compositedTexture = this.sim.createTexture(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
+      this.compositeFBO = this.sim.createFBO(this.compositedTexture);
+      // Half-res density buffers for separable blur (composite v2)
+      const hw = Math.max(1, Math.floor(w * 0.5));
+      const hh = Math.max(1, Math.floor(h * 0.5));
+      this.densityHalfTex1 = this.sim.createTexture(hw, hh, gl.R16F, gl.RED, gl.HALF_FLOAT);
+      this.densityHalfTex2 = this.sim.createTexture(hw, hh, gl.R16F, gl.RED, gl.HALF_FLOAT);
+      this.densityHalfFBO = this.sim.createFBO(this.densityHalfTex1);
 
-        // Per-pixel material properties texture (RGBA16F) - ping-pong for feedback loop prevention
-        this.oilPropsTexture1 = this.sim.createTexture(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
-        this.oilPropsTexture2 = this.sim.createTexture(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
-        this.oilPropsFBO = this.sim.createFBO(this.oilPropsTexture1);
-        // Initialize ALL textures to zero to avoid garbage-driven spreading
-        const prevFbo = gl.getParameter(gl.FRAMEBUFFER_BINDING);
-        gl.clearColor(0, 0, 0, 0);
-        
-        // Clear SPH layer
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.sphFBO);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.sphTexture1, 0);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.sphTexture2, 0);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-        
-        // Clear Grid layer
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.gridFBO);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.gridTexture1, 0);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.gridTexture2, 0);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-        
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.gridVelocityFBO);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.gridVelocityTexture1, 0);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.gridVelocityTexture2, 0);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-        
-        // Clear Composite layer
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.compositeFBO);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.compositedTexture, 0);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-        
-        // Clear LEGACY textures
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture1, 0);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-        
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilVelocityFBO);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilVelocityTexture1, 0);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilVelocityTexture2, 0);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-        
-        // Zero-init props textures
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilPropsFBO);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilPropsTexture1, 0);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilPropsTexture2, 0);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-        
-        gl.bindFramebuffer(gl.FRAMEBUFFER, prevFbo);
-        console.log('✅ All oil layer textures cleared');
+      console.log('✅ Multi-layer textures created: SPH + Grid + Composite');
+
+      // LEGACY textures (will be phased out) - keeping for now during migration
+      this.oilTexture1 = this.sim.createTexture(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
+      this.oilTexture2 = this.sim.createTexture(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
+      this.oilFBO = this.sim.createFBO(this.oilTexture1);
+
+      // Oil velocity field (RG32F for velocity vectors - more robust than RG16F)
+      this.oilVelocityTexture1 = this.sim.createTexture(w, h, gl.RG32F, gl.RG, gl.FLOAT);
+      this.oilVelocityTexture2 = this.sim.createTexture(w, h, gl.RG32F, gl.RG, gl.FLOAT);
+      this.oilVelocityFBO = this.sim.createFBO(this.oilVelocityTexture1);
+
+      this.curvatureTexture = this.sim.createTexture(w, h, gl.R16F, gl.RED, gl.HALF_FLOAT);
+      this.curvatureFBO = this.sim.createFBO(this.curvatureTexture);
+
+      // Per-pixel material properties texture (RGBA16F) - ping-pong for feedback loop prevention
+      this.oilPropsTexture1 = this.sim.createTexture(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
+      this.oilPropsTexture2 = this.sim.createTexture(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
+      this.oilPropsFBO = this.sim.createFBO(this.oilPropsTexture1);
+      // Initialize ALL textures to zero to avoid garbage-driven spreading
+      const prevFbo = gl.getParameter(gl.FRAMEBUFFER_BINDING);
+      gl.clearColor(0, 0, 0, 0);
+
+      // Clear SPH layer
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.sphFBO);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.sphTexture1, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.sphTexture2, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+
+      // Clear Grid layer
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.gridFBO);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.gridTexture1, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.gridTexture2, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.gridVelocityFBO);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.gridVelocityTexture1, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.gridVelocityTexture2, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+
+      // Clear Composite layer
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.compositeFBO);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.compositedTexture, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+
+      // Clear LEGACY textures
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture1, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilVelocityFBO);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilVelocityTexture1, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilVelocityTexture2, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+
+      // Zero-init props textures
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilPropsFBO);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilPropsTexture1, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilPropsTexture2, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER, prevFbo);
+      console.log('✅ All oil layer textures cleared');
     }
   }
 
@@ -253,7 +253,7 @@ export default class OilLayer extends FluidLayer {
     const sim = this.sim;
     const controller = window.controller || this.sim.controller;
     const currentMaterial = controller?.materials[controller?.currentMaterialIndex]?.name || '';
-    
+
     // STEP 1: Throttled sample of grid velocity from water layer (rotation + coupling)
     // NOTE: CPU-side sampling (readPixels) is expensive; disable for Syrup and
     // only keep it for other materials when rotation is actually active.
@@ -298,7 +298,7 @@ export default class OilLayer extends FluidLayer {
         }
       }
     }
-    
+
     // Apply per-material SPH tuning (kept lightweight; no change to smoothingRadius)
     if (this.sph) {
       // Base grid-drag (water→oil coupling) per material; we will scale this
@@ -307,79 +307,32 @@ export default class OilLayer extends FluidLayer {
       let baseGridDrag = 1.3;
       switch (currentMaterial) {
         case 'Syrup':
-          // Syrup: slow, overdamped, highly cohesive "hero" blob
-          this.sph.viscosity = 0.38;              // higher internal resistance
-          this.sph.shortCohesion = 4.0;           // even softer pull to reduce rapid blob merging
-          this.sph.shortRadiusScale = 1.4;        // tighter radius so cohesion is very local
-          this.sph.minDistScale = 0.22;           // slightly larger core spacing to avoid hard overlaps
-          this.sph.longCohesion = 0.0;            // disable long-range cohesion to prevent distant pull-in
-          this.sph.longRadiusScale = 3.0;         // keep influence fairly local
-          this.sph.splitDistance = 1.4;           // lower maxCohesionDist: different blobs don't see each other as much
-          this.sph.spawnSpeedScale = 0.04;        // almost no initial kick
-          baseGridDrag = 3.0;                     // stronger coupling to water (oil follows flow more)
-          this.sph.maxSpeedCap = 0.16;            // lower cap for dense cores and fragments
-          this.sph.xsphCoeff = 0.22;              // weaker velocity equalization (less condensation)
-          this.sph.dampingFactor = 0.97;          // stronger per-step damping on dense cores and fragments
-          this.sph.maxPressureDensityRatio = 1.15; // saturate pressure very early so density maps to size
-          this.sph.pressureStiffness = 0.22;       // very soft pressure so big blobs squish instead of exploding
-          // Positional cohesion: local-only to avoid cross-blob averaging
-          this.sph.enablePositionalCohesion = true;
-          this.sph.posCohesionCoeff = 0.018;      // softer centroid pull (slower condensation)
-          this.sph.maxPosNudge = 0.0010;          // smaller centroid nudge per frame
-          this.sph.posCohesionBoostCoeff = 0.08;  // weaker extra pull for fresh splats
-          this.sph.posCohesionRadiusScale = 1.2;  // ~1.2h neighborhood: stays inside blob thickness
-          this.sph.particleSpriteRadius = 118.0;  // smaller sprite; rely on more particles per splat
-          // Thinning & splitting: Syrup should very rarely auto-split
-          this.sph.thinningThreshold = 0.42;      // lower threshold = harder to mark regions as thin
-          this.sph.cohesionReductionInThin = 0.7; // reduce cohesion less in thin regions
-          this.sph.splitDistance = 3.5;           // clusters must separate further before splitting
-          this.sph.ipfStrength = 0.4;             // conservative IPF strength
+          // Syrup: Thick, slow, very cohesive
+          this.sph.blobCohesion = 0.9;
+          this.sph.blobRepulsion = 2.5;
+          this.sph.blobFriction = 0.92; // Increased damping (was 0.96)
+          this.sph.blobInteractionRadius = 0.16;
+          baseGridDrag = 3.0;
+          this.sph.particleSpriteRadius = 125.0; // Increased visual size
           break;
         case 'Glycerine':
-          this.sph.viscosity = 0.14;
-          this.sph.shortCohesion = 8.5;
-          this.sph.shortRadiusScale = 1.6; // REDUCED from 2.2 to prevent cross-blob attraction
-          this.sph.minDistScale = 0.45;
-          this.sph.longCohesion = 0.0; // disabled - prevents distant blob merging
-          this.sph.longRadiusScale = 3.2;
-          this.sph.spawnSpeedScale = 0.5;
+          // Glycerine: Slippery, heavy
+          this.sph.blobCohesion = 0.5;
+          this.sph.blobRepulsion = 1.8;
+          this.sph.blobFriction = 0.96; // Increased damping (was 0.995)
+          this.sph.blobInteractionRadius = 0.14;
           baseGridDrag = 1.1;
-          this.sph.maxSpeedCap = 0.55;
-          this.sph.xsphCoeff = 0.25;
-          this.sph.particleSpriteRadius = 130.0;
-          // Thinning & splitting: Glycerine is medium - can thin and split
-          this.sph.thinningThreshold = 0.6;
-          this.sph.cohesionReductionInThin = 0.3;
-          this.sph.splitDistance = 2.5;
+          this.sph.particleSpriteRadius = 140.0; // Increased visual size
           break;
         case 'Mineral Oil':
         default:
-          this.sph.viscosity = 0.08;
-          // Softer, more local cohesion so blobs don’t over-condense
-          this.sph.shortCohesion = 4.4;     // even softer cohesion to reduce bubble collapse
-          this.sph.shortRadiusScale = 1.35; // slightly tighter radius
-          this.sph.minDistScale = 0.35;
-          this.sph.longCohesion = 0.0; // disabled - prevents distant blob merging
-          this.sph.longRadiusScale = 4.0;
-          this.sph.spawnSpeedScale = 1.0;
+          // Mineral Oil: Balanced
+          this.sph.blobCohesion = 0.6;
+          this.sph.blobRepulsion = 1.5;
+          this.sph.blobFriction = 0.95; // Increased damping (was 0.99)
+          this.sph.blobInteractionRadius = 0.14;
           baseGridDrag = 1.3;
-          this.sph.maxSpeedCap = 0.48;        // slightly lower cap: dense cores move more slowly
-          this.sph.xsphCoeff = 0.16;          // weaker velocity equalization
-          this.sph.dampingFactor = 0.96;      // stronger damping per step
-          this.sph.particleSpriteRadius = 100.0;
-          // Thinning & splitting: Mineral Oil is fluid - easy to thin and split
-          this.sph.thinningThreshold = 0.7;   // Higher threshold = easier to thin
-          this.sph.cohesionReductionInThin = 0.25; // slightly more reduction in thin regions
-          this.sph.splitDistance = 2.2;       // blobs separate a bit more before splitting
-          // Positional cohesion: keep but softer to avoid minimum-size collapse
-          this.sph.enablePositionalCohesion = true;
-          this.sph.posCohesionCoeff = 0.03;   // softer centroid pull so bubbles stay chunky
-          this.sph.maxPosNudge = 0.0015;
-          this.sph.posCohesionBoostCoeff = 0.12;
-          this.sph.maxPressureDensityRatio = 1.3; // Mineral Oil: saturate pressure earlier in dense cores
-          this.sph.pressureStiffness = 0.38;   // lower stiffness = softer pressure
-          // IPF cohesion: start with small explicit attraction band
-          this.sph.ipfStrength = 0.8;
+          this.sph.particleSpriteRadius = 110.0; // Increased visual size
           break;
       }
 
@@ -396,10 +349,10 @@ export default class OilLayer extends FluidLayer {
       // Frame skip if too many particles (CPU bottleneck mitigation)
       if (!this.sphFrameSkip) this.sphFrameSkip = 0;
       this.sphFrameSkip++;
-      
+
       // Skip physics every other frame if > 3000 particles
       const shouldSkipPhysics = this.sph.particleCount > 3000 && this.sphFrameSkip % 2 === 0;
-      
+
       if (!shouldSkipPhysics) {
         if (this.webgpuSPHUpdate && this.enableWebgpuSphCompute) {
           // Lazily upload the current CPU SPH state into the WebGPU particle
@@ -414,17 +367,17 @@ export default class OilLayer extends FluidLayer {
         }
       }
     }
-    
+
     // STEP 3: Render particles to SPH texture
     if (this.sph.particleCount > 0) {
       if (gl) {
-          gl.bindFramebuffer(gl.FRAMEBUFFER, this.sphFBO);
-          gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.sphTexture2, 0);
-          gl.disable(gl.BLEND); // MUST disable blend for proper clear
-          gl.clearColor(0, 0, 0, 0);
-          gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.sphFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.sphTexture2, 0);
+        gl.disable(gl.BLEND); // MUST disable blend for proper clear
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
       }
-      
+
       // Rasterize SPH particles to texture (blend will be re-enabled inside)
       if (this.sim.webgpu && this.webgpuSphTextureView && this.enableWebgpuDrawToCanvas) {
         // Optional: direct WebGPU draw to canvas/texture when explicitly enabled
@@ -432,107 +385,84 @@ export default class OilLayer extends FluidLayer {
       } else if (gl) {
         this.sph.renderParticles(this.sphFBO, this.sim.renderer.canvas.width, this.sim.renderer.canvas.height);
       }
-      
+
       if (gl) {
+        this.swapSPHTextures();
+
+        // STEP 4: Density Composite v2 (Thickness-Weighted Bilateral Filter)
+        // Replaces simple Gaussian blur with edge-preserving smoothing + dust removal
+        if (this.useDensityComposite && sim.oilSmoothProgram) {
+          gl.useProgram(sim.oilSmoothProgram);
+          gl.bindFramebuffer(gl.FRAMEBUFFER, this.sphFBO);
+          gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.sphTexture2, 0);
+
+          gl.disable(gl.BLEND); // Fullscreen replacement
+
+          gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
+          const posLoc = gl.getAttribLocation(sim.oilSmoothProgram, 'a_position');
+          gl.enableVertexAttribArray(posLoc);
+          gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, this.sphTexture1); // Input: raw SPH particles
+          gl.uniform1i(gl.getUniformLocation(sim.oilSmoothProgram, 'u_oil_texture'), 0);
+
+          gl.uniform2f(gl.getUniformLocation(sim.oilSmoothProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+          gl.uniform1f(gl.getUniformLocation(sim.oilSmoothProgram, 'u_smoothingRate'), sim.oilSmoothingRate);
+          gl.uniform1f(gl.getUniformLocation(sim.oilSmoothProgram, 'u_thicknessThreshold'), sim.oilThicknessThreshold);
+
+          gl.drawArrays(gl.TRIANGLES, 0, 6);
           this.swapSPHTextures();
-          
-          // STEP 4: Density Composite v2 (half-res separable Gaussian on alpha)
-          if (this.useDensityComposite) {
-            // Lazy-create programs
-            if (!sim.gaussBlurHProgram) sim.gaussBlurHProgram = this.createGaussBlurProgram(true);
-            if (!sim.gaussBlurVProgram) sim.gaussBlurVProgram = this.createGaussBlurProgram(false);
-            if (!sim.composeAlphaProgram) sim.composeAlphaProgram = this.createComposeAlphaProgram();
+        }
 
-            // Downsample alpha to half-res density buffer
-            const hw = Math.max(1, Math.floor(gl.canvas.width * 0.5));
-            const hh = Math.max(1, Math.floor(gl.canvas.height * 0.5));
-            gl.viewport(0, 0, hw, hh);
-            gl.useProgram(sim.composeAlphaProgram);
-            gl.bindFramebuffer(gl.FRAMEBUFFER, this.densityHalfFBO);
-            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.densityHalfTex2, 0);
-            gl.disable(gl.BLEND);
-            gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
-            const pos0 = gl.getAttribLocation(sim.composeAlphaProgram, 'a_position');
-            gl.enableVertexAttribArray(pos0);
-            gl.vertexAttribPointer(pos0, 2, gl.FLOAT, false, 0, 0);
-            gl.activeTexture(gl.TEXTURE0);
-            gl.bindTexture(gl.TEXTURE_2D, this.sphTexture1);
-            gl.uniform1i(gl.getUniformLocation(sim.composeAlphaProgram, 'u_colorTex'), 0);
-            gl.uniform1i(gl.getUniformLocation(sim.composeAlphaProgram, 'u_mode'), 0); // 0=extract alpha only
-            gl.drawArrays(gl.TRIANGLES, 0, 6);
-            this.swapDensityHalfTextures();
+        // STEP 4 (alternative): MetaBall rendering (keep as optional fallback)
+        if (!this.useDensityComposite && sim.metaballEnabled && sim.oilMetaballProgram) {
+          gl.useProgram(sim.oilMetaballProgram);
+          gl.bindFramebuffer(gl.FRAMEBUFFER, this.sphFBO);
+          gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.sphTexture2, 0);
 
-            // Horizontal blur
-            gl.useProgram(sim.gaussBlurHProgram);
-            gl.bindFramebuffer(gl.FRAMEBUFFER, this.densityHalfFBO);
-            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.densityHalfTex2, 0);
-            const posH = gl.getAttribLocation(sim.gaussBlurHProgram, 'a_position');
-            gl.enableVertexAttribArray(posH);
-            gl.vertexAttribPointer(posH, 2, gl.FLOAT, false, 0, 0);
-            gl.activeTexture(gl.TEXTURE0);
-            gl.bindTexture(gl.TEXTURE_2D, this.densityHalfTex1);
-            gl.uniform1i(gl.getUniformLocation(sim.gaussBlurHProgram, 'u_tex'), 0);
-            gl.uniform2f(gl.getUniformLocation(sim.gaussBlurHProgram, 'u_texelSize'), 1.0 / hw, 1.0 / hh);
-            gl.drawArrays(gl.TRIANGLES, 0, 6);
-            this.swapDensityHalfTextures();
+          gl.disable(gl.BLEND); // MetaBall is fullscreen replacement, not blending
 
-            // Vertical blur
-            gl.useProgram(sim.gaussBlurVProgram);
-            gl.bindFramebuffer(gl.FRAMEBUFFER, this.densityHalfFBO);
-            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.densityHalfTex2, 0);
-            const posV = gl.getAttribLocation(sim.gaussBlurVProgram, 'a_position');
-            gl.enableVertexAttribArray(posV);
-            gl.vertexAttribPointer(posV, 2, gl.FLOAT, false, 0, 0);
-            gl.activeTexture(gl.TEXTURE0);
-            gl.bindTexture(gl.TEXTURE_2D, this.densityHalfTex1);
-            gl.uniform1i(gl.getUniformLocation(sim.gaussBlurVProgram, 'u_tex'), 0);
-            gl.uniform2f(gl.getUniformLocation(sim.gaussBlurVProgram, 'u_texelSize'), 1.0 / hw, 1.0 / hh);
-            gl.drawArrays(gl.TRIANGLES, 0, 6);
-            this.swapDensityHalfTextures();
+          gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
+          const posMetaball = gl.getAttribLocation(sim.oilMetaballProgram, 'a_position');
+          gl.enableVertexAttribArray(posMetaball);
+          gl.vertexAttribPointer(posMetaball, 2, gl.FLOAT, false, 0, 0);
 
-            // Recompose: replace SPH alpha with blurred density (upsampled)
-            gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-            gl.useProgram(sim.composeAlphaProgram);
-            gl.bindFramebuffer(gl.FRAMEBUFFER, this.sphFBO);
-            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.sphTexture2, 0);
-            const pos1 = gl.getAttribLocation(sim.composeAlphaProgram, 'a_position');
-            gl.enableVertexAttribArray(pos1);
-            gl.vertexAttribPointer(pos1, 2, gl.FLOAT, false, 0, 0);
-            gl.activeTexture(gl.TEXTURE0);
-            gl.bindTexture(gl.TEXTURE_2D, this.sphTexture1); // original color
-            gl.uniform1i(gl.getUniformLocation(sim.composeAlphaProgram, 'u_colorTex'), 0);
-            gl.activeTexture(gl.TEXTURE1);
-            gl.bindTexture(gl.TEXTURE_2D, this.densityHalfTex1); // blurred alpha
-            gl.uniform1i(gl.getUniformLocation(sim.composeAlphaProgram, 'u_densityTex'), 1);
-            gl.uniform1i(gl.getUniformLocation(sim.composeAlphaProgram, 'u_mode'), 1); // 1=compose
-            gl.drawArrays(gl.TRIANGLES, 0, 6);
-            this.swapSPHTextures();
-          }
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, this.sphTexture1);
+          gl.uniform1i(gl.getUniformLocation(sim.oilMetaballProgram, 'u_oil_texture'), 0);
+          gl.uniform2f(gl.getUniformLocation(sim.oilMetaballProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+          gl.uniform1f(gl.getUniformLocation(sim.oilMetaballProgram, 'u_blobThreshold'), sim.metaballBlobThreshold);
+          gl.uniform1f(gl.getUniformLocation(sim.oilMetaballProgram, 'u_metaballRadius'), sim.metaballRadius);
+          gl.uniform1f(gl.getUniformLocation(sim.oilMetaballProgram, 'u_bulginess'), sim.metaballBulginess);
 
-          // STEP 4 (alternative): MetaBall rendering (keep as optional fallback)
-          if (!this.useDensityComposite && sim.metaballEnabled && sim.oilMetaballProgram) {
-            gl.useProgram(sim.oilMetaballProgram);
-            gl.bindFramebuffer(gl.FRAMEBUFFER, this.sphFBO);
-            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.sphTexture2, 0);
-            
-            gl.disable(gl.BLEND); // MetaBall is fullscreen replacement, not blending
-            
-            gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
-            const posMetaball = gl.getAttribLocation(sim.oilMetaballProgram, 'a_position');
-            gl.enableVertexAttribArray(posMetaball);
-            gl.vertexAttribPointer(posMetaball, 2, gl.FLOAT, false, 0, 0);
-            
-            gl.activeTexture(gl.TEXTURE0);
-            gl.bindTexture(gl.TEXTURE_2D, this.sphTexture1);
-            gl.uniform1i(gl.getUniformLocation(sim.oilMetaballProgram, 'u_oil_texture'), 0);
-            gl.uniform2f(gl.getUniformLocation(sim.oilMetaballProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
-            gl.uniform1f(gl.getUniformLocation(sim.oilMetaballProgram, 'u_blobThreshold'), sim.metaballBlobThreshold);
-            gl.uniform1f(gl.getUniformLocation(sim.oilMetaballProgram, 'u_metaballRadius'), sim.metaballRadius);
-            gl.uniform1f(gl.getUniformLocation(sim.oilMetaballProgram, 'u_bulginess'), sim.metaballBulginess);
-            
-            gl.drawArrays(gl.TRIANGLES, 0, 6);
-            this.swapSPHTextures();
-          }
+          gl.drawArrays(gl.TRIANGLES, 0, 6);
+          this.swapSPHTextures();
+        }
+
+        // STEP 5: Post-blur pass for smooth organic edges
+        if (sim.oilBlurEnabled && sim.oilBlurProgram) {
+          gl.useProgram(sim.oilBlurProgram);
+          gl.bindFramebuffer(gl.FRAMEBUFFER, this.sphFBO);
+          gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.sphTexture2, 0);
+
+          gl.disable(gl.BLEND); // Fullscreen replacement
+
+          gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
+          const posBlur = gl.getAttribLocation(sim.oilBlurProgram, 'a_position');
+          gl.enableVertexAttribArray(posBlur);
+          gl.vertexAttribPointer(posBlur, 2, gl.FLOAT, false, 0, 0);
+
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, this.sphTexture1);
+          gl.uniform1i(gl.getUniformLocation(sim.oilBlurProgram, 'u_oil_texture'), 0);
+          gl.uniform2f(gl.getUniformLocation(sim.oilBlurProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+          gl.uniform1f(gl.getUniformLocation(sim.oilBlurProgram, 'u_blurRadius'), sim.oilBlurRadius);
+          gl.uniform1f(gl.getUniformLocation(sim.oilBlurProgram, 'u_blurStrength'), sim.oilBlurStrength);
+
+          gl.drawArrays(gl.TRIANGLES, 0, 6);
+          this.swapSPHTextures();
+        }
       }
     } else if (gl) {
       // No particles - clear SPH texture
@@ -544,7 +474,7 @@ export default class OilLayer extends FluidLayer {
       this.swapSPHTextures();
     }
   }
-  
+
   /**
    * Update Grid layer (Alcohol)
    * Handles texture-based advection-diffusion on gridTexture
@@ -552,111 +482,111 @@ export default class OilLayer extends FluidLayer {
   updateGridLayer(dt) {
     const gl = this.gl;
     const sim = this.sim;
-    
+
     if (gl) {
-        // Ensure grid passes render at full canvas size
-        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-        
-        // STEP 1: Apply coupling from water velocity
-        gl.useProgram(sim.oilCouplingProgram);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.gridVelocityFBO);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.gridVelocityTexture2, 0);
+      // Ensure grid passes render at full canvas size
+      gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
 
-        gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
-        const posCoupling = gl.getAttribLocation(sim.oilCouplingProgram, 'a_position');
-        gl.enableVertexAttribArray(posCoupling);
-        gl.vertexAttribPointer(posCoupling, 2, gl.FLOAT, false, 0, 0);
+      // STEP 1: Apply coupling from water velocity
+      gl.useProgram(sim.oilCouplingProgram);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.gridVelocityFBO);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.gridVelocityTexture2, 0);
 
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this.gridVelocityTexture1);
-        gl.uniform1i(gl.getUniformLocation(sim.oilCouplingProgram, 'u_oilVelocity'), 0);
+      gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
+      const posCoupling = gl.getAttribLocation(sim.oilCouplingProgram, 'a_position');
+      gl.enableVertexAttribArray(posCoupling);
+      gl.vertexAttribPointer(posCoupling, 2, gl.FLOAT, false, 0, 0);
 
-        gl.activeTexture(gl.TEXTURE1);
-        gl.bindTexture(gl.TEXTURE_2D, sim.velocityTexture1);
-        gl.uniform1i(gl.getUniformLocation(sim.oilCouplingProgram, 'u_waterVelocity'), 1);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.gridVelocityTexture1);
+      gl.uniform1i(gl.getUniformLocation(sim.oilCouplingProgram, 'u_oilVelocity'), 0);
 
-        gl.activeTexture(gl.TEXTURE2);
-        gl.bindTexture(gl.TEXTURE_2D, this.gridTexture1);
-        gl.uniform1i(gl.getUniformLocation(sim.oilCouplingProgram, 'u_oil'), 2);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, sim.velocityTexture1);
+      gl.uniform1i(gl.getUniformLocation(sim.oilCouplingProgram, 'u_waterVelocity'), 1);
 
-        gl.uniform1f(gl.getUniformLocation(sim.oilCouplingProgram, 'u_couplingStrength'), sim.couplingStrength);
-        gl.uniform1f(gl.getUniformLocation(sim.oilCouplingProgram, 'u_dt'), dt);
-        gl.uniform2f(gl.getUniformLocation(sim.oilCouplingProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, this.gridTexture1);
+      gl.uniform1i(gl.getUniformLocation(sim.oilCouplingProgram, 'u_oil'), 2);
 
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
-        this.swapGridVelocityTextures();
+      gl.uniform1f(gl.getUniformLocation(sim.oilCouplingProgram, 'u_couplingStrength'), sim.couplingStrength);
+      gl.uniform1f(gl.getUniformLocation(sim.oilCouplingProgram, 'u_dt'), dt);
+      gl.uniform2f(gl.getUniformLocation(sim.oilCouplingProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
 
-        // STEP 2: Advect grid velocity
-        gl.useProgram(sim.advectionProgram);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.gridVelocityFBO);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.gridVelocityTexture2, 0);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      this.swapGridVelocityTextures();
 
-        const posAdvVel = gl.getAttribLocation(sim.advectionProgram, 'a_position');
-        gl.enableVertexAttribArray(posAdvVel);
-        gl.vertexAttribPointer(posAdvVel, 2, gl.FLOAT, false, 0, 0);
+      // STEP 2: Advect grid velocity
+      gl.useProgram(sim.advectionProgram);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.gridVelocityFBO);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.gridVelocityTexture2, 0);
 
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this.gridVelocityTexture1);
-        gl.uniform1i(gl.getUniformLocation(sim.advectionProgram, 'u_velocity'), 0);
+      const posAdvVel = gl.getAttribLocation(sim.advectionProgram, 'a_position');
+      gl.enableVertexAttribArray(posAdvVel);
+      gl.vertexAttribPointer(posAdvVel, 2, gl.FLOAT, false, 0, 0);
 
-        gl.activeTexture(gl.TEXTURE1);
-        gl.bindTexture(gl.TEXTURE_2D, this.gridVelocityTexture1);
-        gl.uniform1i(gl.getUniformLocation(sim.advectionProgram, 'u_source'), 1);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.gridVelocityTexture1);
+      gl.uniform1i(gl.getUniformLocation(sim.advectionProgram, 'u_velocity'), 0);
 
-        gl.uniform2f(gl.getUniformLocation(sim.advectionProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
-        gl.uniform1f(gl.getUniformLocation(sim.advectionProgram, 'u_dt'), dt);
-        gl.uniform1f(gl.getUniformLocation(sim.advectionProgram, 'u_dissipation'), 1.0);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, this.gridVelocityTexture1);
+      gl.uniform1i(gl.getUniformLocation(sim.advectionProgram, 'u_source'), 1);
 
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
-        this.swapGridVelocityTextures();
+      gl.uniform2f(gl.getUniformLocation(sim.advectionProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+      gl.uniform1f(gl.getUniformLocation(sim.advectionProgram, 'u_dt'), dt);
+      gl.uniform1f(gl.getUniformLocation(sim.advectionProgram, 'u_dissipation'), 1.0);
 
-        // STEP 3: Advect grid color/thickness
-        gl.useProgram(sim.advectionProgram);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      this.swapGridVelocityTextures();
+
+      // STEP 3: Advect grid color/thickness
+      gl.useProgram(sim.advectionProgram);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.gridFBO);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.gridTexture2, 0);
+
+      const posAdvColor = gl.getAttribLocation(sim.advectionProgram, 'a_position');
+      gl.enableVertexAttribArray(posAdvColor);
+      gl.vertexAttribPointer(posAdvColor, 2, gl.FLOAT, false, 0, 0);
+
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.gridVelocityTexture1);
+      gl.uniform1i(gl.getUniformLocation(sim.advectionProgram, 'u_velocity'), 0);
+
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, this.gridTexture1);
+      gl.uniform1i(gl.getUniformLocation(sim.advectionProgram, 'u_source'), 1);
+
+      gl.uniform2f(gl.getUniformLocation(sim.advectionProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+      gl.uniform1f(gl.getUniformLocation(sim.advectionProgram, 'u_dt'), dt);
+      // High dissipation for Alcohol - it spreads and fades (surfactant effect)
+      gl.uniform1f(gl.getUniformLocation(sim.advectionProgram, 'u_dissipation'), 0.97); // Fades relatively quickly after application
+
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      this.swapGridTextures();
+
+      // STEP 4: Apply diffusion (Alcohol spreads and fades)
+      // Apply if grid has content AND diffusion is enabled
+      if (this.hasGridContent && sim.oilDiffusion > 0.0) {
+        gl.useProgram(sim.diffusionProgram);
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.gridFBO);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.gridTexture2, 0);
 
-        const posAdvColor = gl.getAttribLocation(sim.advectionProgram, 'a_position');
-        gl.enableVertexAttribArray(posAdvColor);
-        gl.vertexAttribPointer(posAdvColor, 2, gl.FLOAT, false, 0, 0);
+        const posDiff = gl.getAttribLocation(sim.diffusionProgram, 'a_position');
+        gl.enableVertexAttribArray(posDiff);
+        gl.vertexAttribPointer(posDiff, 2, gl.FLOAT, false, 0, 0);
 
         gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this.gridVelocityTexture1);
-        gl.uniform1i(gl.getUniformLocation(sim.advectionProgram, 'u_velocity'), 0);
-
-        gl.activeTexture(gl.TEXTURE1);
         gl.bindTexture(gl.TEXTURE_2D, this.gridTexture1);
-        gl.uniform1i(gl.getUniformLocation(sim.advectionProgram, 'u_source'), 1);
+        gl.uniform1i(gl.getUniformLocation(sim.diffusionProgram, 'u_texture'), 0);
 
-        gl.uniform2f(gl.getUniformLocation(sim.advectionProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
-        gl.uniform1f(gl.getUniformLocation(sim.advectionProgram, 'u_dt'), dt);
-        // High dissipation for Alcohol - it spreads and fades (surfactant effect)
-        gl.uniform1f(gl.getUniformLocation(sim.advectionProgram, 'u_dissipation'), 0.97); // Fades relatively quickly after application
+        gl.uniform2f(gl.getUniformLocation(sim.diffusionProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+        gl.uniform1f(gl.getUniformLocation(sim.diffusionProgram, 'u_diffusion'), sim.oilDiffusion);
+        gl.uniform1f(gl.getUniformLocation(sim.diffusionProgram, 'u_dt'), dt);
 
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         this.swapGridTextures();
-        
-        // STEP 4: Apply diffusion (Alcohol spreads and fades)
-        // Apply if grid has content AND diffusion is enabled
-        if (this.hasGridContent && sim.oilDiffusion > 0.0) {
-          gl.useProgram(sim.diffusionProgram);
-          gl.bindFramebuffer(gl.FRAMEBUFFER, this.gridFBO);
-          gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.gridTexture2, 0);
-
-          const posDiff = gl.getAttribLocation(sim.diffusionProgram, 'a_position');
-          gl.enableVertexAttribArray(posDiff);
-          gl.vertexAttribPointer(posDiff, 2, gl.FLOAT, false, 0, 0);
-
-          gl.activeTexture(gl.TEXTURE0);
-          gl.bindTexture(gl.TEXTURE_2D, this.gridTexture1);
-          gl.uniform1i(gl.getUniformLocation(sim.diffusionProgram, 'u_texture'), 0);
-
-          gl.uniform2f(gl.getUniformLocation(sim.diffusionProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
-          gl.uniform1f(gl.getUniformLocation(sim.diffusionProgram, 'u_diffusion'), sim.oilDiffusion);
-          gl.uniform1f(gl.getUniformLocation(sim.diffusionProgram, 'u_dt'), dt);
-
-          gl.drawArrays(gl.TRIANGLES, 0, 6);
-          this.swapGridTextures();
-        }
+      }
     }
   }
 
@@ -666,36 +596,36 @@ export default class OilLayer extends FluidLayer {
     const h = this.sim.renderer.canvas.height;
 
     if (gl) {
-        if (this.oilTexture1) gl.deleteTexture(this.oilTexture1);
-        if (this.oilTexture2) gl.deleteTexture(this.oilTexture2);
-        if (this.oilFBO) gl.deleteFramebuffer(this.oilFBO);
+      if (this.oilTexture1) gl.deleteTexture(this.oilTexture1);
+      if (this.oilTexture2) gl.deleteTexture(this.oilTexture2);
+      if (this.oilFBO) gl.deleteFramebuffer(this.oilFBO);
 
-        this.oilTexture1 = this.sim.createTexture(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
-        this.oilTexture2 = this.sim.createTexture(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
-        this.oilFBO = this.sim.createFBO(this.oilTexture1);
+      this.oilTexture1 = this.sim.createTexture(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
+      this.oilTexture2 = this.sim.createTexture(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
+      this.oilFBO = this.sim.createFBO(this.oilTexture1);
 
-        if (this.oilVelocityTexture1) gl.deleteTexture(this.oilVelocityTexture1);
-        if (this.oilVelocityTexture2) gl.deleteTexture(this.oilVelocityTexture2);
-        if (this.oilVelocityFBO) gl.deleteFramebuffer(this.oilVelocityFBO);
+      if (this.oilVelocityTexture1) gl.deleteTexture(this.oilVelocityTexture1);
+      if (this.oilVelocityTexture2) gl.deleteTexture(this.oilVelocityTexture2);
+      if (this.oilVelocityFBO) gl.deleteFramebuffer(this.oilVelocityFBO);
 
-        if (this.curvatureTexture) gl.deleteTexture(this.curvatureTexture);
-        if (this.curvatureFBO) gl.deleteFramebuffer(this.curvatureFBO);
-        if (this.oilPropsTexture1) gl.deleteTexture(this.oilPropsTexture1);
-        if (this.oilPropsTexture2) gl.deleteTexture(this.oilPropsTexture2);
-        if (this.oilPropsFBO) gl.deleteFramebuffer(this.oilPropsFBO);
+      if (this.curvatureTexture) gl.deleteTexture(this.curvatureTexture);
+      if (this.curvatureFBO) gl.deleteFramebuffer(this.curvatureFBO);
+      if (this.oilPropsTexture1) gl.deleteTexture(this.oilPropsTexture1);
+      if (this.oilPropsTexture2) gl.deleteTexture(this.oilPropsTexture2);
+      if (this.oilPropsFBO) gl.deleteFramebuffer(this.oilPropsFBO);
 
-        // Recreate oil velocity field (RG32F for better hardware compatibility)
-        this.oilVelocityTexture1 = this.sim.createTexture(w, h, gl.RG32F, gl.RG, gl.FLOAT);
-        this.oilVelocityTexture2 = this.sim.createTexture(w, h, gl.RG32F, gl.RG, gl.FLOAT);
-        this.oilVelocityFBO = this.sim.createFBO(this.oilVelocityTexture1);
+      // Recreate oil velocity field (RG32F for better hardware compatibility)
+      this.oilVelocityTexture1 = this.sim.createTexture(w, h, gl.RG32F, gl.RG, gl.FLOAT);
+      this.oilVelocityTexture2 = this.sim.createTexture(w, h, gl.RG32F, gl.RG, gl.FLOAT);
+      this.oilVelocityFBO = this.sim.createFBO(this.oilVelocityTexture1);
 
-        this.curvatureTexture = this.sim.createTexture(w, h, gl.R16F, gl.RED, gl.HALF_FLOAT);
-        this.curvatureFBO = this.sim.createFBO(this.curvatureTexture);
-        
-        // Recreate oil properties textures
-        this.oilPropsTexture1 = this.sim.createTexture(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
-        this.oilPropsTexture2 = this.sim.createTexture(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
-        this.oilPropsFBO = this.sim.createFBO(this.oilPropsTexture1);
+      this.curvatureTexture = this.sim.createTexture(w, h, gl.R16F, gl.RED, gl.HALF_FLOAT);
+      this.curvatureFBO = this.sim.createFBO(this.curvatureTexture);
+
+      // Recreate oil properties textures
+      this.oilPropsTexture1 = this.sim.createTexture(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
+      this.oilPropsTexture2 = this.sim.createTexture(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
+      this.oilPropsFBO = this.sim.createFBO(this.oilPropsTexture1);
     }
 
     // Resize WebGPU SPH texture if it exists
@@ -709,30 +639,30 @@ export default class OilLayer extends FluidLayer {
       });
       this.webgpuSphTextureView = this.webgpuSphTexture.createView();
     }
-    
+
     if (gl) {
-        // Zero initialize after resize to prevent residuals
-        const prevFbo2 = gl.getParameter(gl.FRAMEBUFFER_BINDING);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture1, 0);
-        gl.clearColor(0, 0, 0, 0);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilVelocityFBO);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilVelocityTexture1, 0);
-        gl.clearColor(0, 0, 0, 0);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilVelocityTexture2, 0);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-        // Zero initialize oil props
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilPropsFBO);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilPropsTexture1, 0);
-        gl.clearColor(0, 0, 0, 0);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilPropsTexture2, 0);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, prevFbo2);
+      // Zero initialize after resize to prevent residuals
+      const prevFbo2 = gl.getParameter(gl.FRAMEBUFFER_BINDING);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture1, 0);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilVelocityFBO);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilVelocityTexture1, 0);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilVelocityTexture2, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      // Zero initialize oil props
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilPropsFBO);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilPropsTexture1, 0);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilPropsTexture2, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, prevFbo2);
     }
   }
 
@@ -751,18 +681,18 @@ export default class OilLayer extends FluidLayer {
     const useSPHForMaterial = ['Mineral Oil', 'Syrup', 'Glycerine', 'Ink'].includes(currentMaterial);
     const useGridForMaterial = ['Alcohol'].includes(currentMaterial);
     const hasSPHParticles = this.useSPH && this.sph.particleCount > 0;
-    
+
     // LAYER 1: Update SPH layer (if particles exist OR currently painting SPH)
     if (this.useSPH && (hasSPHParticles || useSPHForMaterial)) {
       await this.updateSPHLayer(dt, useSPHForMaterial);
     }
-    
+
     // LAYER 2: Update Grid layer (ONLY if it has actual content)
     // Don't update just because user selected Alcohol - wait until they paint
     if (this.hasGridContent) {
       this.updateGridLayer(dt);
     }
-    
+
     // LAYER 3: Composite both layers into final texture (skip if both empty)
     const hasAnyOilContent = hasSPHParticles || this.hasGridContent;
     if (hasAnyOilContent) {
@@ -774,54 +704,54 @@ export default class OilLayer extends FluidLayer {
         this.compositeOilLayers();
       }
     }
-    
+
     if (gl) {
-        // LEGACY: Copy to oilTexture1 ONLY if there are SPH particles
-        // Alcohol (Grid layer only) should NOT be copied to oilTexture1
-        // This prevents Alcohol from darkening ink via the oil-composite shader
-        if (hasSPHParticles && this.compositedTexture) {
-          const prevFbo = gl.getParameter(gl.FRAMEBUFFER_BINDING);
-          gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
-          gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture1, 0);
-          
-          gl.useProgram(sim.renderer.copyProgram || this.createCopyProgram());
-          gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
-          const posLoc = gl.getAttribLocation(sim.renderer.copyProgram, 'a_position');
-          gl.enableVertexAttribArray(posLoc);
-          gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
-          
-          gl.activeTexture(gl.TEXTURE0);
-          gl.bindTexture(gl.TEXTURE_2D, this.compositedTexture);
-          gl.uniform1i(gl.getUniformLocation(sim.renderer.copyProgram, 'u_texture'), 0);
-          
-          gl.disable(gl.BLEND);
-          gl.drawArrays(gl.TRIANGLES, 0, 6);
-          gl.bindFramebuffer(gl.FRAMEBUFFER, prevFbo);
-        } else {
-          // No SPH particles - clear legacy oil texture so it doesn't block water/ink
-          // This includes Alcohol-only state (Grid layer)
-          const prevFbo = gl.getParameter(gl.FRAMEBUFFER_BINDING);
-          gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
-          gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture1, 0);
-          gl.clearColor(0, 0, 0, 0);
-          gl.clear(gl.COLOR_BUFFER_BIT);
-          gl.bindFramebuffer(gl.FRAMEBUFFER, prevFbo);
-          
-          // Debug: Confirm Alcohol isn't blocking ink
-          if (this.hasGridContent && Math.random() < 0.01) {
-            console.log('🍸 Alcohol active: oilTexture1 cleared to prevent ink blocking');
-          }
+      // LEGACY: Copy to oilTexture1 ONLY if there are SPH particles
+      // Alcohol (Grid layer only) should NOT be copied to oilTexture1
+      // This prevents Alcohol from darkening ink via the oil-composite shader
+      if (hasSPHParticles && this.compositedTexture) {
+        const prevFbo = gl.getParameter(gl.FRAMEBUFFER_BINDING);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture1, 0);
+
+        gl.useProgram(sim.renderer.copyProgram || this.createCopyProgram());
+        gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
+        const posLoc = gl.getAttribLocation(sim.renderer.copyProgram, 'a_position');
+        gl.enableVertexAttribArray(posLoc);
+        gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.compositedTexture);
+        gl.uniform1i(gl.getUniformLocation(sim.renderer.copyProgram, 'u_texture'), 0);
+
+        gl.disable(gl.BLEND);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, prevFbo);
+      } else {
+        // No SPH particles - clear legacy oil texture so it doesn't block water/ink
+        // This includes Alcohol-only state (Grid layer)
+        const prevFbo = gl.getParameter(gl.FRAMEBUFFER_BINDING);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture1, 0);
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, prevFbo);
+
+        // Debug: Confirm Alcohol isn't blocking ink
+        if (this.hasGridContent && Math.random() < 0.01) {
+          console.log('🍸 Alcohol active: oilTexture1 cleared to prevent ink blocking');
         }
+      }
     }
   }
-  
+
   /**
    * Create simple copy shader for legacy compatibility (if needed)
    */
   createCopyProgram() {
     const gl = this.gl;
     if (gl) {
-        const vertSrc = `#version 300 es
+      const vertSrc = `#version 300 es
       in vec2 a_position;
       out vec2 v_texCoord;
       void main() {
@@ -829,7 +759,7 @@ export default class OilLayer extends FluidLayer {
         gl_Position = vec4(a_position, 0.0, 1.0);
       }
     `;
-        const fragSrc = `#version 300 es
+      const fragSrc = `#version 300 es
       precision highp float;
       in vec2 v_texCoord;
       out vec4 fragColor;
@@ -838,126 +768,126 @@ export default class OilLayer extends FluidLayer {
         fragColor = texture(u_texture, v_texCoord);
       }
     `;
-        
-        if (!this.sim.renderer.copyProgram) {
-          this.sim.renderer.copyProgram = this.sim.renderer.createProgram(vertSrc, fragSrc);
-        }
-        return this.sim.renderer.copyProgram;
+
+      if (!this.sim.renderer.copyProgram) {
+        this.sim.renderer.copyProgram = this.sim.renderer.createProgram(vertSrc, fragSrc);
+      }
+      return this.sim.renderer.copyProgram;
     }
     return null;
   }
-  
+
   // === UTILITY METHODS ===
-  
+
   /**
    * Clear all oil content (called when user clears canvas)
    */
   clear() {
     const gl = this.gl;
-    
+
     if (gl) {
-        // Reset content flags
-        this.hasGridContent = false;
-        
-        // Clear SPH particles
-        if (this.sph) {
-          this.sph.particleCount = 0;
-        }
-        
-        // Clear all textures
-        const prevFbo = gl.getParameter(gl.FRAMEBUFFER_BINDING);
-        gl.clearColor(0, 0, 0, 0);
-        
-        // Clear SPH layer
-        if (this.sphFBO && this.sphTexture1) {
-          gl.bindFramebuffer(gl.FRAMEBUFFER, this.sphFBO);
-          gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.sphTexture1, 0);
-          gl.clear(gl.COLOR_BUFFER_BIT);
-          gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.sphTexture2, 0);
-          gl.clear(gl.COLOR_BUFFER_BIT);
-        }
-        
-        // Clear Grid layer
-        if (this.gridFBO && this.gridTexture1) {
-          gl.bindFramebuffer(gl.FRAMEBUFFER, this.gridFBO);
-          gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.gridTexture1, 0);
-          gl.clear(gl.COLOR_BUFFER_BIT);
-          gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.gridTexture2, 0);
-          gl.clear(gl.COLOR_BUFFER_BIT);
-        }
-        
-        // Clear Grid velocity
-        if (this.gridVelocityFBO && this.gridVelocityTexture1) {
-          gl.bindFramebuffer(gl.FRAMEBUFFER, this.gridVelocityFBO);
-          gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.gridVelocityTexture1, 0);
-          gl.clear(gl.COLOR_BUFFER_BIT);
-          gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.gridVelocityTexture2, 0);
-          gl.clear(gl.COLOR_BUFFER_BIT);
-        }
-        
-        // Clear legacy oil texture
-        if (this.oilFBO && this.oilTexture1) {
-          gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
-          gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture1, 0);
-          gl.clear(gl.COLOR_BUFFER_BIT);
-          gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);
-          gl.clear(gl.COLOR_BUFFER_BIT);
-        }
-        
-        gl.bindFramebuffer(gl.FRAMEBUFFER, prevFbo);
-        console.log('🧹 Oil layers cleared');
+      // Reset content flags
+      this.hasGridContent = false;
+
+      // Clear SPH particles
+      if (this.sph) {
+        this.sph.particleCount = 0;
+      }
+
+      // Clear all textures
+      const prevFbo = gl.getParameter(gl.FRAMEBUFFER_BINDING);
+      gl.clearColor(0, 0, 0, 0);
+
+      // Clear SPH layer
+      if (this.sphFBO && this.sphTexture1) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.sphFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.sphTexture1, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.sphTexture2, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+      }
+
+      // Clear Grid layer
+      if (this.gridFBO && this.gridTexture1) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.gridFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.gridTexture1, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.gridTexture2, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+      }
+
+      // Clear Grid velocity
+      if (this.gridVelocityFBO && this.gridVelocityTexture1) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.gridVelocityFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.gridVelocityTexture1, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.gridVelocityTexture2, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+      }
+
+      // Clear legacy oil texture
+      if (this.oilFBO && this.oilTexture1) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture1, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+      }
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER, prevFbo);
+      console.log('🧹 Oil layers cleared');
     }
   }
-  
+
   // === LEGACY METHODS (kept for splat operations) ===
-  
+
   clearRegion(x, y, radius) {
     const gl = this.gl;
     const sim = this.sim;
-    
+
     if (gl) {
-        gl.useProgram(sim.clearRegionProgram);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);
-        
-        gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
-        const posLoc = gl.getAttribLocation(sim.clearRegionProgram, 'a_position');
-        gl.enableVertexAttribArray(posLoc);
-        gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
-        
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this.oilTexture1);
-        gl.uniform1i(gl.getUniformLocation(sim.clearRegionProgram, 'u_texture'), 0);
-        
-        gl.uniform2f(gl.getUniformLocation(sim.clearRegionProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
-        gl.uniform2f(gl.getUniformLocation(sim.clearRegionProgram, 'u_center'), x, y);
-        gl.uniform1f(gl.getUniformLocation(sim.clearRegionProgram, 'u_radius'), radius);
-        
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
-        this.swapOilTextures();
+      gl.useProgram(sim.clearRegionProgram);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.oilFBO);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.oilTexture2, 0);
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
+      const posLoc = gl.getAttribLocation(sim.clearRegionProgram, 'a_position');
+      gl.enableVertexAttribArray(posLoc);
+      gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.oilTexture1);
+      gl.uniform1i(gl.getUniformLocation(sim.clearRegionProgram, 'u_texture'), 0);
+
+      gl.uniform2f(gl.getUniformLocation(sim.clearRegionProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+      gl.uniform2f(gl.getUniformLocation(sim.clearRegionProgram, 'u_center'), x, y);
+      gl.uniform1f(gl.getUniformLocation(sim.clearRegionProgram, 'u_radius'), radius);
+
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      this.swapOilTextures();
     }
   }
 
   splatColor(x, y, color, radius) {
     const gl = this.gl;
     const sim = this.sim;
-    
+
     console.log(`🔍 splatColor called: x=${x.toFixed(2)}, y=${y.toFixed(2)}, radius=${radius}`);
-    
+
     // === MULTI-LAYER SPLAT ROUTING ===
     const controller = window.controller || this.sim.controller;
     const currentMaterial = controller?.materials[controller?.currentMaterialIndex]?.name || '';
     const useSPHForMaterial = ['Mineral Oil', 'Syrup', 'Glycerine', 'Ink'].includes(currentMaterial);
     const useGridForMaterial = ['Alcohol'].includes(currentMaterial);
-    
+
     console.log(`🔍 Material: ${currentMaterial}, useSPH=${this.useSPH}, useSPHForMaterial=${useSPHForMaterial}`);
-    
+
     // Route to SPH layer
     if (this.useSPH && useSPHForMaterial && this.sph) {
       // Convert normalized coords to world coords (centered at origin)
       const worldX = (x - 0.5) * 2 * this.sph.containerRadius;
       const worldY = (0.5 - y) * 2 * this.sph.containerRadius;
-      
+
       // Allow continuous accumulation - no throttling
       // Particles will accumulate as user paints, creating larger blobs
       const nowMs = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
@@ -966,22 +896,22 @@ export default class OilLayer extends FluidLayer {
       // Base spawn counts per material (kept modest for perf and variety).
       // These are intentionally low so that even after breakup, a single tap
       // cannot populate the whole plate with droplets.
-      let baseCount = 8;
-      let baseRadius = 13.0;
+      let baseCount = 3;
+      let baseRadius = 10.0;
       switch (currentMaterial) {
         case 'Mineral Oil':
-          baseCount = 8;         // fewer particles per splat
-          baseRadius = 13.0;     // compact cluster
+          baseCount = 3;         // fewer particles per splat
+          baseRadius = 10.0;     // compact cluster
           break;
         case 'Syrup':
           // Syrup: hero blobs but with very limited particle count so
           // breakup doesn't flood the plate.
-          baseCount = 8;         // significantly reduced from earlier values
-          baseRadius = 14.0;     // moderate cluster size
+          baseCount = 3;         // significantly reduced
+          baseRadius = 11.0;     // moderate cluster size
           break;
         case 'Glycerine':
-          baseCount = 8;         // light per splat
-          baseRadius = 15.0;     // medium cluster
+          baseCount = 3;         // light per splat
+          baseRadius = 12.0;     // medium cluster
           break;
         default:
           break;
@@ -1016,7 +946,7 @@ export default class OilLayer extends FluidLayer {
       // similar input; keep within a narrow band so behavior is stable.
       const sizeJitter = 0.8 + Math.random() * 0.3; // [0.8, 1.1]
       particleCount = Math.max(3, Math.round(particleCount * sizeJitter));
-      
+
       // DISABLED: Cluster spawning creates multiple separate blobs
       // Always spawn as single dense blob for immediate congealing
       const spawned = this.sph.spawnParticles(worldX, worldY, particleCount, color, spawnRadius);
@@ -1029,71 +959,71 @@ export default class OilLayer extends FluidLayer {
       console.log(`🎨 Spawned ${spawned} ${currentMaterial} particles as single blob (radius=${spawnRadius})`);
       return;
     }
-    
+
     // Route to Grid layer
     if (useGridForMaterial) {
       this.splatToGridLayer(x, y, color, radius);
       return;
     }
-    
+
     // Fallback: legacy oil texture (shouldn't happen)
     console.warn('⚠️ splatColor called with unknown material:', currentMaterial);
   }
-  
+
   /**
    * Splat color to grid layer (Alcohol)
    */
   splatToGridLayer(x, y, color, radius) {
     const gl = this.gl;
     const sim = this.sim;
-    
+
     if (gl) {
-        // Mark that grid layer now has content
-        this.hasGridContent = true;
-        
-        gl.useProgram(sim.splatProgram);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.gridFBO);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.gridTexture2, 0);
-        
-        gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
-        const posLoc = gl.getAttribLocation(sim.splatProgram, 'a_position');
-        gl.enableVertexAttribArray(posLoc);
-        gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
-        
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this.gridTexture1);
-        gl.uniform1i(gl.getUniformLocation(sim.splatProgram, 'u_texture'), 0);
-        
-        gl.uniform3f(gl.getUniformLocation(sim.splatProgram, 'u_color'), color.r, color.g, color.b);
-        gl.uniform2f(gl.getUniformLocation(sim.splatProgram, 'u_point'), x, y);
-        gl.uniform1f(gl.getUniformLocation(sim.splatProgram, 'u_radius'), radius);
-        gl.uniform1i(gl.getUniformLocation(sim.splatProgram, 'u_isOil'), 1);
-        gl.uniform2f(gl.getUniformLocation(sim.splatProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
-        
-        // Set oil strength - Alcohol should be nearly invisible (surfactant effect, not visual)
-        const alcoholStrength = 0.15; // Very subtle - mainly affects physics, not visuals
-        gl.uniform1f(gl.getUniformLocation(sim.splatProgram, 'u_oilStrength'), alcoholStrength);
-        
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
-        this.swapGridTextures();
+      // Mark that grid layer now has content
+      this.hasGridContent = true;
+
+      gl.useProgram(sim.splatProgram);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.gridFBO);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.gridTexture2, 0);
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
+      const posLoc = gl.getAttribLocation(sim.splatProgram, 'a_position');
+      gl.enableVertexAttribArray(posLoc);
+      gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.gridTexture1);
+      gl.uniform1i(gl.getUniformLocation(sim.splatProgram, 'u_texture'), 0);
+
+      gl.uniform3f(gl.getUniformLocation(sim.splatProgram, 'u_color'), color.r, color.g, color.b);
+      gl.uniform2f(gl.getUniformLocation(sim.splatProgram, 'u_point'), x, y);
+      gl.uniform1f(gl.getUniformLocation(sim.splatProgram, 'u_radius'), radius);
+      gl.uniform1i(gl.getUniformLocation(sim.splatProgram, 'u_isOil'), 1);
+      gl.uniform2f(gl.getUniformLocation(sim.splatProgram, 'u_resolution'), gl.canvas.width, gl.canvas.height);
+
+      // Set oil strength - Alcohol should be nearly invisible (surfactant effect, not visual)
+      const alcoholStrength = 0.15; // Very subtle - mainly affects physics, not visuals
+      gl.uniform1f(gl.getUniformLocation(sim.splatProgram, 'u_oilStrength'), alcoholStrength);
+
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      this.swapGridTextures();
     }
   }
-  
+
   // === UTILITY METHODS ===
 
   swapOilTextures() {
     [this.oilTexture1, this.oilTexture2] = [this.oilTexture2, this.oilTexture1];
   }
-  
+
   // === MULTI-LAYER SWAP HELPERS ===
   swapSPHTextures() {
     [this.sphTexture1, this.sphTexture2] = [this.sphTexture2, this.sphTexture1];
   }
-  
+
   swapGridTextures() {
     [this.gridTexture1, this.gridTexture2] = [this.gridTexture2, this.gridTexture1];
   }
-  
+
   swapGridVelocityTextures() {
     [this.gridVelocityTexture1, this.gridVelocityTexture2] = [this.gridVelocityTexture2, this.gridVelocityTexture1];
   }
@@ -1101,7 +1031,7 @@ export default class OilLayer extends FluidLayer {
   swapDensityHalfTextures() {
     [this.densityHalfTex1, this.densityHalfTex2] = [this.densityHalfTex2, this.densityHalfTex1];
   }
-  
+
   /**
    * Composite SPH and Grid layers into final oil texture
    * Uses pre-multiplied alpha compositing (SPH over Grid)
@@ -1109,49 +1039,49 @@ export default class OilLayer extends FluidLayer {
   compositeOilLayers() {
     const gl = this.gl;
     const sim = this.sim;
-    
+
     if (gl) {
-        if (!sim.oilLayerCompositeProgram) {
-          console.warn('⚠️ Oil layer composite shader not loaded yet');
-          return;
-        }
-        
-        gl.useProgram(sim.oilLayerCompositeProgram);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.compositeFBO);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.compositedTexture, 0);
-        
-        // Disable blending for fullscreen replacement
-        gl.disable(gl.BLEND);
-        
-        gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
-        const posLoc = gl.getAttribLocation(sim.oilLayerCompositeProgram, 'a_position');
-        gl.enableVertexAttribArray(posLoc);
-        gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
-        
-        // Bind SPH layer
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this.sphTexture1);
-        gl.uniform1i(gl.getUniformLocation(sim.oilLayerCompositeProgram, 'u_sphTexture'), 0);
-        
-        // Bind Grid layer
-        gl.activeTexture(gl.TEXTURE1);
-        gl.bindTexture(gl.TEXTURE_2D, this.gridTexture1);
-        gl.uniform1i(gl.getUniformLocation(sim.oilLayerCompositeProgram, 'u_gridTexture'), 1);
-        
-        // Resolution uniform
-        gl.uniform2f(gl.getUniformLocation(sim.oilLayerCompositeProgram, 'u_resolution'), 
-                     gl.canvas.width, gl.canvas.height);
-        
-        // Composite
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
-        
-        // Log occasionally for debugging
-        if (Math.random() < 0.01) {
-          console.log(`🎨 Composite: SPH particles=${this.sph.particleCount}`);
-        }
+      if (!sim.oilLayerCompositeProgram) {
+        console.warn('⚠️ Oil layer composite shader not loaded yet');
+        return;
+      }
+
+      gl.useProgram(sim.oilLayerCompositeProgram);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.compositeFBO);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.compositedTexture, 0);
+
+      // Disable blending for fullscreen replacement
+      gl.disable(gl.BLEND);
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, sim.renderer.quadBuffer);
+      const posLoc = gl.getAttribLocation(sim.oilLayerCompositeProgram, 'a_position');
+      gl.enableVertexAttribArray(posLoc);
+      gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+
+      // Bind SPH layer
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.sphTexture1);
+      gl.uniform1i(gl.getUniformLocation(sim.oilLayerCompositeProgram, 'u_sphTexture'), 0);
+
+      // Bind Grid layer
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, this.gridTexture1);
+      gl.uniform1i(gl.getUniformLocation(sim.oilLayerCompositeProgram, 'u_gridTexture'), 1);
+
+      // Resolution uniform
+      gl.uniform2f(gl.getUniformLocation(sim.oilLayerCompositeProgram, 'u_resolution'),
+        gl.canvas.width, gl.canvas.height);
+
+      // Composite
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+      // Log occasionally for debugging
+      if (Math.random() < 0.01) {
+        console.log(`🎨 Composite: SPH particles=${this.sph.particleCount}`);
+      }
     }
   }
-  
+
   /**
    * Get the final composited oil texture for rendering
    * This is the public API for other systems to access the oil layer
@@ -1160,7 +1090,7 @@ export default class OilLayer extends FluidLayer {
     // Return composited texture if available, otherwise legacy texture
     return this.compositedTexture || this.oilTexture1;
   }
-  
+
   /**
    * Check if there's visible oil content that should go through oil-composite shader
    * Returns true only if there are SPH particles (Mineral Oil, Syrup, Glycerine)
@@ -1174,7 +1104,7 @@ export default class OilLayer extends FluidLayer {
     }
     return hasParticles;
   }
-  
+
   swapOilVelocityTextures() {
     [this.oilVelocityTexture1, this.oilVelocityTexture2] = [this.oilVelocityTexture2, this.oilVelocityTexture1];
   }
@@ -1189,17 +1119,17 @@ export default class OilLayer extends FluidLayer {
     if (this.sphTexture1) gl.deleteTexture(this.sphTexture1);
     if (this.sphTexture2) gl.deleteTexture(this.sphTexture2);
     if (this.sphFBO) gl.deleteFramebuffer(this.sphFBO);
-    
+
     if (this.gridTexture1) gl.deleteTexture(this.gridTexture1);
     if (this.gridTexture2) gl.deleteTexture(this.gridTexture2);
     if (this.gridFBO) gl.deleteFramebuffer(this.gridFBO);
     if (this.gridVelocityTexture1) gl.deleteTexture(this.gridVelocityTexture1);
     if (this.gridVelocityTexture2) gl.deleteTexture(this.gridVelocityTexture2);
     if (this.gridVelocityFBO) gl.deleteFramebuffer(this.gridVelocityFBO);
-    
+
     if (this.compositedTexture) gl.deleteTexture(this.compositedTexture);
     if (this.compositeFBO) gl.deleteFramebuffer(this.compositeFBO);
-    
+
     // Legacy textures
     if (this.oilTexture1) gl.deleteTexture(this.oilTexture1);
     if (this.oilTexture2) gl.deleteTexture(this.oilTexture2);

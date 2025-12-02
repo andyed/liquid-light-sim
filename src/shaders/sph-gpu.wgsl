@@ -22,6 +22,7 @@ struct Uniforms {
     restDensity: f32,
     particleMass: f32,
     viscosity: f32,
+    ipfStrength: f32,
 };
 
 @group(0) @binding(1)
@@ -113,6 +114,32 @@ fn compute_forces(@builtin(global_invocation_id) global_id: vec3<u32>) {
             // Viscosity force
             let viscosity_term = uniforms.viscosity * uniforms.particleMass * uniforms.particleMass / p_j.density * viscosityLaplacianKernel(dist, uniforms.smoothingRadius);
             force += viscosity_term * (p_j.vel - p_i.vel);
+
+            // IPF cohesion (explicit, short-range, density-biased)
+            if (uniforms.ipfStrength > 0.0) {
+                let innerR = 0.55 * uniforms.smoothingRadius;
+                let outerR = 1.0 * uniforms.smoothingRadius;
+                if (dist > innerR && dist < outerR) {
+                    let rest = uniforms.restDensity;
+                    let rho_i = p_i.density;
+                    let rho_j = p_j.density;
+                    // Only pull thinner particles toward denser neighbors
+                    let densityDelta = (rho_j - rho_i) / rest; // >0 when neighbor is denser
+                    let densityScale = clamp(densityDelta, 0.0, 1.0);
+                    // High-density cutoff: do not keep tightening existing dense rims
+                    let coreThresh = 1.1 * rest;
+                    let bothCore = (rho_i >= coreThresh) && (rho_j >= coreThresh);
+                    if (densityScale > 0.0 && !bothCore) {
+                        let span = max(1e-6, outerR - innerR);
+                        let t = (dist - innerR) / span; // 0 at innerR, 1 at outerR
+                        let falloff = 1.0 - t;
+                        let w = falloff * falloff;
+                        let dir = normalize(p_j.pos - p_i.pos);
+                        let s = uniforms.ipfStrength * w * densityScale * uniforms.particleMass;
+                        force += s * dir;
+                    }
+                }
+            }
         }
     }
 
