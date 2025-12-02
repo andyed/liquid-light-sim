@@ -885,8 +885,9 @@ export default class OilLayer extends FluidLayer {
     // Route to SPH layer
     if (this.useSPH && useSPHForMaterial && this.sph) {
       // Convert normalized coords to world coords (centered at origin)
+      // Note: Y is already flipped in controller (1.0 - screenY), so use same formula as X
       const worldX = (x - 0.5) * 2 * this.sph.containerRadius;
-      const worldY = (0.5 - y) * 2 * this.sph.containerRadius;
+      const worldY = (y - 0.5) * 2 * this.sph.containerRadius;
 
       // Allow continuous accumulation - no throttling
       // Particles will accumulate as user paints, creating larger blobs
