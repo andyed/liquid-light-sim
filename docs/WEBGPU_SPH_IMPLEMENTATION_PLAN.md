@@ -24,19 +24,29 @@ The long-term destination of this plan is therefore:
 
 ---
 
-## Current Status (2025-11)
+## Current Status (2025-12-01)
 
 - **Renderer:** WebGL2-only for now (`useWebGPU = false` in `main.js`).
-- **SPH path in production:** CPU SPH + WebGL-only rendering (Phase 1 of ALBSP roadmap).
-  - SPH particles are simulated on CPU (`SPHOilSystem`) and rendered via the existing WebGL particle splat + oil composite pipeline.
-  - Ink/water render through `WaterLayer → colorTexture1 → Renderer.render`.
-- **WebGPU SPH:** Implemented and working in isolation (compute + render pipelines), but **disabled by default** after causing device/OS-level instability on multiple platforms when used with per-frame particle readback.
-  - WebGPU context bootstrap and a test compute shader run successfully.
-  - WebGPU SPH compute/draw feature flags exist in `OilLayer`, but are currently left `false` in the shipped configuration.
-  - On **macOS 26.1 / M3 Max (Chrome WebGPU)**, enabling WebGPU SPH with per-frame full-buffer readback reliably triggers a **WindowServer watchdog timeout** (system compositor crash) after a few seconds under load.
-  - On **Windows / NVIDIA (D3D12 backend)**, the same pattern (compute + full-buffer readback every frame) leads to `DXGI_ERROR_DEVICE_HUNG` and a **lost device** during `GPUBuffer.mapAsync` on the staging buffer.
-  - Conclusion: the "GPU compute → full particle buffer copy → per-frame CPU readback" design is not viable; SPH must be treated as a GPU-resident backend, with readback reserved for infrequent debugging/telemetry.
-- **Debug baseline:** All recent debugging and tuning assume this stable CPU SPH + WebGL renderer baseline.
+- **SPH path in production:** CPU SPH + WebGL-only rendering.
+  - SPH particles simulated on CPU (`SPHOilSystem`) with blob physics (cohesion/repulsion/damping)
+  - Rendered via WebGL particle splat → metaball → blur → composite pipeline
+  - Ink/water render through `WaterLayer → colorTexture1 → Renderer.render`
+
+### WebGPU Foundation (Dec 2025)
+- **Particle struct updated:** 48 bytes with color (pos, vel, force, density, pressure, color, pad)
+- **Compute shaders updated:** `sph-gpu.wgsl` now matches CPU blob physics
+- **Buffer management:** `WebGPUSPH` handles particle upload with color
+- **Update pipeline:** `WebGPUSPHUpdate` dispatches density/pressure/force/integrate passes
+- **No readback:** Removed staging buffer - particles stay GPU-resident
+
+### Known Issues (Resolved)
+- ~~Per-frame readback caused device hangs~~ → Removed readback entirely
+- ~~Oil spawn position bug~~ → Fixed Y coordinate double-inversion
+
+### Blocking Item: GPU-Resident Rendering
+The compute pipeline is ready, but we need a **WebGPU render pipeline** to draw particles directly from the GPU buffer. Currently disabled because:
+- Old approach: GPU compute → readback → CPU → WebGL render (causes hangs)
+- New approach needed: GPU compute → GPU render → texture copy to WebGL
 
 ---
 
@@ -322,7 +332,21 @@ making contiguous oil regions visually continuous.
 
 ## Next Concrete Steps
 
-1. Implement WebGPU context creation and a trivial compute shader (Stage 1).
-2. Define the particle struct and storage buffer, and copy initial SPH state into it (Stage 2).
-3. Implement a minimal O(N²) GPU density + integration pass and feed positions back into the existing WebGL SPH rendering (Stage 3).
-4. Once the above is working, plan the neighbor grid and full GPU coupling stages.
+### Completed ✅
+1. ~~Implement WebGPU context creation~~ (Stage 1) - Done
+2. ~~Define particle struct and storage buffer~~ (Stage 2) - Done, 48 bytes with color
+3. ~~Implement GPU density/force/integration passes~~ (Stage 3) - Done, blob physics
+
+### Next Up 🔜
+4. **Create WebGPU particle render pipeline** (Stage 4)
+   - WGSL vertex/fragment shaders for particle splats
+   - Render from storage buffer to WebGPU texture
+   - Copy texture to WebGL for existing composite pipeline
+
+5. **Enable GPU-resident SPH** 
+   - Add `?webgpu_sph=1` URL flag for testing
+   - Upload particles on spawn only (not every frame)
+   - Run compute passes every frame
+   - Render directly from GPU buffer
+
+6. **GPU spatial hash** (Stage 5) - For scaling beyond 5k particles
