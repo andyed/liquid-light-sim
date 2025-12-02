@@ -3,6 +3,7 @@ import OilParticle from '../OilParticle.js';
 import SPHOilSystem from '../sph/SPHOilSystem.js';
 import WebGPUSPH from '../sph/webgpu-sph.js';
 import WebGPUSPHUpdate from '../sph/webgpu-sph-update.js';
+import WebGPUSPHRender from '../sph/webgpu-sph-render.js';
 import { loadShader } from '../../utils.js';
 
 export default class OilLayer extends FluidLayer {
@@ -14,13 +15,15 @@ export default class OilLayer extends FluidLayer {
     this.sph = new SPHOilSystem(5000, 0.48, sphParticleSplatVertWGSL, sphParticleSplatFragWGSL); // REDUCED: 5k max for Phase 1 testing
     this.webgpuSPH = null;
     this.webgpuSPHUpdate = null;
-    // Feature flags: keep WebGPU SPH compute and direct canvas draw disabled by default
-    // to favor the more battle-tested CPU SPH + WebGL rendering path on macOS.
-    // WebGPU SPH compute is guarded behind a URL flag so we can experiment
-    // without risking crashes in normal use. Default is CPU SPH.
+    this.webgpuSPHRender = null;
+    
+    // Feature flags: WebGPU SPH is guarded behind URL flags
+    // ?webgpu_sph=1 enables full GPU-resident SPH (compute + render)
+    // This avoids per-frame readback which causes macOS WindowServer crashes
     const search = (typeof window !== 'undefined' && window.location && window.location.search) || '';
-    this.enableWebgpuSphCompute = search.includes('webgpuSph=1');
-    this.enableWebgpuDrawToCanvas = false;
+    this.enableWebgpuSph = search.includes('webgpu_sph=1');
+    this.enableWebgpuSphCompute = this.enableWebgpuSph;
+    this.enableWebgpuDrawToCanvas = this.enableWebgpuSph;
     // NOTE: Physics disabled until validated step-by-step
 
     // === MULTI-LAYER ARCHITECTURE ===
@@ -109,7 +112,7 @@ export default class OilLayer extends FluidLayer {
 
     if (this.sim.webgpu) {
       const adapterLimits = this.sim.renderer?.webgpuLimitInfo;
-      const particleStrideBytes = 8 * 4; // 8 floats (pos, vel, force, density, pressure)
+      const particleStrideBytes = 12 * 4; // 12 floats = 48 bytes (pos, vel, force, density, pressure, color, pad)
       let gpuMaxParticles = this.sph.maxParticles;
       if (adapterLimits && adapterLimits.maxStorageBufferBindingSize) {
         gpuMaxParticles = Math.min(gpuMaxParticles, Math.floor(adapterLimits.maxStorageBufferBindingSize / particleStrideBytes));
@@ -118,12 +121,23 @@ export default class OilLayer extends FluidLayer {
       if (gpuMaxParticles < 64) {
         console.warn('WebGPU SPH disabled: adapter storage limit only allowed', gpuMaxParticles, 'particles.');
         this.enableWebgpuSphCompute = false;
+        this.enableWebgpuSph = false;
         this.webgpuSPH = null;
       } else {
         this.webgpuSPH = new WebGPUSPH(this.sim.webgpu.device, gpuMaxParticles);
-        console.log('🚀 Initializing WebGPU SPH System (max particles:', gpuMaxParticles, '...');
+        console.log('🚀 Initializing WebGPU SPH System (max particles:', gpuMaxParticles, ')');
+        
+        // Initialize compute pipeline
         this.webgpuSPHUpdate = new WebGPUSPHUpdate(this.sim.webgpu.device, this.webgpuSPH);
         this.webgpuSPHUpdate.init();
+        
+        // Initialize render pipeline (GPU-resident rendering, no readback!)
+        this.webgpuSPHRender = new WebGPUSPHRender(this.sim.webgpu.device, this.webgpuSPH, w, h);
+        this.webgpuSPHRender.init();
+        
+        if (this.enableWebgpuSph) {
+          console.log('🎮 WebGPU SPH ENABLED via ?webgpu_sph=1 - GPU-resident particles!');
+        }
       }
       this.sph.initWebGPU(this.sim.webgpu.device); // Initialize WebGPU rendering for SPH
 
@@ -132,7 +146,7 @@ export default class OilLayer extends FluidLayer {
       // first WebGPU update starts from the correct positions/velocities.
       this.webgpuSphSeededFromCPU = false;
 
-      // Create WebGPU texture for SPH rendering
+      // Create WebGPU texture for SPH rendering (legacy path)
       this.webgpuSphTexture = this.sim.webgpu.device.createTexture({
         size: [w, h],
         format: 'rgba16float',
@@ -354,16 +368,22 @@ export default class OilLayer extends FluidLayer {
       const shouldSkipPhysics = this.sph.particleCount > 3000 && this.sphFrameSkip % 2 === 0;
 
       if (!shouldSkipPhysics) {
-        if (this.webgpuSPHUpdate && this.enableWebgpuSphCompute) {
-          // Lazily upload the current CPU SPH state into the WebGPU particle
-          // buffer the first time we use the WebGPU SPH update path.
-          if (!this.webgpuSphSeededFromCPU && this.webgpuSPH) {
-            this.webgpuSPH.uploadInitialData(this.sph);
+        // Always run CPU physics for now (used for rendering)
+        this.sph.update(dt, sim.rotationAmount, gridVelocities);
+        
+        // Also run WebGPU compute in parallel for testing
+        if (this.enableWebgpuSph && this.webgpuSPHUpdate && this.webgpuSPH) {
+          // Upload any new particles since last frame
+          if (this.sph.particleCount > this.webgpuSPH.particleCount) {
+            const startIdx = this.webgpuSPH.particleCount;
+            const count = this.sph.particleCount - startIdx;
+            this.webgpuSPH.uploadNewParticles(this.sph, startIdx, count);
+          } else if (!this.webgpuSphSeededFromCPU) {
+            this.webgpuSPH.uploadParticleData(this.sph);
             this.webgpuSphSeededFromCPU = true;
           }
-          await this.webgpuSPHUpdate.update(this.sph, dt);
-        } else {
-          this.sph.update(dt, sim.rotationAmount, gridVelocities);
+          // Run GPU physics (results not used yet, just for validation)
+          this.webgpuSPHUpdate.update(this.sph, dt);
         }
       }
     }
@@ -376,14 +396,16 @@ export default class OilLayer extends FluidLayer {
         gl.disable(gl.BLEND); // MUST disable blend for proper clear
         gl.clearColor(0, 0, 0, 0);
         gl.clear(gl.COLOR_BUFFER_BIT);
-      }
-
-      // Rasterize SPH particles to texture (blend will be re-enabled inside)
-      if (this.sim.webgpu && this.webgpuSphTextureView && this.enableWebgpuDrawToCanvas) {
-        // Optional: direct WebGPU draw to canvas/texture when explicitly enabled
-        this.sph.renderParticles(this.webgpuSphTextureView, this.sim.renderer.canvas.width, this.sim.renderer.canvas.height);
-      } else if (gl) {
+        
+        // Always use CPU SPH + WebGL rendering for now
+        // WebGPU compute runs in parallel but rendering uses CPU data
+        // TODO: Copy WebGPU render texture to WebGL when ready
         this.sph.renderParticles(this.sphFBO, this.sim.renderer.canvas.width, this.sim.renderer.canvas.height);
+      }
+      
+      // Also render to WebGPU texture for testing (not displayed yet)
+      if (this.enableWebgpuSph && this.webgpuSPHRender) {
+        this.webgpuSPHRender.render(this.sph.containerRadius, this.sph.particleSpriteRadius);
       }
 
       if (gl) {
@@ -628,7 +650,7 @@ export default class OilLayer extends FluidLayer {
       this.oilPropsFBO = this.sim.createFBO(this.oilPropsTexture1);
     }
 
-    // Resize WebGPU SPH texture if it exists
+    // Resize WebGPU SPH textures if they exist
     if (this.webgpuSphTexture) {
       this.webgpuSphTexture.destroy(); // Release old texture
       this.webgpuSphTexture = this.sim.webgpu.device.createTexture({
@@ -638,6 +660,11 @@ export default class OilLayer extends FluidLayer {
         label: 'WebGPU SPH Render Texture',
       });
       this.webgpuSphTextureView = this.webgpuSphTexture.createView();
+    }
+    
+    // Resize WebGPU SPH render pipeline texture
+    if (this.webgpuSPHRender) {
+      this.webgpuSPHRender.resize(w, h);
     }
 
     if (gl) {
@@ -885,9 +912,13 @@ export default class OilLayer extends FluidLayer {
     // Route to SPH layer
     if (this.useSPH && useSPHForMaterial && this.sph) {
       // Convert normalized coords to world coords (centered at origin)
-      // Note: Y is already flipped in controller (1.0 - screenY), so use same formula as X
+      // Controller: y = 1.0 - screenY, so y=1 is screen top, y=0 is screen bottom
+      // WebGL shader flips Y: ndc.y = -worldY/R
+      // So: worldY=+R → ndc=-1 (bottom), worldY=-R → ndc=+1 (top)
+      // To get screen top (y=1) to render at top: need worldY=-R
+      // Therefore: worldY = (0.5 - y) * 2 * R
       const worldX = (x - 0.5) * 2 * this.sph.containerRadius;
-      const worldY = (y - 0.5) * 2 * this.sph.containerRadius;
+      const worldY = (0.5 - y) * 2 * this.sph.containerRadius;
 
       // Allow continuous accumulation - no throttling
       // Particles will accumulate as user paints, creating larger blobs
@@ -950,9 +981,12 @@ export default class OilLayer extends FluidLayer {
 
       // DISABLED: Cluster spawning creates multiple separate blobs
       // Always spawn as single dense blob for immediate congealing
+      const prevCount = this.sph.particleCount;
       const spawned = this.sph.spawnParticles(worldX, worldY, particleCount, color, spawnRadius);
-      if (this.webgpuSPH) {
-        this.webgpuSPH.uploadInitialData(this.sph);
+      
+      // Upload new particles to WebGPU buffer
+      if (this.webgpuSPH && spawned > 0) {
+        this.webgpuSPH.uploadNewParticles(this.sph, prevCount, spawned);
       }
       // Start a brief congeal boost window
       this.postSplatBoostFrames = this.postSplatBoostTotal; // start ramp
