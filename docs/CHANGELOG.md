@@ -1,5 +1,23 @@
 # Changelog
 
+## [2025-12-01] - Oil Rendering Improvements
+
+### Changed - Blob Rendering
+- **Metaball shader rewrite**: Quintic falloff, 12×3 sampling, power-curve alpha for organic edges
+- **Particle splat upgrade**: Gaussian+polynomial falloff, density-based spread
+- **New blur pass**: Edge-adaptive 9-tap Gaussian post-processing (`oil-blur.frag.glsl`)
+
+### Fixed - Physics Stability
+- **Reduced jitter**: Lowered cohesion (0.25) and repulsion (0.8) forces
+- **Heavy damping**: Inter-particle viscosity 2.0, friction 0.95, quadratic damping 6.0
+- **Speed limits**: Max speed cap 0.3, force clamp 2.0
+
+### Documentation
+- Reorganized docs: moved 25 historical fix/debug docs to `docs/archive/`
+- Updated `CURRENT_STATUS.md` and `NEXT_SESSION.md`
+
+---
+
 ## [Unreleased] - 2025-10-29
 
 ### Fixed - Motion and Stability

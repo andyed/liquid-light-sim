@@ -1,12 +1,15 @@
 // src/shaders/sph-gpu.wgsl
+// WebGPU compute shaders for SPH particle simulation
 
 struct Particle {
-    pos: vec2<f32>,
-    vel: vec2<f32>,
-    force: vec2<f32>,
-    density: f32,
-    pressure: f32,
-};
+    pos: vec2<f32>,      // 8 bytes
+    vel: vec2<f32>,      // 8 bytes
+    force: vec2<f32>,    // 8 bytes
+    density: f32,        // 4 bytes
+    pressure: f32,       // 4 bytes
+    color: vec3<f32>,    // 12 bytes
+    _pad: f32,           // 4 bytes (alignment)
+};  // Total: 48 bytes
 
 struct Particles {
     data: array<Particle>,
@@ -16,13 +19,19 @@ struct Particles {
 var<storage, read_write> particles: Particles;
 
 struct Uniforms {
-    maxParticles: u32,
+    particleCount: u32,  // Active particle count (not max)
     dt: f32,
     smoothingRadius: f32,
     restDensity: f32,
     particleMass: f32,
     viscosity: f32,
     ipfStrength: f32,
+    containerRadius: f32,
+    // Blob physics parameters
+    blobCohesion: f32,
+    blobRepulsion: f32,
+    blobFriction: f32,
+    _pad: f32,
 };
 
 @group(0) @binding(1)
@@ -64,18 +73,23 @@ fn viscosityLaplacianKernel(dist: f32, h: f32) -> f32 {
     return factor * (h - dist);
 }
 
+// ============================================================================
+// COMPUTE PASSES - Simplified Blob Physics (matches CPU SPHOilSystem)
+// ============================================================================
+
 @compute @workgroup_size(64)
 fn compute_density(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let i = global_id.x;
-    if (i >= uniforms.maxParticles) { return; }
+    if (i >= uniforms.particleCount) { return; }
 
     var density = 0.0;
     let pos_i = particles.data[i].pos;
+    let h = uniforms.smoothingRadius;
 
-    for (var j: u32 = 0u; j < uniforms.maxParticles; j = j + 1u) {
+    for (var j: u32 = 0u; j < uniforms.particleCount; j = j + 1u) {
         let pos_j = particles.data[j].pos;
         let distSq = dot(pos_i - pos_j, pos_i - pos_j);
-        density += uniforms.particleMass * cubicSplineKernel(distSq, uniforms.smoothingRadius);
+        density += uniforms.particleMass * cubicSplineKernel(distSq, h);
     }
     particles.data[i].density = max(density, 0.001);
 }
@@ -83,9 +97,10 @@ fn compute_density(@builtin(global_invocation_id) global_id: vec3<u32>) {
 @compute @workgroup_size(64)
 fn compute_pressure(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let i = global_id.x;
-    if (i >= uniforms.maxParticles) { return; }
+    if (i >= uniforms.particleCount) { return; }
 
-    let B = 6.0; // Stiffness
+    // Soft pressure (not used much in blob physics, but keep for compatibility)
+    let B = 2.0;
     let gamma = 7.0;
     let ratio = particles.data[i].density / uniforms.restDensity;
     let pressure = B * (pow(ratio, gamma) - 1.0);
@@ -95,52 +110,52 @@ fn compute_pressure(@builtin(global_invocation_id) global_id: vec3<u32>) {
 @compute @workgroup_size(64)
 fn compute_forces(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let i = global_id.x;
-    if (i >= uniforms.maxParticles) { return; }
+    if (i >= uniforms.particleCount) { return; }
 
     var force = vec2<f32>(0.0, 0.0);
     let p_i = particles.data[i];
+    let h = uniforms.smoothingRadius;
+    let targetDist = h * 0.6;  // Equilibrium distance
 
-    for (var j: u32 = 0u; j < uniforms.maxParticles; j = j + 1u) {
+    for (var j: u32 = 0u; j < uniforms.particleCount; j = j + 1u) {
         if (i == j) { continue; }
         let p_j = particles.data[j];
         let r = p_i.pos - p_j.pos;
         let dist = length(r);
 
-        if (dist < uniforms.smoothingRadius) {
-            // Pressure force
-            let pressure_term = (p_i.pressure / (p_i.density * p_i.density)) + (p_j.pressure / (p_j.density * p_j.density));
-            force += -uniforms.particleMass * uniforms.particleMass * pressure_term * spikyGradientKernel(r, uniforms.smoothingRadius);
+        if (dist < h && dist > 0.0001) {
+            let nx = r.x / dist;
+            let ny = r.y / dist;
 
-            // Viscosity force
-            let viscosity_term = uniforms.viscosity * uniforms.particleMass * uniforms.particleMass / p_j.density * viscosityLaplacianKernel(dist, uniforms.smoothingRadius);
-            force += viscosity_term * (p_j.vel - p_i.vel);
-
-            // IPF cohesion (explicit, short-range, density-biased)
-            if (uniforms.ipfStrength > 0.0) {
-                let innerR = 0.55 * uniforms.smoothingRadius;
-                let outerR = 1.0 * uniforms.smoothingRadius;
-                if (dist > innerR && dist < outerR) {
-                    let rest = uniforms.restDensity;
-                    let rho_i = p_i.density;
-                    let rho_j = p_j.density;
-                    // Only pull thinner particles toward denser neighbors
-                    let densityDelta = (rho_j - rho_i) / rest; // >0 when neighbor is denser
-                    let densityScale = clamp(densityDelta, 0.0, 1.0);
-                    // High-density cutoff: do not keep tightening existing dense rims
-                    let coreThresh = 1.1 * rest;
-                    let bothCore = (rho_i >= coreThresh) && (rho_j >= coreThresh);
-                    if (densityScale > 0.0 && !bothCore) {
-                        let span = max(1e-6, outerR - innerR);
-                        let t = (dist - innerR) / span; // 0 at innerR, 1 at outerR
-                        let falloff = 1.0 - t;
-                        let w = falloff * falloff;
-                        let dir = normalize(p_j.pos - p_i.pos);
-                        let s = uniforms.ipfStrength * w * densityScale * uniforms.particleMass;
-                        force += s * dir;
-                    }
-                }
+            // Lennard-Jones style blob physics
+            var f: f32 = 0.0;
+            if (dist < targetDist) {
+                // Repulsion: push away if too close
+                let pct = 1.0 - (dist / targetDist);
+                f = uniforms.blobRepulsion * pct;
+            } else {
+                // Cohesion: pull together if within range
+                let pct = 1.0 - ((dist - targetDist) / (h - targetDist));
+                let curve = pct * pct * (3.0 - 2.0 * pct);  // smoothstep
+                f = -uniforms.blobCohesion * curve;
             }
+
+            // Inter-particle viscosity (damping)
+            let dvx = p_i.vel.x - p_j.vel.x;
+            let dvy = p_i.vel.y - p_j.vel.y;
+            let relVel = dvx * nx + dvy * ny;
+            let viscosity = 2.0;  // Strong damping
+            f += -viscosity * relVel;
+
+            force.x += nx * f;
+            force.y += ny * f;
         }
+    }
+
+    // Clamp force magnitude
+    let forceMag = length(force);
+    if (forceMag > 2.0) {
+        force = force * (2.0 / forceMag);
     }
 
     particles.data[i].force = force;
@@ -149,18 +164,44 @@ fn compute_forces(@builtin(global_invocation_id) global_id: vec3<u32>) {
 @compute @workgroup_size(64)
 fn integrate(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let i = global_id.x;
-    if (i >= uniforms.maxParticles) { return; }
+    if (i >= uniforms.particleCount) { return; }
 
     let p = &particles.data[i];
+    let dt = uniforms.dt;
+    
+    // Apply force
     let acceleration = (*p).force / uniforms.particleMass;
-    (*p).vel += acceleration * uniforms.dt;
-    (*p).pos += (*p).vel * uniforms.dt;
+    (*p).vel += acceleration * dt;
 
-    // Boundary conditions
-    let r = 0.48; // containerRadius
+    // Quadratic damping (kills high-frequency oscillation)
+    let speed = length((*p).vel);
+    if (speed > 0.0) {
+        let k = 6.0;
+        let q = 1.0 / (1.0 + k * speed);
+        (*p).vel = (*p).vel * q;
+    }
+
+    // Linear friction
+    (*p).vel = (*p).vel * uniforms.blobFriction;
+
+    // Speed cap
+    let maxSpeed = 0.3;
+    let newSpeed = length((*p).vel);
+    if (newSpeed > maxSpeed) {
+        (*p).vel = (*p).vel * (maxSpeed / newSpeed);
+    }
+
+    // Update position
+    (*p).pos += (*p).vel * dt;
+
+    // Boundary conditions (circular container)
+    let r = uniforms.containerRadius;
     let d = length((*p).pos);
     if (d > r) {
         (*p).pos = ((*p).pos / d) * r;
-        (*p).vel = (*p).vel - 2.0 * dot((*p).vel, (*p).pos/d) * (*p).pos/d;
+        // Reflect velocity with damping
+        let n = (*p).pos / d;
+        let vDotN = dot((*p).vel, n);
+        (*p).vel = ((*p).vel - 2.0 * vDotN * n) * 0.5;
     }
 }

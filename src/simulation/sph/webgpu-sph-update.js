@@ -1,4 +1,5 @@
 // src/simulation/sph/webgpu-sph-update.js
+// WebGPU compute pipeline for SPH physics simulation
 
 import { loadShader } from '../../utils.js';
 
@@ -13,14 +14,13 @@ class WebGPUSPHUpdate {
         this.forcePipeline = null;
         this.integratePipeline = null;
 
+        // Uniforms: 12 floats (must match sph-gpu.wgsl Uniforms struct)
+        // particleCount, dt, smoothingRadius, restDensity, particleMass, viscosity,
+        // ipfStrength, containerRadius, blobCohesion, blobRepulsion, blobFriction, _pad
         this.uniformBuffer = this.device.createBuffer({
-            size: 8 * 4, // 8 floats (maxParticles, dt, smoothingRadius, restDensity, particleMass, viscosity, 2x pad)
+            size: 12 * 4,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-        });
-
-        this.stagingBuffer = this.device.createBuffer({
-            size: this.webgpuSPH.maxParticles * this.webgpuSPH.particleStride,
-            usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+            label: 'SPH Uniforms',
         });
 
         this.bindGroupLayout = this.device.createBindGroupLayout({
@@ -96,24 +96,32 @@ class WebGPUSPHUpdate {
         console.log('✅ WebGPU SPH update pipelines created.');
     }
 
-    async update(sphSystem, dt) {
-        if (!this.densityPipeline || !this.pressurePipeline || !this.forcePipeline || !this.integratePipeline) {
+    /**
+     * Run GPU SPH physics update.
+     * No readback - particles stay GPU-resident.
+     */
+    update(sphSystem, dt) {
+        if (!this.densityPipeline || !this.forcePipeline || !this.integratePipeline) {
             return;
         }
 
-        // Clamp effective count to buffer capacity to avoid overruns.
-        const maxParticles = this.webgpuSPH.maxParticles;
-        const effectiveCount = Math.min(sphSystem.particleCount, maxParticles);
+        const particleCount = this.webgpuSPH.particleCount;
+        if (particleCount === 0) return;
 
-        // 1. Update uniforms
+        // 1. Update uniforms (must match sph-gpu.wgsl Uniforms struct)
         const uniforms = new Float32Array([
-            effectiveCount,
-            dt,
-            sphSystem.smoothingRadius,
-            sphSystem.restDensity,
-            sphSystem.particleMass,
-            sphSystem.viscosity,
-            0, 0 // padding
+            particleCount,                    // particleCount (u32 as f32)
+            dt,                               // dt
+            sphSystem.blobInteractionRadius,  // smoothingRadius
+            sphSystem.restDensity,            // restDensity
+            sphSystem.particleMass,           // particleMass
+            sphSystem.viscosity,              // viscosity
+            sphSystem.ipfStrength || 0,       // ipfStrength
+            sphSystem.containerRadius,        // containerRadius
+            sphSystem.blobCohesion,           // blobCohesion
+            sphSystem.blobRepulsion,          // blobRepulsion
+            sphSystem.blobFriction,           // blobFriction
+            0                                 // _pad
         ]);
         this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
 
@@ -121,17 +129,19 @@ class WebGPUSPHUpdate {
         const commandEncoder = this.device.createCommandEncoder();
         const passEncoder = commandEncoder.beginComputePass();
 
-        const workgroupCount = Math.ceil(effectiveCount / 64);
+        const workgroupCount = Math.ceil(particleCount / 64);
 
         // Density pass
         passEncoder.setPipeline(this.densityPipeline);
         passEncoder.setBindGroup(0, this.bindGroup);
         passEncoder.dispatchWorkgroups(workgroupCount);
 
-        // Pressure pass
-        passEncoder.setPipeline(this.pressurePipeline);
-        passEncoder.setBindGroup(0, this.bindGroup);
-        passEncoder.dispatchWorkgroups(workgroupCount);
+        // Pressure pass (optional, blob physics doesn't rely on it much)
+        if (this.pressurePipeline) {
+            passEncoder.setPipeline(this.pressurePipeline);
+            passEncoder.setBindGroup(0, this.bindGroup);
+            passEncoder.dispatchWorkgroups(workgroupCount);
+        }
 
         // Force pass
         passEncoder.setPipeline(this.forcePipeline);
@@ -145,20 +155,11 @@ class WebGPUSPHUpdate {
 
         passEncoder.end();
 
-        // 3. Readback data
-        commandEncoder.copyBufferToBuffer(
-            this.webgpuSPH.particleBuffer, 0,
-            this.stagingBuffer, 0,
-            effectiveCount * this.webgpuSPH.particleStride
-        );
-
         const commandBuffer = commandEncoder.finish();
         this.device.queue.submit([commandBuffer]);
 
-        // For now, treat SPH state as GPU-resident only and skip per-frame readback.
-        // This avoids device hangs seen on macOS (WindowServer watchdog) and Windows (DXGI device lost)
-        // when performing full-buffer mapAsync every frame.
-        return;
+        // NO READBACK - particles stay on GPU
+        // Rendering will read directly from the particle buffer
     }
 }
 
