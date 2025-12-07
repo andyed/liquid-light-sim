@@ -18,27 +18,29 @@ This testing framework addresses the critical v0 lesson that **GPGPU debugging w
 
 ## Quick Start
 
-### In Main App (index.html)
+### 1. Visual Test Runner (Recommended)
 
-The testing tools are automatically available in the browser console:
+1.  Open the file `tests/test-runner.html` in your browser.
+2.  Click the **"▶️ Run All Tests"** button.
+3.  Watch the output panel for `✅ PASS` or `❌ FAIL` results.
+
+### 2. In Main App (index.html)
+
+The testing tools are available in the browser console for quick checks:
 
 ```javascript
-// Available global objects
-window.tester         // SimulationTester instance
-window.perfMonitor    // PerformanceMonitor instance
-window.simulation     // Direct simulation access
+// Run the full suite
+await tester.runTests();
+
+// Or run individual checks
+tester.checkForNaN();
+tester.analyzeVelocity();
 ```
 
 **Keyboard Shortcuts:**
 - `P` - Pause/Resume simulation
-- `Ctrl+T` - Run automated tests
 - `Ctrl+S` - Save current state to file
 
-### In Test Runner (tests/test-runner.html)
-
-Open `tests/test-runner.html` for a visual test interface with automated test suites.
-
----
 
 ## Testing Tools API
 

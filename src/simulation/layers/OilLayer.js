@@ -16,7 +16,7 @@ export default class OilLayer extends FluidLayer {
     this.webgpuSPH = null;
     this.webgpuSPHUpdate = null;
     this.webgpuSPHRender = null;
-    
+
     // Feature flags: WebGPU SPH is guarded behind URL flags
     // ?webgpu_sph=1 enables full GPU-resident SPH (compute + render)
     // This avoids per-frame readback which causes macOS WindowServer crashes
@@ -126,15 +126,15 @@ export default class OilLayer extends FluidLayer {
       } else {
         this.webgpuSPH = new WebGPUSPH(this.sim.webgpu.device, gpuMaxParticles);
         console.log('🚀 Initializing WebGPU SPH System (max particles:', gpuMaxParticles, ')');
-        
+
         // Initialize compute pipeline
         this.webgpuSPHUpdate = new WebGPUSPHUpdate(this.sim.webgpu.device, this.webgpuSPH);
         this.webgpuSPHUpdate.init();
-        
+
         // Initialize render pipeline (GPU-resident rendering, no readback!)
         this.webgpuSPHRender = new WebGPUSPHRender(this.sim.webgpu.device, this.webgpuSPH, w, h);
         this.webgpuSPHRender.init();
-        
+
         if (this.enableWebgpuSph) {
           console.log('🎮 WebGPU SPH ENABLED via ?webgpu_sph=1 - GPU-resident particles!');
         }
@@ -315,10 +315,18 @@ export default class OilLayer extends FluidLayer {
 
     // Apply per-material SPH tuning (kept lightweight; no change to smoothingRadius)
     if (this.sph) {
-      // Base grid-drag (water→oil coupling) per material; we will scale this
-      // by |rotationAmount| below so that rotating the plate couples more
-      // strongly to the blobs.
-      let baseGridDrag = 1.3;
+      // Base grid-drag (water→oil coupling)
+      // Use the global tuning from SPHOilSystem constructor as the baseline
+      // DO NOT override blob parameters here, or constructor tuning is lost!
+
+      let baseGridDrag = this.sph.gridDragCoeff;
+
+      /* 
+       * DISABLED: These presets were overriding the careful "Viscous Syrup" tuning 
+       * defined in SPHOilSystem.js. Let's trust the physics engine config first.
+       * If we need distinct materials later, we should update SPHOilSystem setters
+       * or use offsets from the base config.
+       *
       switch (currentMaterial) {
         case 'Syrup':
           // Syrup: Thick, slow, very cohesive
@@ -349,9 +357,15 @@ export default class OilLayer extends FluidLayer {
           this.sph.particleSpriteRadius = 110.0; // Increased visual size
           break;
       }
+      */
 
       // Scale water→oil drag with rotation magnitude so tilting/rotating the
-      // plate couples more strongly to blobs via the velocity field.
+      // plate couples more strongly to the blobs via the velocity field.
+      // NOTE: We start from the CURRENT gridDragCoeff to avoid resetting it?
+      // Actually, since this runs every frame, we must use a base value.
+      // Let's use the explicit tuned value from constructor: 3.5
+      baseGridDrag = 3.5;
+
       const rotAbs = Math.abs(this.sim.rotationAmount || 0.0);
       const rotScale = 1.0 + 2.0 * Math.min(rotAbs, 1.0); // up to ~3x at strong rotation
       this.sph.gridDragCoeff = baseGridDrag * rotScale;
@@ -370,7 +384,7 @@ export default class OilLayer extends FluidLayer {
       if (!shouldSkipPhysics) {
         // Always run CPU physics for now (used for rendering)
         this.sph.update(dt, sim.rotationAmount, gridVelocities);
-        
+
         // Also run WebGPU compute in parallel for testing
         if (this.enableWebgpuSph && this.webgpuSPHUpdate && this.webgpuSPH) {
           // Upload any new particles since last frame
@@ -396,13 +410,13 @@ export default class OilLayer extends FluidLayer {
         gl.disable(gl.BLEND); // MUST disable blend for proper clear
         gl.clearColor(0, 0, 0, 0);
         gl.clear(gl.COLOR_BUFFER_BIT);
-        
+
         // Always use CPU SPH + WebGL rendering for now
         // WebGPU compute runs in parallel but rendering uses CPU data
         // TODO: Copy WebGPU render texture to WebGL when ready
         this.sph.renderParticles(this.sphFBO, this.sim.renderer.canvas.width, this.sim.renderer.canvas.height);
       }
-      
+
       // Also render to WebGPU texture for testing (not displayed yet)
       if (this.enableWebgpuSph && this.webgpuSPHRender) {
         this.webgpuSPHRender.render(this.sph.containerRadius, this.sph.particleSpriteRadius);
@@ -661,7 +675,7 @@ export default class OilLayer extends FluidLayer {
       });
       this.webgpuSphTextureView = this.webgpuSphTexture.createView();
     }
-    
+
     // Resize WebGPU SPH render pipeline texture
     if (this.webgpuSPHRender) {
       this.webgpuSPHRender.resize(w, h);
@@ -983,7 +997,7 @@ export default class OilLayer extends FluidLayer {
       // Always spawn as single dense blob for immediate congealing
       const prevCount = this.sph.particleCount;
       const spawned = this.sph.spawnParticles(worldX, worldY, particleCount, color, spawnRadius);
-      
+
       // Upload new particles to WebGPU buffer
       if (this.webgpuSPH && spawned > 0) {
         this.webgpuSPH.uploadNewParticles(this.sph, prevCount, spawned);

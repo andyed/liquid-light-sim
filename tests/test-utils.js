@@ -10,6 +10,42 @@ export class SimulationTester {
         this.capturedStates = [];
     }
 
+    // --- Assertion Helpers ---
+
+    expect(actual) {
+        return {
+            toBe: (expected) => {
+                if (actual !== expected) throw new Error(`Expected ${expected} but got ${actual}`);
+            },
+            toBeGreaterThan: (expected) => {
+                if (!(actual > expected)) throw new Error(`Expected ${actual} > ${expected}`);
+            },
+            toBeLessThan: (expected) => {
+                if (!(actual < expected)) throw new Error(`Expected ${actual} < ${expected}`);
+            },
+            toBeTruthy: () => {
+                if (!actual) throw new Error(`Expected truthy value but got ${actual}`);
+            },
+            toBeCloseTo: (expected, precision = 0.0001) => {
+                if (Math.abs(actual - expected) > precision) throw new Error(`Expected ${actual} to be close to ${expected} (diff: ${Math.abs(actual - expected)})`);
+            }
+        };
+    }
+
+    async runTest(name, testFn) {
+        console.log(`⏳ Running ${name}...`);
+        const start = performance.now();
+        try {
+            await testFn();
+            const time = (performance.now() - start).toFixed(2);
+            console.log(`✅ PASS: ${name} (${time}ms)`);
+            return { name, passed: true, time, error: null };
+        } catch (e) {
+            console.error(`❌ FAIL: ${name}`, e);
+            return { name, passed: false, time: (performance.now() - start).toFixed(2), error: e.message };
+        }
+    }
+
     testMarangoniInterface() {
         const sim = this.simulation;
         const gl = this.gl;
@@ -20,7 +56,7 @@ export class SimulationTester {
         const baseAvg = base.avgSpeed;
 
         // Ensure oil is enabled and present
-        try { if (!sim.useOil && typeof sim.enableOil === 'function') sim.enableOil(); } catch (_) {}
+        try { if (!sim.useOil && typeof sim.enableOil === 'function') sim.enableOil(); } catch (_) { }
         if (!sim.oil) return false;
 
         // Stronger Marangoni for test visibility
@@ -78,7 +114,7 @@ export class SimulationTester {
 
         const pixels = new Float32Array(width * height * 4);
         gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, pixels);
-        
+
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.deleteFramebuffer(fbo);
 
@@ -130,7 +166,7 @@ export class SimulationTester {
         a.download = `simulation-state-${state.label}-${Date.now()}.json`;
         a.click();
         URL.revokeObjectURL(url);
-        
+
         console.log(`💾 Saved state: ${state.label}`);
     }
 
@@ -151,7 +187,7 @@ export class SimulationTester {
             const vx = pixels[i];
             const vy = pixels[i + 1];
             const speed = Math.sqrt(vx * vx + vy * vy);
-            
+
             maxSpeed = Math.max(maxSpeed, speed);
             avgSpeed += speed;
         }
@@ -195,47 +231,67 @@ export class SimulationTester {
     /**
      * Run automated test suite
      */
-    runTests() {
+    /**
+     * Run automated test suite
+     */
+    async runTests() {
         console.log('🧪 Running simulation tests...\n');
+        const results = {};
+        const run = async (name, fn) => {
+            const result = await this.runTest(name, fn);
+            results[name] = result;
+            return result.passed;
+        };
 
         // Test 1: No NaN values
-        const noNaN = this.checkForNaN();
-        console.log(`Test 1 - No NaN/Infinity: ${noNaN ? '✅ PASS' : '❌ FAIL'}`);
+        await run('No NaN/Infinity', () => {
+            const clean = this.checkForNaN();
+            this.expect(clean).toBe(true);
+            results.noNaN = clean; // Keep backward compat for return object
+        });
 
         // Test 2: Velocity analysis
-        const velocityStats = this.analyzeVelocity();
-        console.log(`Test 2 - Velocity Stats:`);
-        console.log(`  Max speed: ${velocityStats.maxSpeed.toFixed(6)}`);
-        console.log(`  Avg speed: ${velocityStats.avgSpeed.toFixed(6)}`);
-        console.log(`  Is static: ${velocityStats.isStatic}`);
+        await run('Velocity Stats', () => {
+            const stats = this.analyzeVelocity();
+            results.velocityStats = stats;
+            // Just ensure it returns valid numbers
+            this.expect(stats.avgSpeed).toBeGreaterThan(-1);
+            this.expect(stats.maxSpeed).toBeGreaterThan(-1);
 
-        // Test 3: Rotation Force (manual verification)
-        console.log('\nTest 3 - Rotation Force:');
-        console.log('  Press A or D key, then run: tester.analyzeVelocity()');
-        console.log('  Expected: avgSpeed should increase');
+            console.log(`  Max speed: ${stats.maxSpeed.toFixed(6)}`);
+            console.log(`  Avg speed: ${stats.avgSpeed.toFixed(6)}`);
+        });
 
-        // New Test: Forces Kernel
-        const forcesPass = this.testForcesKernel();
-        console.log(`Test 4 - Forces Kernel: ${forcesPass ? '✅ PASS' : '❌ FAIL'}`);
+        // Test 3: Forces Kernel
+        await run('Forces Kernel', () => {
+            const pass = this.testForcesKernel();
+            this.expect(pass).toBe(true);
+            results.forcesPass = pass;
+        });
 
-        const aliasOk = this.checkAliases();
-        console.log(`Test 5 - Layer Alias Sync: ${aliasOk ? '✅ PASS' : '❌ FAIL'}`);
+        // Test 4: Layer Alias Sync
+        await run('Layer Alias Sync', () => {
+            const pass = this.checkAliases();
+            this.expect(pass).toBe(true);
+            results.aliasOk = pass;
+        });
 
-        const interleaveOk = this.testInterleavedInkingFlow();
-        console.log(`Test 6 - Interleaved Inking & Flow: ${interleaveOk ? '✅ PASS' : '❌ FAIL'}`);
+        // Test 5: Interleaved Inking & Flow
+        await run('Interleaved Inking & Flow', async () => {
+            const pass = await this.testInterleavedInkingFlow(); // Consolidating logic to return promise if needed
+            this.expect(pass).toBe(true);
+            results.interleaveOk = pass;
+        });
 
-        const marangoniOk = this.testMarangoniInterface();
-        console.log(`Test 7 - Marangoni Interface Response: ${marangoniOk ? '✅ PASS' : '❌ FAIL'}`);
+        // Test 6: Marangoni Interface
+        await run('Marangoni Interface', () => {
+            const pass = this.testMarangoniInterface();
+            this.expect(pass).toBe(true);
+            results.marangoniOk = pass;
+        });
 
-        console.log('\n✅ Basic tests complete');
-        return {
-            noNaN,
-            velocityStats,
-            forcesPass,
-            aliasOk,
-            interleaveOk,
-            marangoniOk
-        };
+        console.log('\n✅ All tests execution finished');
+        return results;
     }
 
     testForcesKernel() {

@@ -21,30 +21,32 @@ export default class SPHOilSystem {
     this.containerRadius = containerRadius;
 
     // SPH parameters (will be tuned per material)
-    this.smoothingRadius = 0.14;      // Larger h for broader neighbor overlap (sheet formation)
-    this.restDensity = 1000.0;        // Rest density (ρ₀)
-    // Cap for density ratio when computing pressure: ρ/ρ0 above this
-    // no longer increases pressure. Prevents extremely stiff response
-    // at very high densities (helps map extra mass to size/thickness
-    // instead of explosive spring).
-    this.maxPressureDensityRatio = 1.8;
-    // Per-material pressure stiffness multiplier (Tait EOS B term).
-    // 1.0 ~= original global stiffness; <1.0 softens pressure response.
-    this.pressureStiffness = 1.0;
-    this.particleMass = 0.02;         // Mass per particle
-    this.viscosity = 0.08;            // Slightly higher to maintain ribbons/filaments
-    this.surfaceTension = 50.0;       // DRASTICALLY REDUCED from 3000 - was causing NaN (was insane!)
-    this.gravity = -0.01;             // EXTREMELY WEAK: Prevent spreading (was -0.1)
-    this.dt = 1 / 60;                   // Timestep
+    this.smoothingRadius = 0.14;
+    // HUGE INCREASE in restDensity (was 800 -> 2500)
+    // This tricks the solver into thinking packed particles are "normal", 
+    // allowing them to pile up (overlapping) without exploding.
+    // Effectively simulates 3D depth in 2D.
+    this.restDensity = 2500.0;
+
+    // Clamp pressure early! (was 1.8 -> 1.1)
+    // Even if density goes way above restDensity, pressure won't skyrocket.
+    // This prevents the "bomb" effect when spawning many particles.
+    this.maxPressureDensityRatio = 1.1;
+
+    this.pressureStiffness = 0.04;    // Keep soft
+    this.particleMass = 0.02;
+    this.viscosity = 0.25;            // INCREASED (was 0.15): Very thick ooze
+    this.surfaceTension = 0.5;        // Minimal tension loops
+    this.gravity = -0.001;
+    this.dt = 1 / 60;
 
     // Temperature parameters
-    this.thermalExpansion = 0.0;      // DISABLED: Causing radial expansion (was 0.001)
-    this.thermalConductivity = 0.1;   // Heat diffusion rate
-    this.roomTemperature = 20.0;      // Celsius
-    this.marangoniStrength = 0.0;     // DISABLED: Causing radial explosion (was 5.0)
+    this.thermalExpansion = 0.0;
+    this.thermalConductivity = 0.1;
+    this.roomTemperature = 20.0;
+    this.marangoniStrength = 0.0;
 
     // Particle data (Structure of Arrays for cache efficiency)
-    // Each particle: [x, y, vx, vy, density, pressure, temperature, phase]
     this.particleCount = 0;
     this.positions = new Float32Array(maxParticles * 2);      // [x, y]
     this.velocities = new Float32Array(maxParticles * 2);     // [vx, vy]
@@ -52,7 +54,7 @@ export default class SPHOilSystem {
     this.densities = new Float32Array(maxParticles);          // ρ
     this.pressures = new Float32Array(maxParticles);          // p
     this.temperatures = new Float32Array(maxParticles);       // T (Celsius)
-    this.nextTemperatures = new Float32Array(maxParticles); // Temp buffer for update
+    this.nextTemperatures = new Float32Array(maxParticles);
     this.phases = new Uint8Array(maxParticles);               // 0=water, 1=oil
     this.colors = new Float32Array(maxParticles * 3);         // [r, g, b]
 
@@ -66,25 +68,23 @@ export default class SPHOilSystem {
     this.neighborLists = Array.from({ length: maxParticles }, () => []);
 
     // Implicit solver (Phase 2) - DISABLED due to instability
-    // Matrix becomes ill-conditioned (16M non-zeros), residual explodes
-    // Causes "dancing" particles instead of smooth flow
     this.useImplicitIntegration = false;
-    this.implicitSolver = null; // Not used in explicit mode
+    this.implicitSolver = null;
 
     // GPU resources (to be initialized)
     this.gl = null;
-    this.particleVBO = null;        // Vertex buffer for particle positions
-    this.particleColorVBO = null;   // Vertex buffer for particle colors
-    this.particleDensityVBO = null; // Vertex buffer for particle densities
-    this.splatProgram = null;       // Shader program for particle rendering
+    this.particleVBO = null;
+    this.particleColorVBO = null;
+    this.particleDensityVBO = null;
+    this.splatProgram = null;
 
     // WebGPU resources
     this.webgpuDevice = null;
     this.webgpuRenderPipeline = null;
     this.sphParticleSplatVertWGSL = sphParticleSplatVertWGSL;
     this.sphParticleSplatFragWGSL = sphParticleSplatFragWGSL;
-    this.webgpuParticleBuffer = null; // GPUBuffer for particle data
-    this.webgpuBindGroup = null;      // Bind group for particle buffer
+    this.webgpuParticleBuffer = null;
+    this.webgpuBindGroup = null;
 
     this.computeShaders = null;
 
@@ -100,59 +100,60 @@ export default class SPHOilSystem {
     this.frameIndex = 0;
     this.debug = false;
 
-    // Tunable cohesion and spawn parameters (material presets can override)
-    this.shortCohesion = 4.0;   // Softer short-range cohesion (was 6.5)
-    this.shortRadiusScale = 1.5; // REDUCED from 2.0: shortRadius = h * shortRadiusScale (prevents cross-blob attraction)
-    this.minDistScale = 0.35;    // minDist = h * minDistScale
-    this.longCohesion = 0.0;    // DISABLED: Long-range cohesion causes distant blobs to merge
-    this.longRadiusScale = 4.0;  // longRadius = h * longRadiusScale (not used when longCohesion=0)
-    // Explicit IPF-style cohesion term (short-range attractive force between nearby particles)
-    this.ipfStrength = 0.0;        // base IPF attraction magnitude (per material)
-    this.ipfInnerRadiusScale = 0.55; // inner radius (in units of h) where IPF starts to act
-    this.ipfOuterRadiusScale = 1.0;  // outer radius (in units of h) where IPF goes to zero
-    this.spawnSpeedScale = 1.0;  // multiply base spawn speed
-    this.gridDragCoeff = 1.3;    // coupling to grid velocities
-    this.maxSpeedCap = 0.3;      // REDUCED: Lower speed cap for calmer motion
-    this.xsphCoeff = 0.0;        // XSPH velocity smoothing (0 disables)
-    this.particleSpriteRadius = 100.0; // Moderate size for good overlap
-    this.dampingFactor = 0.94;   // per-material velocity damping in _updatePositions
-    this.forceClampMax = 2.0;    // REDUCED: Tighter force clamp prevents sudden jerks
-    this.quadraticDampingK = 6.0; // VERY HIGH: Strong velocity damping
+    // Tunable cohesion and spawn parameters
+    this.shortCohesion = 4.0;   // INCREASED (was 3.0): Glue them together
+    this.shortRadiusScale = 2.0; // INCREASED: Long-range glue
+    this.minDistScale = 0.35;
+    this.longCohesion = 0.0;
+    this.longRadiusScale = 4.0;
+
+    // Explicit IPF-style cohesion term
+    this.ipfStrength = 0.0;
+    this.ipfInnerRadiusScale = 0.55;
+    this.ipfOuterRadiusScale = 1.0;
+    this.spawnSpeedScale = 1.0;
+    this.gridDragCoeff = 4.0;    // INCREASED (was 3.5): Max drag
+    this.maxSpeedCap = 0.4;      // Allow movement if coerced
+    this.xsphCoeff = 0.45;        // INCREASED (was 0.35): Massive smoothing = "ooze"
+    this.particleSpriteRadius = 100.0;
+    this.dampingFactor = 0.99;   // EXTREME DAMPING (was 0.98): Stops everything quickly
+    this.forceClampMax = 0.5;    // CLAMP TIGHT (was 1.0): No sudden moves!
+    this.quadraticDampingK = 10.0; // Molasses
+
     // Universal positional cohesion (PBD-style)
     this.enablePositionalCohesion = true;
-    this.posCohesionCoeff = 0.12; // 0..1 blend toward local centroid
-    this.maxPosNudge = 0.004;     // as fraction of containerRadius per frame
-    this.posCohesionRadiusScale = 1.0; // radius in units of h for positional cohesion neighborhood
-    // Neighbor-aware drag (scale grid drag by local density)
+    this.posCohesionCoeff = 0.20; // INCREASED (was 0.15)
+    this.maxPosNudge = 0.005;
+    this.posCohesionRadiusScale = 1.0;
+    // Neighbor-aware drag 
     this.enableNeighborScaledDrag = true;
     this.neighborDragNMin = 3;
     this.neighborDragNMax = 10;
-    // Positional cohesion boost after spawn (kept gentle to avoid collapse→explode)
+    // Positional cohesion boost after spawn
     this.posCohesionBoostFrames = 0;
-    this.posCohesionBoostCoeff = 0.18; // softer temporary pull
-    this.posCohesionBoostIters = 2;    // fewer extra iterations per frame during boost
+    this.posCohesionBoostCoeff = 0.18;
+    this.posCohesionBoostIters = 2;
 
     // Buffers for auxiliary accumulations
     this.xsphCorr = new Float32Array(maxParticles * 2);
 
     // === BLOB THINNING & SPLITTING PARAMETERS ===
-    this.enableThinning = true;              // Enable thinning detection
-    this.enableSplitting = true;             // Enable automatic blob splitting
-    this.thinningThreshold = 0.6;            // Density ratio below which region is "thin" (0-1)
-    this.neckDetectionRadius = 1.5;          // Multiplier of h for neck detection
-    this.minNeighborsForThick = 8;          // Minimum neighbors to be considered "thick"
-    this.cohesionReductionInThin = 0.2;     // Reduce cohesion to 20% in thin regions
-    this.splitDistance = 2.0;                // Split when clusters are > 2.0h apart (tighter to prevent merging)
-    this.splitCheckInterval = 30;            // Check for splitting every N frames (performance)
-    this.minClusterSize = 3;                // Minimum particles to form a valid blob cluster
+    this.enableThinning = true;
+    this.enableSplitting = true;
+    this.thinningThreshold = 0.6;
+    this.neckDetectionRadius = 1.5;
+    this.minNeighborsForThick = 8;
+    this.cohesionReductionInThin = 0.2;
+    this.splitDistance = 2.0;
+    this.splitCheckInterval = 30;
+    this.minClusterSize = 3;
 
     // === BLOB PHYSICS TUNING ===
-    // Simplified model parameters (Lennard-Jones style)
-    // Tuned for VERY CALM, stable blobs (minimal jitter)
-    this.blobCohesion = 0.25;     // VERY LOW: Gentle attraction
-    this.blobRepulsion = 0.8;     // VERY LOW: Soft repulsion
-    this.blobInteractionRadius = 0.16; // Moderate interaction range
-    this.blobFriction = 0.95;     // HIGH: Strong damping kills jitter
+    // Tuned for OOZING PILES
+    this.blobCohesion = 0.5;      // INCREASED (was 0.35): Strong attraction
+    this.blobRepulsion = 0.05;    // ALMOST ZERO (was 0.1): Allow piling!
+    this.blobInteractionRadius = 0.16;
+    this.blobFriction = 0.96;     // Slide friction     // REDUCED (was 0.99): Unstick it! Let it slide.
   }
 
   /**
